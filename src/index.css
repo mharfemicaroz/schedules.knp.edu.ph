@@ -1,0 +1,161 @@
+/* Subtle custom touches to complement Chakra */
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+.glass {
+  backdrop-filter: saturate(140%) blur(8px);
+}
+
+/* Smooth row expand on hover for faculty table */
+tr.faculty-row {
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+tr.faculty-row:hover {
+  transform: scale(1.005);
+}
+tr.faculty-row td {
+  transition: padding 180ms ease;
+}
+tr.faculty-row:hover td {
+  padding-top: 14px !important;
+  padding-bottom: 14px !important;
+}
+
+/* Hover lift effect for view cards */
+.view-card {
+  transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+.view-card:hover {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 12px 28px rgba(0,0,0,0.12);
+}
+
+@keyframes shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.loader-bar {
+  background: linear-gradient(90deg, #a5d8ff, #339af0, #a5d8ff);
+  background-size: 200% 100%;
+  animation: shimmer 1.1s linear infinite;
+  border-radius: 9999px;
+}
+
+/* Responsive tables: prevent overflow on small screens */
+.chakra-table th,
+.chakra-table td {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  /* Card-style tables on small screens */
+  .chakra-table,
+  .chakra-table thead,
+  .chakra-table tbody,
+  .chakra-table th,
+  .chakra-table td,
+  .chakra-table tr {
+    display: block;
+    width: 100% !important;
+  }
+  .chakra-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .chakra-table tr {
+    margin-bottom: 12px;
+    border: 1px solid #e2e8f0; /* gray.200 */
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .chakra-table td {
+    border: none !important;
+    border-bottom: 1px solid #edf2f7 !important; /* gray.100 */
+    padding: 10px 12px !important;
+  }
+  .chakra-table td:last-child {
+    border-bottom: none !important;
+  }
+  /* Label column on the left for wrappers that define labels */
+  .responsive-table td {
+    display: grid;
+    grid-template-columns: 42% 1fr;
+    gap: 8px;
+  }
+  .responsive-table td::before {
+    content: attr(data-label);
+    font-weight: 700;
+    color: #4a5568; /* gray.600 */
+  }
+}
+
+@media (max-width: 640px) and (prefers-color-scheme: dark) {
+  .chakra-table tr {
+    border-color: #2d3748; /* gray.700 */
+    background: #1a202c;   /* gray.800 */
+    box-shadow: none;
+  }
+  .chakra-table td {
+    border-bottom-color: #2d3748 !important;
+  }
+  .responsive-table td::before {
+    color: #a0aec0; /* gray.400 */
+  }
+}
+
+/* Column labels for specific tables (mobile) */
+@media (max-width: 640px) {
+  /* Department schedule */
+  .table-dept td:nth-child(1)::before { content: "Term"; }
+  .table-dept td:nth-child(2)::before { content: "Time"; }
+  .table-dept td:nth-child(3)::before { content: "Code"; }
+  .table-dept td:nth-child(4)::before { content: "Title"; }
+  .table-dept td:nth-child(5)::before { content: "Units"; }
+  .table-dept td:nth-child(6)::before { content: "Room"; }
+  .table-dept td:nth-child(7)::before { content: "Faculty"; }
+
+  /* Block schedule */
+  .table-block td:nth-child(1)::before { content: "Term"; }
+  .table-block td:nth-child(2)::before { content: "Time"; }
+  .table-block td:nth-child(3)::before { content: "Program"; }
+  .table-block td:nth-child(4)::before { content: "Code"; }
+  .table-block td:nth-child(5)::before { content: "Title"; }
+  .table-block td:nth-child(6)::before { content: "Units"; }
+  .table-block td:nth-child(7)::before { content: "Room"; }
+  .table-block td:nth-child(8)::before { content: "Faculty"; }
+
+  /* Room schedule */
+  .table-room td:nth-child(1)::before { content: "Time"; }
+  .table-room td:nth-child(2)::before { content: "Day"; }
+  .table-room td:nth-child(3)::before { content: "Term"; }
+  .table-room td:nth-child(4)::before { content: "Program"; }
+  .table-room td:nth-child(5)::before { content: "Code"; }
+  .table-room td:nth-child(6)::before { content: "Title"; }
+  .table-room td:nth-child(7)::before { content: "Section"; }
+  .table-room td:nth-child(8)::before { content: "Units"; }
+  .table-room td:nth-child(9)::before { content: "Faculty"; }
+
+  /* Faculty detail */
+  .table-fac-detail td:nth-child(1)::before { content: "Code"; }
+  .table-fac-detail td:nth-child(2)::before { content: "Title"; }
+  .table-fac-detail td:nth-child(3)::before { content: "Section"; }
+  .table-fac-detail td:nth-child(4)::before { content: "Units"; }
+  .table-fac-detail td:nth-child(5)::before { content: "Day"; }
+  .table-fac-detail td:nth-child(6)::before { content: "Time"; }
+  .table-fac-detail td:nth-child(7)::before { content: "Term"; }
+  .table-fac-detail td:nth-child(8)::before { content: "Room"; }
+  .table-fac-detail td:nth-child(9)::before { content: "Session"; }
+  .table-fac-detail td:nth-child(10)::before { content: "F2F"; }
+}
+}
