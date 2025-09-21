@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box, useColorModeValue } from '@chakra-ui/react';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
+import VisualMap from './pages/VisualMap';
+import AcademicCalendar from './pages/AcademicCalendar';
 import FacultyDetail from './pages/FacultyDetail';
 import ViewsDepartments from './pages/ViewsDepartments';
 import ViewsRooms from './pages/ViewsRooms';
@@ -19,8 +21,10 @@ function App() {
       <Box bg={bg} minH="100vh">
         <Layout>
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<VisualMap />} />
+            <Route path="/overview/calendar" element={<AcademicCalendar />} />
             <Route path="/faculty/:id" element={<FacultyDetail />} />
+            <Route path="/views/faculty" element={<Dashboard />} />
             <Route path="/views/departments" element={<ViewsDepartments />} />
             <Route path="/views/departments/:dept" element={<DepartmentSchedule />} />
             <Route path="/views/rooms" element={<ViewsRooms />} />

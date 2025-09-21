@@ -1,18 +1,28 @@
 import React from 'react';
 import { Table, Thead, Tbody, Tr, Th, Td, Avatar, HStack, Text, Badge, Box, useColorModeValue, IconButton, Tooltip } from '@chakra-ui/react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { FiChevronRight } from 'react-icons/fi';
 
 function FacultyRow({ f }) {
   const subtle = useColorModeValue('gray.600','gray.400');
+  const navigate = useNavigate();
+  const goto = () => navigate(`/faculty/${encodeURIComponent(f.id)}`);
   return (
-    <Tr className="faculty-row" _hover={{ bg: useColorModeValue('gray.50','whiteAlpha.50') }} transition="all 0.2s ease" cursor="pointer">
+    <Tr
+      className="faculty-row"
+      _hover={{ bg: useColorModeValue('gray.50','whiteAlpha.50') }}
+      transition="all 0.2s ease"
+      cursor="pointer"
+      onClick={goto}
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goto(); } }}
+    >
       <Td py={{ base: 2, md: 3 }}>
         <HStack>
           <Avatar size="sm" name={f.name} />
           <Box>
             <Text fontWeight="600" noOfLines={1} maxW={{ base: '180px', sm: '240px', md: 'unset' }}>{f.name}</Text>
-            <Text fontSize="sm" color={subtle} noOfLines={1} maxW={{ base: '180px', sm: '240px', md: 'unset' }}>{f.employment || '—'}</Text>
+            <Text fontSize="sm" color={subtle} noOfLines={1} maxW={{ base: '180px', sm: '240px', md: 'unset' }}>{f.employment || '-'}</Text>
           </Box>
         </HStack>
       </Td>
@@ -27,7 +37,7 @@ function FacultyRow({ f }) {
       <Td py={{ base: 2, md: 3 }}>{f.stats?.courseCount ?? (f.courses?.length || 0)}</Td>
       <Td isNumeric py={{ base: 1, md: 2 }}>
         <Tooltip label="View details">
-          <IconButton as={RouterLink} to={`/faculty/${encodeURIComponent(f.id)}`} size="sm" variant="ghost" aria-label="View" icon={<FiChevronRight />} />
+          <IconButton as={RouterLink} to={`/faculty/${encodeURIComponent(f.id)}`} onClick={(e) => e.stopPropagation()} size="sm" variant="ghost" aria-label="View" icon={<FiChevronRight />} />
         </Tooltip>
       </Td>
     </Tr>
@@ -54,7 +64,4 @@ export default function FacultyTable({ items }) {
     </Box>
   );
 }
-
-
-
 

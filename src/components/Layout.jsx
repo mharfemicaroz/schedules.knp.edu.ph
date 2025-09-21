@@ -60,7 +60,7 @@ export default function Layout({ children }) {
   // Avoid early-return to keep hook order consistent
   const splash = showSplash;
   return (
-    <Flex minH="100vh" bg={bg}>
+    <Flex minH="100vh" align="stretch" bg={bg}>
       <RouteProgress />
       <AnimatePresence initial={false}>
         <Box
@@ -68,7 +68,6 @@ export default function Layout({ children }) {
           display={{ base: 'none', md: 'block' }}
           // Keep a standard width when open; collapse fully when closed
           style={{ width: sidebarVisible ? 280 : 0 }}
-          h="100vh"
           initial={{ x: -280, opacity: 0 }}
           animate={{ x: sidebarVisible ? 0 : -280, opacity: sidebarVisible ? 1 : 0 }}
           exit={{ x: -280, opacity: 0 }}

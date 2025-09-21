@@ -1,4 +1,5 @@
-[
+{
+"database":[
  {
   "programcode": "BSAB",
   "course name": "NSTP 1",
@@ -9,6 +10,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSAB 1-1",
+  "dept": "BSAB",
   "room": "OB 114",
   "session": "Morning",
   "f2f_sched": "Tue"
@@ -23,6 +25,7 @@
   "block": 2,
   "yearlevel": "1st Year",
   "block code": "BSAB 1-2",
+  "dept": "BSAB",
   "room": "OB 117",
   "session": "Afternoon",
   "f2f_sched": "Wed"
@@ -37,6 +40,7 @@
   "block": 3,
   "yearlevel": "1st Year",
   "block code": "BSAB 1-3",
+  "dept": "BSAB",
   "room": "NB LOBBY",
   "session": "Evening",
   "f2f_sched": "Tue"
@@ -51,6 +55,7 @@
   "block": 4,
   "yearlevel": "1st Year",
   "block code": "BSAB 1-4",
+  "dept": "BSAB",
   "room": "EB 101",
   "session": "Evening",
   "f2f_sched": "Tue,Fri"
@@ -64,6 +69,7 @@
   "block": 5,
   "yearlevel": "1st Year",
   "block code": "BSAB 1-5",
+  "dept": "BSAB",
   "room": "EB 102",
   "session": "Evening",
   "f2f_sched": "Tue,Fri"
@@ -79,6 +85,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSBA-FM 1-1",
+  "dept": "BSBA-FM",
   "room": "EB 101",
   "session": "Morning",
   "f2f_sched": "Wed"
@@ -94,6 +101,7 @@
   "block": 2,
   "yearlevel": "1st Year",
   "block code": "BSBA-FM 1-2",
+  "dept": "BSBA-FM",
   "room": "EB 101",
   "session": "Afternoon",
   "f2f_sched": "Wed"
@@ -109,6 +117,7 @@
   "block": 3,
   "yearlevel": "1st Year",
   "block code": "BSBA-FM 1-3",
+  "dept": "BSBA-FM",
   "room": "EB 101",
   "session": "Evening",
   "f2f_sched": "Wed,Thu"
@@ -124,6 +133,7 @@
   "block": 4,
   "yearlevel": "1st Year",
   "block code": "BSBA-FM 1-4",
+  "dept": "BSBA-FM",
   "room": "EB 102",
   "session": "Evening",
   "f2f_sched": "Wed,Thu"
@@ -139,6 +149,7 @@
   "block": 5,
   "yearlevel": "1st Year",
   "block code": "BSBA-FM 1-5",
+  "dept": "BSBA-FM",
   "room": "EB 103",
   "session": "Evening",
   "f2f_sched": "Wed,Thu"
@@ -154,6 +165,7 @@
   "block": 6,
   "yearlevel": "1st Year",
   "block code": "BSBA-FM 1-6",
+  "dept": "BSBA-FM",
   "room": "NB 104",
   "session": "Evening",
   "f2f_sched": "Wed,Thu"
@@ -169,6 +181,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSBA-HRM 1-1",
+  "dept": "BSBA-HRM",
   "room": "NB 105",
   "session": "Morning",
   "f2f_sched": "Wed"
@@ -183,6 +196,7 @@
   "block": 2,
   "yearlevel": "1st Year",
   "block code": "BSBA-HRM 1-2",
+  "dept": "BSBA-HRM",
   "room": "NB 105",
   "session": "Afternoon",
   "f2f_sched": "Wed"
@@ -198,6 +212,7 @@
   "block": 3,
   "yearlevel": "1st Year",
   "block code": "BSBA-HRM 1-3",
+  "dept": "BSBA-HRM",
   "room": "OB 108",
   "session": "Evening",
   "f2f_sched": "Wed,Thu"
@@ -213,6 +228,7 @@
   "block": 4,
   "yearlevel": "1st Year",
   "block code": "BSBA-HRM 1-4",
+  "dept": "BSBA-HRM",
   "room": "OB 109",
   "session": "Evening",
   "f2f_sched": "Wed,Thu"
@@ -228,6 +244,7 @@
   "block": 5,
   "yearlevel": "1st Year",
   "block code": "BSBA-HRM 1-5",
+  "dept": "BSBA-HRM",
   "room": "OB 110",
   "session": "Evening",
   "f2f_sched": "Wed,Thu"
@@ -243,6 +260,7 @@
   "block": 6,
   "yearlevel": "1st Year",
   "block code": "BSBA-HRM 1-6",
+  "dept": "BSBA-HRM",
   "room": "OB 111",
   "session": "Evening",
   "f2f_sched": "Wed,Thu"
@@ -258,6 +276,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSBA-MM 1-1",
+  "dept": "BSBA-MM",
   "room": "OB 108",
   "session": "Morning",
   "f2f_sched": "Wed"
@@ -273,6 +292,7 @@
   "block": 2,
   "yearlevel": "1st Year",
   "block code": "BSBA-MM 1-2",
+  "dept": "BSBA-MM",
   "room": "OB 108",
   "session": "Afternoon",
   "f2f_sched": "Wed"
@@ -288,6 +308,7 @@
   "block": 3,
   "yearlevel": "1st Year",
   "block code": "BSBA-MM 1-3",
+  "dept": "BSBA-MM",
   "room": "OB 108",
   "session": "Evening",
   "f2f_sched": "Mon,Tue"
@@ -303,6 +324,7 @@
   "block": 4,
   "yearlevel": "1st Year",
   "block code": "BSBA-MM 1-4",
+  "dept": "BSBA-MM",
   "room": "OB 109",
   "session": "Evening",
   "f2f_sched": "Mon,Tue"
@@ -318,6 +340,7 @@
   "block": 5,
   "yearlevel": "1st Year",
   "block code": "BSBA-MM 1-5",
+  "dept": "BSBA-MM",
   "room": "OB 110",
   "session": "Evening",
   "f2f_sched": "Mon,Tue"
@@ -333,6 +356,7 @@
   "block": 6,
   "yearlevel": "1st Year",
   "block code": "BSBA-MM 1-6",
+  "dept": "BSBA-MM",
   "room": "OB 111",
   "session": "Evening",
   "f2f_sched": "Mon,Tue"
@@ -348,6 +372,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSCRIM 1-1",
+  "dept": "BSCRIM",
   "room": "EB 101",
   "session": "Morning",
   "f2f_sched": "Mon,Tue"
@@ -363,6 +388,7 @@
   "block": 2,
   "yearlevel": "1st Year",
   "block code": "BSCRIM 1-2",
+  "dept": "BSCRIM",
   "room": "EB 101",
   "session": "Afternoon",
   "f2f_sched": "Mon,Tue"
@@ -378,6 +404,7 @@
   "block": 3,
   "yearlevel": "1st Year",
   "block code": "BSCRIM 1-3",
+  "dept": "BSCRIM",
   "room": "EB 102",
   "session": "Morning",
   "f2f_sched": "Mon,Tue"
@@ -393,6 +420,7 @@
   "block": 4,
   "yearlevel": "1st Year",
   "block code": "BSCRIM 1-4",
+  "dept": "BSCRIM",
   "room": "EB 102",
   "session": "Afternoon",
   "f2f_sched": "Mon,Tue"
@@ -408,6 +436,7 @@
   "block": 5,
   "yearlevel": "1st Year",
   "block code": "BSCRIM 1-5",
+  "dept": "BSCRIM",
   "room": "EB 103",
   "session": "Morning",
   "f2f_sched": "Mon,Tue"
@@ -423,6 +452,7 @@
   "block": 6,
   "yearlevel": "1st Year",
   "block code": "BSCRIM 1-6",
+  "dept": "BSCRIM",
   "room": "EB 103",
   "session": "Afternoon",
   "f2f_sched": "Mon,Tue"
@@ -438,6 +468,7 @@
   "block": 9,
   "yearlevel": "2nd Year",
   "block code": "BSCRIM 2-9",
+  "dept": "BSCRIM",
   "room": "NB 201",
   "session": "Morning",
   "f2f_sched": "Mon,Tue"
@@ -453,6 +484,7 @@
   "block": 2,
   "yearlevel": "4th Year",
   "block code": "BSCRIM 4-2",
+  "dept": "BSCRIM",
   "room": "OB 111",
   "session": "Afternoon",
   "f2f_sched": "Mon,Tue"
@@ -467,6 +499,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSED-ENGLISH 1-1",
+  "dept": "BSED-ENGLISH",
   "room": "EB 101",
   "session": "Morning",
   "f2f_sched": "Thu,Fri"
@@ -481,6 +514,7 @@
   "block": 2,
   "yearlevel": "1st Year",
   "block code": "BSED-ENGLISH 1-2",
+  "dept": "BSED-ENGLISH",
   "room": "EB 101",
   "session": "Afternoon",
   "f2f_sched": "Thu,Fri"
@@ -495,6 +529,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSED-MATH 1-1",
+  "dept": "BSED-MATH",
   "room": "NB 104",
   "session": "Morning",
   "f2f_sched": "Thu,Fri"
@@ -510,6 +545,7 @@
   "block": 1,
   "yearlevel": "2nd Year",
   "block code": "BSED-MATH 2-1",
+  "dept": "BSED-MATH",
   "room": "NB 105",
   "session": "Morning",
   "f2f_sched": "Thu,Fri"
@@ -525,6 +561,7 @@
   "block": 1,
   "yearlevel": "2nd Year",
   "block code": "BSED-MATH 2-1",
+  "dept": "BSED-MATH",
   "room": "NB 105",
   "session": "Morning",
   "f2f_sched": "Thu,Fri"
@@ -539,6 +576,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSED-SS 1-1",
+  "dept": "BSED-SS",
   "room": "OB 115",
   "session": "Morning",
   "f2f_sched": "Thu,Fri"
@@ -553,6 +591,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSED-VE 1-1",
+  "dept": "BSED-VE",
   "room": "OB 108",
   "session": "Morning",
   "f2f_sched": "Thu,Fri"
@@ -567,6 +606,7 @@
   "block": 2,
   "yearlevel": "1st Year",
   "block code": "BSED-VE 1-2",
+  "dept": "BSED-VE",
   "room": "OB 108",
   "session": "Afternoon",
   "f2f_sched": "Thu,Fri"
@@ -581,6 +621,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSENTREP 1-1",
+  "dept": "BSENTREP",
   "room": "OB 112",
   "session": "Morning",
   "f2f_sched": "Wed"
@@ -595,6 +636,7 @@
   "block": 2,
   "yearlevel": "1st Year",
   "block code": "BSENTREP 1-2",
+  "dept": "BSENTREP",
   "room": "OB 112",
   "session": "Afternoon",
   "f2f_sched": "Wed"
@@ -609,6 +651,7 @@
   "block": 3,
   "yearlevel": "1st Year",
   "block code": "BSENTREP 1-3",
+  "dept": "BSENTREP",
   "room": "OB 108",
   "session": "Evening",
   "f2f_sched": "Fri"
@@ -624,6 +667,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BSTM 1-1",
+  "dept": "BSTM",
   "room": "OB 114",
   "session": "Morning",
   "f2f_sched": "Mon"
@@ -639,6 +683,7 @@
   "block": 2,
   "yearlevel": "1st Year",
   "block code": "BSTM 1-2",
+  "dept": "BSTM",
   "room": "OB 114",
   "session": "Afternoon",
   "f2f_sched": "Mon"
@@ -654,6 +699,7 @@
   "block": 3,
   "yearlevel": "1st Year",
   "block code": "BSTM 1-3",
+  "dept": "BSTM",
   "room": "OB 112",
   "session": "Evening",
   "f2f_sched": "Fri"
@@ -669,6 +715,7 @@
   "block": 3,
   "yearlevel": "1st Year",
   "block code": "BSTM 1-3",
+  "dept": "BSTM",
   "room": "EB 101",
   "session": "Evening",
   "f2f_sched": "Mon"
@@ -684,6 +731,7 @@
   "block": 4,
   "yearlevel": "1st Year",
   "block code": "BSTM 1-4",
+  "dept": "BSTM",
   "room": "EB 102",
   "session": "Evening",
   "f2f_sched": "Mon"
@@ -699,6 +747,7 @@
   "block": 4,
   "yearlevel": "1st Year",
   "block code": "BSTM 1-4",
+  "dept": "BSTM",
   "room": "OB 113",
   "session": "Evening",
   "f2f_sched": "Fri"
@@ -714,6 +763,7 @@
   "block": 5,
   "yearlevel": "1st Year",
   "block code": "BSTM 1-5",
+  "dept": "BSTM",
   "room": "EB 103",
   "session": "Evening",
   "f2f_sched": "Mon"
@@ -729,6 +779,7 @@
   "block": 5,
   "yearlevel": "1st Year",
   "block code": "BSTM 1-5",
+  "dept": "BSTM",
   "room": "OB 114",
   "session": "Evening",
   "f2f_sched": "Fri"
@@ -743,6 +794,7 @@
   "block": 1,
   "yearlevel": "1st Year",
   "block code": "BTLED-HE 1-1",
+  "dept": "BTLED-HE",
   "room": "OB 112",
   "session": "Morning",
   "f2f_sched": "Thu,Fri"
@@ -757,6 +809,7 @@
   "block": 2,
   "yearlevel": "1st Year",
   "block code": "BTLED-HE 1-2",
+  "dept": "BTLED-HE",
   "room": "OB 112",
   "session": "Afternoon",
   "f2f_sched": "Thu,Fri"
@@ -24565,4 +24618,50 @@
   "session": "Evening",
   "f2f_sched": "Tue,Fri"
  }
+],
+"Sheet1":[
+ {
+  "programcode": "BSAB",
+  "Column2": "Thu"
+ },
+ {
+  "programcode": "BSBA-FM",
+  "Column2": "Wed"
+ },
+ {
+  "programcode": "BSBA-HRM",
+  "Column2": "Wed"
+ },
+ {
+  "programcode": "BSBA-MM",
+  "Column2": "Wed"
+ },
+ {
+  "programcode": "BSCRIM",
+  "Column2": "Tue"
+ },
+ {
+  "programcode": "BSED-ENGLISH"
+ },
+ {
+  "programcode": "BSED-MATH"
+ },
+ {
+  "programcode": "BSED-SS"
+ },
+ {
+  "programcode": "BSED-VE"
+ },
+ {
+  "programcode": "BSENTREP",
+  "Column2": "Wed"
+ },
+ {
+  "programcode": "BSTM",
+  "Column2": "Tue"
+ },
+ {
+  "programcode": "BTLED-HE"
+ }
 ]
+}

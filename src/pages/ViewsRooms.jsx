@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import { Box, Heading, SimpleGrid, useColorModeValue, IconButton, Tooltip, Input, Tabs, TabList, TabPanels, Tab, TabPanel, HStack, Text, VStack, Button } from '@chakra-ui/react';
 import { useData } from '../context/DataContext';
 import { Link as RouterLink } from 'react-router-dom';
 import { FiChevronRight, FiPrinter } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import MiniBarChart from '../components/MiniBarChart';
+import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 
 export default function ViewsRooms() {
   const { allCourses } = useData();
@@ -14,7 +15,7 @@ export default function ViewsRooms() {
   const [q, setQ] = useState('');
 
   const groups = useMemo(() => {
-    const DAYS = ['Mon','Tue','Wed','Thu','Fri'];
+    const DAYS = DAY_CODES;
     const res = [];
     // Mon-Fri tabs
     for (const day of DAYS) {
@@ -22,7 +23,7 @@ export default function ViewsRooms() {
       allCourses.forEach(c => {
         const hasDay = Array.isArray(c.f2fDays) ? c.f2fDays.includes(day) : false;
         if (!hasDay) return;
-        const room = c.room || '—';
+        const room = c.room || 'â€”';
         const e = m.get(room) || { room, timeSet: new Map(), uniqueCount: 0, minTerm: 9, minStart: Infinity };
         const label = c.schedule || '';
         if (label) {
@@ -52,7 +53,7 @@ export default function ViewsRooms() {
       const f2f = Array.isArray(c.f2fDays) ? c.f2fDays : [];
       const hasWeekday = f2f.some(d => weekdaySet.has(d));
       if (hasWeekday) return;
-      const room = c.room || '—';
+      const room = c.room || 'â€”';
       const e = unschedMap.get(room) || { room, timeSet: new Map(), uniqueCount: 0, minTerm: 9, minStart: Infinity };
       const label = c.schedule || '';
       const start = Number.isFinite(c.timeStartMinutes) ? c.timeStartMinutes : 1e9;
@@ -90,9 +91,11 @@ export default function ViewsRooms() {
     const headers = ['Room', 'Time Slots'];
     const rows = dayGroup.rows.map(r => [r.room, String(r.uniqueCount)]);
     const table = buildTable(headers, rows);
-    printContent({ title: `Rooms • ${dayGroup.day}`, subtitle: 'Unique F2F Time Slots per Room', bodyHtml: table });
+    const weekDays = getCurrentWeekDays();
+    const labelByCode = Object.fromEntries(weekDays.map(d => [d.code, d.label]));
+    const label = labelByCode[dayGroup.day] || dayGroup.day;
+    printContent({ title: `Rooms — ${label}`, subtitle: 'Unique F2F Time Slots per Room', bodyHtml: table });
   }
-
   function roomAccent(room) {
     const r = String(room || '').toUpperCase();
     if (r.startsWith('OB')) return 'green.500';
@@ -104,16 +107,19 @@ export default function ViewsRooms() {
     return 'brand.500';
   }
 
+  const weekDays = useMemo(() => getCurrentWeekDays(), []);
+  const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
+
   return (
     <Box>
       <HStack justify="space-between" mb={4}>
         <Heading size="md">Loads by Room (F2F, Mon–Fri)</Heading>
-        <Input placeholder="Filter room…" value={q} onChange={e=>setQ(e.target.value)} maxW="280px" />
+        <Input placeholder="Filter rooms…" value={q} onChange={e=>setQ(e.target.value)} maxW="280px" />
       </HStack>
       <Tabs variant="enclosed-colored" colorScheme="brand">
         <TabList>
           {filteredGroups.map(g => (
-            <Tab key={g.day} isDisabled={g.rows.length === 0}>{g.day} {g.count ? `(${g.count})` : ''}</Tab>
+            <Tab key={g.day} isDisabled={g.rows.length === 0}>{labelByCode[g.day] || g.day} {g.count ? `(${g.count})` : ''}</Tab>
           ))}
         </TabList>
         <TabPanels>
@@ -160,7 +166,7 @@ export default function ViewsRooms() {
                       <VStack align="start" spacing={3}>
                         <HStack justify="space-between" w="full">
                           <Text fontWeight="800">{r.room}</Text>
-                          <Tooltip label={`View schedule (${g.day})`}>
+                          <Tooltip label={`View schedule (${labelByCode[g.day] || g.day})`}>
                             <IconButton as={RouterLink} to={`/views/rooms/${encodeURIComponent(r.room)}?day=${encodeURIComponent(g.day)}`} aria-label="View" icon={<FiChevronRight />} size="sm" variant="ghost" onClick={(e)=>e.stopPropagation()} />
                           </Tooltip>
                         </HStack>

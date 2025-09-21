@@ -54,7 +54,10 @@ export default function FacultyDetail() {
             </VStack>
           </Box>
         </HStack>
-        <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
+        <HStack>
+          <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
+          <Button as={RouterLink} to="/" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />} w="fit-content">Back</Button>
+        </HStack>
       </HStack>
 
       <Box borderWidth="1px" borderColor={border} rounded="xl" p={4} bg={useColorModeValue('white','gray.800')}>
@@ -101,8 +104,7 @@ export default function FacultyDetail() {
         </Table>
       </Box>
 
-      <Divider />
-      <Button as={RouterLink} to="/" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />}>Back</Button>
+      
     </VStack>
   );
 }
