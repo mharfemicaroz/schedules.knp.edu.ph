@@ -15,7 +15,7 @@ if (fs.existsSync(localEnv)) {
 } else {
   dotenv.config();
 }
-import { checkIpExists, upsertVisitor, touchByIp } from "./googleSheets.js";
+import { checkIpExists, upsertVisitor, touchByIp, authInfo } from "./googleSheets.js";
 
 dotenv.config();
 
@@ -77,3 +77,56 @@ app.post("/visitor", async (req, res) => {
 
 const port = process.env.PORT || 8787;
 app.listen(port, () => console.log(`[sheets-api] listening on :${port}`));
+
+
+// Debug auth info
+app.get("/debug/auth", async (req, res) => {
+  try {
+    const info = await authInfo();
+    res.json({ ok: true, ...info });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'auth_error' });
+  }
+});
+
+// Aliases with /api prefix for compatibility
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, spreadsheetId: !!spreadsheetId, sheetName });
+});
+
+app.get('/api/visitor', async (req, res) => {
+  try {
+    const ip = (req.query.ip || '').toString();
+    if (!spreadsheetId) return res.status(500).json({ ok: false, error: 'Missing spreadsheetId' });
+    const { exists } = await checkIpExists({ spreadsheetId, sheetName, ip });
+    res.json({ exists });
+  } catch (e) {
+    console.error('GET /api/visitor error', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+app.post('/api/visitor', async (req, res) => {
+  try {
+    if (!spreadsheetId) return res.status(500).json({ ok: false, error: 'Missing spreadsheetId' });
+    const { name = '', role = '', ip = '', action = '' } = req.body || {};
+    if (action === 'touch') {
+      const out = await touchByIp({ spreadsheetId, sheetName, ip });
+      return res.json({ ok: true, ...out });
+    }
+    const out = await upsertVisitor({ spreadsheetId, sheetName, name, role, ip });
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    console.error('POST /api/visitor error', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+app.get('/api/debug/auth', async (req, res) => {
+  try {
+    const info = await authInfo();
+    res.json({ ok: true, ...info });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'auth_error' });
+  }
+});
