@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
   Box,
   Heading,
@@ -227,27 +227,88 @@ function TermCard({ title, start, end, activities }) {
 
 export default function AcademicCalendar() {
   const [data, setData] = useState(null);
+  const [holidays, setHolidays] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState(0);
+  const calendarRef = useRef(null);
+  const [calendarKey, setCalendarKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
-    fetch('/acadcalendar.json')
-      .then((r) => r.json())
-      .then((json) => {
+
+    // Load both academic calendar and holidays data
+    const loadData = async () => {
+      try {
+        const [acadResponse, holidaysResponse] = await Promise.all([
+          fetch('/acadcalendar.json'),
+          fetch('/holidays.json')
+        ]);
+
         if (!mounted) return;
-        setData(json);
+
+        const [acadJson, holidaysJson] = await Promise.all([
+          acadResponse.json(),
+          holidaysResponse.json()
+        ]);
+
+        setData(acadJson);
+        setHolidays(holidaysJson.philippines_holidays_2025 || []);
         setLoading(false);
-      })
-      .catch((e) => {
+      } catch (e) {
         if (!mounted) return;
         setError(e);
         setLoading(false);
-      });
+      }
+    };
+
+    loadData();
+
     return () => {
       mounted = false;
     };
   }, []);
+
+  // Force calendar to re-render and update size when tab changes
+  const handleTabChange = useCallback((index) => {
+    setActiveTab(index);
+    if (index === 1) {
+      // Force calendar to re-render with new key
+      setCalendarKey(prev => prev + 1);
+    }
+  }, []);
+
+  // Update calendar size when tab becomes active
+  useEffect(() => {
+    if (activeTab === 1) {
+      const updateSize = () => {
+        if (calendarRef.current) {
+          const calendarApi = calendarRef.current.getApi();
+          calendarApi.updateSize();
+        }
+      };
+
+      // Use requestAnimationFrame for better timing
+      const timer = setTimeout(() => {
+        requestAnimationFrame(updateSize);
+      }, 50);
+
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, calendarKey]);
+
+  // Also listen for window resize to update calendar size
+  useEffect(() => {
+    const handleResize = () => {
+      if (calendarRef.current && activeTab === 1) {
+        const calendarApi = calendarRef.current.getApi();
+        calendarApi.updateSize();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [activeTab]);
 
   const subtle = useColorModeValue('gray.600', 'gray.400');
   const cal = (data && Array.isArray(data) ? data[0]?.academic_calendar : null) || {};
@@ -298,6 +359,68 @@ export default function AcademicCalendar() {
     return 'brand.400';
   }
 
+  // Generate itemized weeks for calendar view
+  const generateItemizedWeeks = useMemo(() => {
+    const weeks = [];
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    function enumerateWeeks(rangeStart, rangeEnd, startIndex, term) {
+      const items = [];
+      if (!(rangeStart && rangeEnd) || rangeEnd < rangeStart) return items;
+      let idx = startIndex;
+      let cur = new Date(rangeStart);
+      cur.setHours(0, 0, 0, 0);
+      const endLim = new Date(rangeEnd);
+      endLim.setHours(0, 0, 0, 0);
+      while (cur <= endLim) {
+        const wd = cur.getDay();
+        const daysToSun = (7 - wd) % 7;
+        let wkEnd = new Date(cur.getTime() + daysToSun * dayMs);
+        if (wkEnd > endLim) wkEnd = endLim;
+        items.push({
+          title: `📅 ${term} - Week ${idx}`,
+          start: new Date(cur),
+          end: new Date(wkEnd.getTime() + dayMs),
+          allDay: true,
+          display: 'block',
+          backgroundColor: 'var(--chakra-colors-teal-400)',
+          borderColor: 'var(--chakra-colors-teal-400)',
+          classNames: ['fc-event--week'],
+          extendedProps: {
+            isWeek: true,
+            weekNumber: idx,
+            term: term
+          }
+        });
+        idx += 1;
+        cur = new Date(wkEnd.getTime() + dayMs);
+      }
+      return { items, nextIndex: idx };
+    }
+
+    const firstStart = parseDate(firstTerm.start);
+    const firstEnd = parseDate(firstTerm.end);
+    const secondStart = parseDate(secondTerm.start);
+    const secondEnd = parseDate(secondTerm.end);
+
+    let weekIndex = 1;
+
+    // Generate weeks for First Term
+    if (firstStart && firstEnd) {
+      const { items, nextIndex } = enumerateWeeks(firstStart, firstEnd, weekIndex, 'First Term');
+      weeks.push(...items);
+      weekIndex = nextIndex;
+    }
+
+    // Generate weeks for Second Term
+    if (secondStart && secondEnd) {
+      const { items } = enumerateWeeks(secondStart, secondEnd, weekIndex, 'Second Term');
+      weeks.push(...items);
+    }
+
+    return weeks;
+  }, [firstTerm, secondTerm]);
+
   const fcEvents = useMemo(() => {
     const events = [];
     const buckets = [
@@ -305,6 +428,7 @@ export default function AcademicCalendar() {
       { term: 'Second Term', obj: secondTerm },
     ];
     const dayMs = 24 * 60 * 60 * 1000;
+
     function pushSpan(title, term, startDate, endDateInclusive) {
       const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
       const end = new Date(
@@ -329,6 +453,7 @@ export default function AcademicCalendar() {
         classNames: classes,
       });
     }
+
     buckets.forEach(({ term, obj }) => {
       const list = obj.activities || [];
       list.forEach((a) => {
@@ -355,8 +480,42 @@ export default function AcademicCalendar() {
         }
       });
     });
+
+    // Add itemized weeks to calendar events
+    events.push(...generateItemizedWeeks);
+
+    // Add holidays to calendar events
+    if (holidays && Array.isArray(holidays)) {
+      holidays.forEach((holiday) => {
+        const holidayDate = parseDate(holiday.date);
+        if (holidayDate) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const status = holidayDate < today ? 'past' : (holidayDate.getTime() === today.getTime() ? 'current' : 'upcoming');
+          const isRegularHoliday = holiday.type && holiday.type.toLowerCase().includes('regular');
+          const bgColor = status === 'past' ? 'gray.400' :
+                         isRegularHoliday ? 'red.400' : 'orange.400';
+
+          events.push({
+            title: `🏖️ ${holiday.name}`,
+            start: holidayDate,
+            end: new Date(holidayDate.getTime() + dayMs), // Make it span the day
+            allDay: true,
+            display: 'block',
+            backgroundColor: `var(--chakra-colors-${bgColor.replace('.', '-')})`,
+            borderColor: `var(--chakra-colors-${bgColor.replace('.', '-')})`,
+            classNames: ['fc-event--holiday', status === 'past' ? 'fc-event--past' : '', status === 'current' ? 'fc-event--current' : ''].filter(Boolean),
+            extendedProps: {
+              isHoliday: true,
+              holidayType: holiday.type
+            }
+          });
+        }
+      });
+    }
+
     return events;
-  }, [firstTerm, secondTerm]);
+  }, [firstTerm, secondTerm, holidays, generateItemizedWeeks]);
 
   if (loading)
     return (
@@ -379,14 +538,21 @@ export default function AcademicCalendar() {
     <Box>
       <HStack justify="space-between" mb={4}>
         <Heading size="md">Academic Calendar</Heading>
-        {sy && (
-          <Badge colorScheme="brand" fontSize="0.9em">
-            SY {sy}
-          </Badge>
-        )}
+        <HStack spacing={2}>
+          {sy && (
+            <Badge colorScheme="brand" fontSize="0.9em">
+              SY {sy}
+            </Badge>
+          )}
+          {holidays && holidays.length > 0 && (
+            <Badge colorScheme="red" variant="subtle" fontSize="0.9em">
+              {holidays.length} Holidays
+            </Badge>
+          )}
+        </HStack>
       </HStack>
 
-      <Tabs variant="enclosed-colored" colorScheme="brand">
+      <Tabs variant="enclosed-colored" colorScheme="brand" index={activeTab} onChange={handleTabChange}>
         <TabList>
           <Tab>List</Tab>
           <Tab>Calendar</Tab>
@@ -414,18 +580,38 @@ export default function AcademicCalendar() {
           </TabPanel>
 
           <TabPanel px={0}>
-            <Box borderWidth="1px" borderColor={cardBorder} rounded="xl" overflow="hidden" bg={cardBg}>
+            <Box
+              borderWidth="1px"
+              borderColor={cardBorder}
+              rounded="xl"
+              overflow="hidden"
+              bg={cardBg}
+              minHeight="700px"
+              position="relative"
+            >
               <FullCalendar
+                key={calendarKey}
+                ref={calendarRef}
                 plugins={[dayGridPlugin, interactionPlugin]}
                 initialView="dayGridMonth"
-                height="auto"
+                height="100%"
                 expandRows={true}
                 headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
                 weekNumbers={false}
-                dayMaxEvents={3}
+                dayMaxEvents={4}
                 fixedWeekCount={false}
                 events={fcEvents}
                 eventTextColor={eventText}
+                contentHeight="auto"
+                eventDisplay="block"
+                displayEventTime={false}
+                eventMouseEnter={(info) => {
+                  if (info.event.extendedProps.isHoliday) {
+                    info.el.title = `${info.event.title.replace('🏖️ ', '')} - ${info.event.extendedProps.holidayType}`;
+                  } else if (info.event.extendedProps.isWeek) {
+                    info.el.title = `${info.event.title.replace('📅 ', '')} - Week ${info.event.extendedProps.weekNumber}`;
+                  }
+                }}
               />
             </Box>
           </TabPanel>

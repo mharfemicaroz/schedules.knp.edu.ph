@@ -10,6 +10,8 @@ export function DataProvider({ children }) {
   const [data, setData] = useState({ faculties: [], meta: {} });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [acadData, setAcadData] = useState(null);
+  const [holidays, setHolidays] = useState(null);
 
   // UI state
   const [query, setQuery] = useState('');
@@ -37,6 +39,41 @@ export function DataProvider({ children }) {
     }
     load();
   }, [toast]);
+
+  // Load academic calendar (used for exam period auto-detection)
+  useEffect(() => {
+    let mounted = true;
+    async function loadAcad() {
+      try {
+        const res = await fetch('/acadcalendar.json', { cache: 'no-store' });
+        if (!res.ok) return; // non-fatal if missing
+        const json = await res.json();
+        if (mounted) setAcadData(json);
+      } catch (e) {
+        // non-fatal; keep silent to avoid noisy toasts
+        console.warn('Failed to load acadcalendar.json', e);
+      }
+    }
+    loadAcad();
+    return () => { mounted = false; };
+  }, []);
+
+  // Load holidays (global)
+  useEffect(() => {
+    let mounted = true;
+    async function loadHolidays() {
+      try {
+        const res = await fetch('/holidays.json', { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (mounted) setHolidays(json.philippines_holidays_2025 || []);
+      } catch (e) {
+        console.warn('Failed to load holidays.json', e);
+      }
+    }
+    loadHolidays();
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     setPage(1); // reset page when filters/search change
@@ -100,6 +137,8 @@ export function DataProvider({ children }) {
     data,
     loading,
     error,
+    acadData,
+    holidays,
     faculties: filtered,
     page,
     pageSize,

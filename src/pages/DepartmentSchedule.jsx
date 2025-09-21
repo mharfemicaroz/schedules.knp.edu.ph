@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, Link as RouterLink } from 'react-router-dom';
-import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, VStack, Text, HStack } from '@chakra-ui/react';
+import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, VStack, Text, HStack, Switch, FormControl, FormLabel } from '@chakra-ui/react';
 import { FiPrinter, FiArrowLeft } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import { useData } from '../context/DataContext';
+import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
 
 function yearOrder(y) {
   const s = String(y || '').toLowerCase();
@@ -18,7 +19,8 @@ function yearOrder(y) {
 export default function DepartmentSchedule() {
   const { dept: deptParam } = useParams();
   const dept = decodeURIComponent(deptParam || '');
-  const { allCourses, loading } = useData();
+  const { allCourses, loading, acadData } = useData();
+  const [viewMode, setViewMode] = useLocalStorage('departmentScheduleViewMode', getInitialToggleState(acadData, 'departmentScheduleViewMode', 'regular'));
   const border = useColorModeValue('gray.200','gray.700');
   const tableBg = useColorModeValue('white','gray.800');
 
@@ -58,24 +60,46 @@ export default function DepartmentSchedule() {
   }, [allCourses, dept]);
 
   function onPrint() {
-    const headers = ['Year Level', 'Block', 'Term', 'Time', 'Code', 'Title', 'Units', 'Room', 'Faculty'];
+    const headers = viewMode === 'examination'
+      ? ['Year Level', 'Block', 'Term', 'Time', 'Code', 'Title', 'Units', 'Room', 'Faculty', 'Exam Day', 'Exam Session', 'Exam Room']
+      : ['Year Level', 'Block', 'Term', 'Time', 'Code', 'Title', 'Units', 'Room', 'Faculty'];
     const rows = [];
     groups.forEach(g => {
       g.blocks.forEach(b => {
         b.items.forEach(c => {
-          rows.push([g.yl, b.block, c.semester, c.schedule || '—', c.code, c.title, String(c.units ?? c.hours ?? ''), c.room || '—', c.facultyName]);
+          if (viewMode === 'examination') {
+            rows.push([g.yl, b.block, c.semester, c.schedule || '—', c.code, c.title, String(c.units ?? c.hours ?? ''), c.room || '—', c.facultyName, c.examDay || '—', c.examSession || '—', c.examRoom || '—']);
+          } else {
+            rows.push([g.yl, b.block, c.semester, c.schedule || '—', c.code, c.title, String(c.units ?? c.hours ?? ''), c.room || '—', c.facultyName]);
+          }
         });
       });
     });
     const table = buildTable(headers, rows);
-    printContent({ title: `Program: ${dept}`, subtitle: 'Year • Block • Term • Time', bodyHtml: table });
+    const scheduleType = viewMode === 'examination' ? 'Examination Schedule' : 'Regular Schedule';
+    printContent({ title: `Program: ${dept}`, subtitle: `Year • Block • Term • Time - ${scheduleType}`, bodyHtml: table });
   }
 
   return (
     <VStack align="stretch" spacing={6}>
-      <HStack justify="space-between" align="center">
+      <HStack justify="space-between" align="center" flexWrap="wrap" gap={3}>
         <Heading size="md">Program: {dept}</Heading>
-        <HStack>
+        <HStack spacing={4}>
+          <FormControl display="flex" alignItems="center" w="auto">
+            <FormLabel htmlFor="schedule-mode" mb="0" fontSize="sm" fontWeight="medium">
+              Regular F2F
+            </FormLabel>
+            <Switch
+              id="schedule-mode"
+              colorScheme="blue"
+              size="lg"
+              isChecked={viewMode === 'examination'}
+              onChange={(e) => setViewMode(e.target.checked ? 'examination' : 'regular')}
+            />
+            <FormLabel htmlFor="schedule-mode" mb="0" fontSize="sm" fontWeight="medium" ml={2}>
+              Examination
+            </FormLabel>
+          </FormControl>
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
           <Button as={RouterLink} to="/views/departments" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />} w="fit-content">Back</Button>
         </HStack>
@@ -98,6 +122,13 @@ export default function DepartmentSchedule() {
                       <Th>Units</Th>
                       <Th>Room</Th>
                       <Th>Faculty</Th>
+                      {viewMode === 'examination' && (
+                        <>
+                          <Th>Exam Day</Th>
+                          <Th>Exam Session</Th>
+                          <Th>Exam Room</Th>
+                        </>
+                      )}
                     </Tr>
                   </Thead>
                   <Tbody>
@@ -110,6 +141,13 @@ export default function DepartmentSchedule() {
                         <Td>{c.units ?? c.hours ?? '—'}</Td>
                         <Td>{c.room || '—'}</Td>
                         <Td>{c.facultyName}</Td>
+                        {viewMode === 'examination' && (
+                          <>
+                            <Td>{c.examDay || '—'}</Td>
+                            <Td>{c.examSession || '—'}</Td>
+                            <Td>{c.examRoom || '—'}</Td>
+                          </>
+                        )}
                       </Tr>
                     ))}
                   </Tbody>

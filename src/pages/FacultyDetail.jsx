@@ -1,14 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams, Link as RouterLink } from 'react-router-dom';
-import { Box, Heading, HStack, Avatar, Text, Badge, VStack, Divider, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button } from '@chakra-ui/react';
+import { Box, Heading, HStack, Avatar, Text, Badge, VStack, Divider, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, Switch, FormControl, FormLabel } from '@chakra-ui/react';
 import { FiPrinter, FiArrowLeft } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import { useData } from '../context/DataContext';
 import LoadingState from '../components/LoadingState';
+import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
 
 export default function FacultyDetail() {
   const { id } = useParams();
-  const { faculties, loading } = useData();
+  const { faculties, loading, acadData } = useData();
+  const [viewMode, setViewMode] = useLocalStorage('facultyDetailViewMode', getInitialToggleState(acadData, 'facultyDetailViewMode', 'regular'));
   if (loading) return <LoadingState label="Loading faculty…" />;
   const f = faculties.find(x => String(x.id) === String(id));
   const border = useColorModeValue('gray.200','gray.700');
@@ -22,16 +24,53 @@ export default function FacultyDetail() {
     );
   }
 
+  // Helper functions for mode switching
+  const getTableHeaders = () => {
+    if (viewMode === 'examination') {
+      return ['Code', 'Title', 'Section', 'Units', 'Term', 'Time', 'Exam Day', 'Exam Session', 'Exam Room'];
+    }
+    return ['Code', 'Title', 'Section', 'Units', 'Day', 'Time', 'Term', 'Room', 'Session', 'F2F'];
+  };
+
+  const getCourseData = (course) => {
+    if (viewMode === 'examination') {
+      return [
+        course.code || '—',
+        course.title || '—',
+        course.section || '—',
+        String(course.units ?? course.hours ?? '—'),
+        [course.semester, course.year].filter(Boolean).join(' ') || '—',
+        course.schedule || '—',
+        course.examDay || '—',
+        course.examSession || '—',
+        course.examRoom || '—'
+      ];
+    }
+    return [
+      course.code || '—',
+      course.title || '—',
+      course.section || '—',
+      String(course.units ?? course.hours ?? '—'),
+      course.day || '—',
+      course.schedule || '—',
+      [course.semester, course.year].filter(Boolean).join(' ') || '—',
+      course.room || '—',
+      course.session || '—',
+      course.f2f || '—'
+    ];
+  };
+
   function onPrint() {
-    const headers = ['Code', 'Title', 'Section', 'Units', 'Day', 'Time', 'Term', 'Room'];
-    const rows = (f.courses || []).map(c => [c.code, c.title, c.section, String(c.units ?? c.hours ?? ''), c.day || '—', c.schedule || '—', c.semester, c.room || '—']);
+    const headers = getTableHeaders();
+    const rows = (f.courses || []).map(c => getCourseData(c));
     const table = buildTable(headers, rows);
-    const esc = (val) => String(val ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');
+    const esc = (val) => String(val ?? '').replace(/&/g,'&amp;').replace(/</g,'<').replace(/>/g,'>').replace(/\"/g,'"').replace(/'/g,'&#039;');
     const metaHtml = `
       <table class="prt-table"><tbody>
         <tr><th>Department</th><td>${esc(f.department || '')}</td><th>Employment</th><td>${esc(f.employment || '')}</td></tr>
         <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
         <tr><th>Load Release Units</th><td>${esc(String(f.loadReleaseUnits ?? 0))}</td><th>Total Load Units</th><td>${esc(String(f.stats?.loadHours ?? 0))}</td></tr>
+        <tr><th>Schedule Type</th><td colspan="3">${esc(viewMode === 'examination' ? 'Examination Schedule' : 'Regular Schedule')}</td></tr>
       </tbody></table>`;
     printContent({ title: `Faculty: ${f.name}`, subtitle: f.email || '', bodyHtml: metaHtml + table });
   }
@@ -54,7 +93,22 @@ export default function FacultyDetail() {
             </VStack>
           </Box>
         </HStack>
-        <HStack>
+        <HStack spacing={4}>
+          <FormControl display="flex" alignItems="center" w="auto">
+            <FormLabel htmlFor="schedule-mode" mb="0" fontSize="sm" fontWeight="medium">
+              Regular F2F
+            </FormLabel>
+            <Switch
+              id="schedule-mode"
+              colorScheme="blue"
+              size="lg"
+              isChecked={viewMode === 'examination'}
+              onChange={(e) => setViewMode(e.target.checked ? 'examination' : 'regular')}
+            />
+            <FormLabel htmlFor="schedule-mode" mb="0" fontSize="sm" fontWeight="medium" ml={2}>
+              Examination
+            </FormLabel>
+          </FormControl>
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
           <Button as={RouterLink} to="/" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />} w="fit-content">Back</Button>
         </HStack>
@@ -73,38 +127,33 @@ export default function FacultyDetail() {
         <Table size={{ base: 'sm', md: 'md' }}>
           <Thead>
             <Tr>
-              <Th>Code</Th>
-              <Th>Title</Th>
-              <Th>Section</Th>
-              <Th>Units</Th>
-              <Th>Day</Th>
-              <Th>Time</Th>
-              <Th>Term</Th>
-              <Th>Room</Th>
-              <Th>Session</Th>
-              <Th>F2F</Th>
+              {getTableHeaders().map((header, index) => (
+                <Th key={index}>{header}</Th>
+              ))}
             </Tr>
           </Thead>
           <Tbody>
-            {(f.courses || []).map(c => (
-              <Tr key={c.id}>
-                <Td>{c.code}</Td>
-                <Td maxW="380px"><Text noOfLines={1}>{c.title}</Text></Td>
-                <Td>{c.section}</Td>
-                <Td>{c.units ?? c.hours ?? '—'}</Td>
-                <Td>{c.day || '—'}</Td>
-                <Td>{c.schedule || '—'}</Td>
-                <Td>{[c.semester, c.year].filter(Boolean).join(' ')}</Td>
-                <Td>{c.room || '—'}</Td>
-                <Td>{c.session || '—'}</Td>
-                <Td>{c.f2f || '—'}</Td>
-              </Tr>
-            ))}
+            {(f.courses || []).map(c => {
+              const courseData = getCourseData(c);
+              return (
+                <Tr key={c.id}>
+                  {courseData.map((data, index) => (
+                    <Td key={index}>
+                      {index === 1 ? (
+                        <Text maxW="380px" noOfLines={1}>{data}</Text>
+                      ) : (
+                        data
+                      )}
+                    </Td>
+                  ))}
+                </Tr>
+              );
+            })}
           </Tbody>
         </Table>
       </Box>
 
-      
+
     </VStack>
   );
 }
@@ -117,4 +166,3 @@ function Stat({ label, value }) {
     </Box>
   );
 }
-

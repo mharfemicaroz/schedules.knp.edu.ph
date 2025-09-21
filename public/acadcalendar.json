@@ -14,23 +14,29 @@
                         {
                             "event": "Preliminary Examination",
                             "date": [
-                                "August 26, 2025",
+                                "August 25, 2025",
                                 "August 27, 2025",
-                                "August 28, 2025"
+                                "August 29, 2025"
                             ]
                         },
                         {
                             "event": "Midterm Examination",
                             "date": [
-                                "September 16, 2025",
+                                "September 15, 2025",
                                 "September 17, 2025",
-                                "September 18, 2025"
+                                "September 19, 2025"
                             ]
+                        },
+                        {
+                            "event": "LGU Pantukan - Civil Service Month Opening",
+                            "date": "September 22, 2025",
+                            "type": "external",
+                            "mode": "assynchronous"
                         },
                         {
                             "event": "Final Examination",
                             "date": [
-                                "October 7, 2025",
+                                "October 6, 2025",
                                 "October 8, 2025",
                                 "October 10, 2025"
                             ]
@@ -52,23 +58,23 @@
                         {
                             "event": "Preliminary Examination",
                             "date": [
-                                "November 4, 2025",
+                                "November 3, 2025",
                                 "November 5, 2025",
-                                "November 6, 2025"
+                                "November 7, 2025"
                             ]
                         },
                         {
                             "event": "Midterm Examination",
                             "date": [
-                                "November 25, 2025",
+                                "November 24, 2025",
                                 "November 26, 2025",
-                                "November 27, 2025"
+                                "November 28, 2025"
                             ]
                         },
                         {
                             "event": "Final Examination",
                             "date": [
-                                "December 16, 2025",
+                                "December 15, 2025",
                                 "December 17, 2025",
                                 "December 19, 2025"
                             ]

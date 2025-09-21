@@ -7,7 +7,8 @@ import { buildTable, printContent } from '../utils/printDesign';
 import MiniBarChart from '../components/MiniBarChart';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 import { FiPrinter } from 'react-icons/fi';
-import { useLocalStorage, getInitialToggleState, getExamDateSet } from '../utils/scheduleUtils';
+import { useLocalStorage, getInitialToggleState, getExamDateSet, findDayAnnotations } from '../utils/scheduleUtils';
+import { FiCalendar, FiInfo, FiAlertTriangle } from 'react-icons/fi';
 
 const SESSIONS = ['Morning','Afternoon','Evening'];
 
@@ -81,7 +82,7 @@ function roomAccent(room) {
 }
 
 export default function VisualMap() {
-  const { allCourses, acadData } = useData();
+  const { allCourses, acadData, holidays } = useData();
   const [q, setQ] = useState('');
   const [viewMode, setViewMode] = useLocalStorage('visualMapViewMode', getInitialToggleState(acadData, 'visualMapViewMode', 'regular'));
   const border = useColorModeValue('gray.200','gray.700');
@@ -90,6 +91,15 @@ export default function VisualMap() {
 
   const weekDays = useMemo(() => getCurrentWeekDays(), []);
   const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
+  const dateByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.date])), [weekDays]);
+  const dayInfoByCode = useMemo(() => {
+    const m = new Map();
+    DAY_CODES.forEach(code => {
+      const info = findDayAnnotations(acadData, holidays, dateByCode[code]);
+      m.set(code, info);
+    });
+    return m;
+  }, [acadData, holidays, dateByCode]);
 
   // Compute which specific days in this week are exam dates
   const autoExamDays = useMemo(() => {
@@ -225,6 +235,10 @@ export default function VisualMap() {
             <Tab key={t.day}>
               <HStack spacing={2}>
                 <Text>{labelByCode[t.day] || t.day}</Text>
+                {dayInfoByCode.get(t.day)?.holiday && (
+                  <Badge size="sm" colorScheme="red" variant="subtle">Holiday</Badge>
+                )}
+                {(() => { const mode = dayInfoByCode.get(t.day)?.mode; return mode==='no_class' ? <Badge size="sm" colorScheme="red" variant="outline">No Class</Badge> : mode==='asynchronous' ? <Badge size="sm" colorScheme="purple" variant="subtle">Async</Badge> : null; })()}
                 {(t.hasExamData && (autoExamDays.has(t.day) || viewMode === 'examination')) && (
                   <Badge size="sm" colorScheme="green" variant="subtle">Exam</Badge>
                 )}
@@ -238,7 +252,50 @@ export default function VisualMap() {
               <HStack justify="flex-end" mb={2}>
                 <Button leftIcon={<FiPrinter />} onClick={() => onPrint(t)} variant="outline" size="sm">Print</Button>
               </HStack>
+              {(() => {
+                const ann = (dayInfoByCode && dayInfoByCode.get(t.day)) || {};
+                const blocks = [];
+                if (ann.holiday) {
+                  blocks.push(
+                    <Box key="holiday" bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" p={3} mb={3}>
+                      <HStack spacing={3}>
+                        <Box as={FiCalendar} color="red.400" />
+                        <VStack align="start" spacing={0}>
+                          <Text fontWeight="700">{ann.holiday.name}</Text>
+                          <Text fontSize="xs" color={subtle}>{ann.holiday.type}</Text>
+                        </VStack>
+                      </HStack>
+                    </Box>
+                  );
+                }
+                if ((ann.events || []).length) {
+                  blocks.push(
+                    <Box key="events" bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" p={3} mb={3}>
+                      <HStack spacing={3} align="start">
+                        <Box as={FiInfo} color="blue.400" mt={1} />
+                        <VStack align="start" spacing={1}>
+                          {ann.events.map((ev, idx) => (
+                            <HStack key={idx} spacing={2}>
+                              {(() => { const raw = String(ev.mode || ev.assynchronous || ev.type || '').toLowerCase(); return /no\s*class|noclass/.test(raw) ? <Badge colorScheme=\"red\" variant=\"outline\">No Class</Badge> : /async|assync|asynchronous/.test(raw) ? <Badge colorScheme=\"purple\" variant=\"subtle\">Async</Badge> : null; })()}
+                              <Text>{String(ev.event || '').replace(/\\\\/g,'')}</Text>
+                            </HStack>
+                          ))}
+                        </VStack>
+                      </HStack>
+                    </Box>
+                  );
+                }
+                return blocks;
+              })()}
 
+              {dayInfoByCode && dayInfoByCode.get(t.day)?.mode === 'no_class' ? (
+                <Box p={6} bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" textAlign="center" mb={4}>
+                  <HStack justify="center" mb={2}><Box as={FiAlertTriangle} color="red.400" /><Heading size="sm">No Classes</Heading></HStack>
+                  <Text color={subtle}>This day is marked as no class due to a scheduled activity.</Text>
+                </Box>
+              ) : null}
+
+              {(!dayInfoByCode || dayInfoByCode.get(t.day)?.mode !== 'no_class') && (
               {!t.hasExamData && viewMode === 'examination' ? (
                 <Box p={4} bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" mb={4}>
                   <Text color={subtle} fontSize="sm">
@@ -309,7 +366,7 @@ export default function VisualMap() {
                 </table>
               </Box>
               
-              <Box mt={6} bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
+              <Box mt={4} bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
                 <Text fontWeight="700" mb={2}>Blocks by Program (present/total)</Text>
                 <MiniBarChart
                   labelKey="label"
@@ -350,6 +407,7 @@ export default function VisualMap() {
                   })()}
                 />
               </Box>
+              )
             </TabPanel>
           ))}
         </TabPanels>
@@ -357,3 +415,4 @@ export default function VisualMap() {
     </Box>
   );
 }
+

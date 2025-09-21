@@ -1,30 +1,96 @@
 ﻿import React, { useMemo, useState } from 'react';
-import { Box, Heading, SimpleGrid, useColorModeValue, IconButton, Tooltip, Input, Tabs, TabList, TabPanels, Tab, TabPanel, HStack, Text, VStack, Button } from '@chakra-ui/react';
+import {
+  Box,
+  Heading,
+  SimpleGrid,
+  useColorModeValue,
+  IconButton,
+  Tooltip,
+  Input,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  HStack,
+  Text,
+  VStack,
+  Button,
+  Switch,
+  FormControl,
+  FormLabel,
+  Badge,
+} from '@chakra-ui/react';
 import { useData } from '../context/DataContext';
 import { Link as RouterLink } from 'react-router-dom';
 import { FiChevronRight, FiPrinter } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import MiniBarChart from '../components/MiniBarChart';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
+import { useLocalStorage, getInitialToggleState, getExamDateSet, findDayAnnotations } from '../utils/scheduleUtils';
 
 export default function ViewsRooms() {
-  const { allCourses } = useData();
+  const { allCourses, acadData, holidays } = useData();
   const border = useColorModeValue('gray.200', 'gray.700');
   const cardBg = useColorModeValue('white', 'gray.800');
   const subtle = useColorModeValue('gray.600', 'gray.400');
   const [q, setQ] = useState('');
 
+  const weekDays = useMemo(() => getCurrentWeekDays(), []);
+  const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
+  const [viewMode, setViewMode] = useLocalStorage(
+    'viewsRoomsViewMode',
+    getInitialToggleState(acadData, 'viewsRoomsViewMode', 'regular')
+  );
+
+  const autoExamDays = useMemo(() => {
+    const set = new Set();
+    const examSet = getExamDateSet(acadData);
+    weekDays.forEach(wd => {
+      const d = new Date(wd.date); d.setHours(0,0,0,0);
+      if (examSet.has(d.getTime())) set.add(wd.code);
+    });
+    return set;
+  }, [acadData, weekDays]);
+
+  const daysWithExams = useMemo(() => {
+    const s = new Set();
+    allCourses.forEach(c => { if (c.examDay) s.add(c.examDay); });
+    return s;
+  }, [allCourses]);
+
+  // Build day groups; per-day exam mode if date is in exam set or user switched globally
   const groups = useMemo(() => {
     const DAYS = DAY_CODES;
     const res = [];
-    // Mon-Fri tabs
     for (const day of DAYS) {
+      const useExam = autoExamDays.has(day) || viewMode === 'examination';
+      if (useExam) {
+        // Exam aggregation by examRoom/section
+        const m = new Map();
+        allCourses.forEach(c => {
+          if (c.examDay !== day) return;
+          const room = c.examRoom || 'N/A';
+          const e = m.get(room) || { room, blocks: new Set(), minTerm: c.termOrder ?? 9 };
+          if (c.section) e.blocks.add(c.section);
+          if ((c.termOrder ?? 9) < (e.minTerm ?? 9)) e.minTerm = c.termOrder ?? 9;
+          m.set(room, e);
+        });
+        const rows = Array.from(m.values()).map(e => ({ room: e.room, uniqueCount: e.blocks.size, minTerm: e.minTerm, minStart: Infinity }))
+          .sort((a,b)=> {
+            if ((a.minTerm ?? 9) !== (b.minTerm ?? 9)) return (a.minTerm ?? 9) - (b.minTerm ?? 9);
+            return String(a.room).localeCompare(String(b.room));
+          });
+        const count = rows.reduce((s, r) => s + (r.uniqueCount || 0), 0);
+        res.push({ day, rows, count, mode: 'exam' });
+        continue;
+      }
       const m = new Map();
       allCourses.forEach(c => {
         const hasDay = Array.isArray(c.f2fDays) ? c.f2fDays.includes(day) : false;
         if (!hasDay) return;
-        const room = c.room || 'â€”';
-        const e = m.get(room) || { room, timeSet: new Map(), uniqueCount: 0, minTerm: 9, minStart: Infinity };
+        const room = c.room || 'N/A';
+        const e = m.get(room) || { room, timeSet: new Map(), minTerm: 9, minStart: Infinity };
         const label = c.schedule || '';
         if (label) {
           const start = Number.isFinite(c.timeStartMinutes) ? c.timeStartMinutes : 1e9;
@@ -44,17 +110,17 @@ export default function ViewsRooms() {
         return String(a.room).localeCompare(String(b.room));
       });
       const count = rows.reduce((s, r) => s + (r.uniqueCount || 0), 0);
-      res.push({ day, rows, count });
+      res.push({ day, rows, count, mode: 'regular' });
     }
-    // Unscheduled tab: no Mon-Fri F2F days
+    // Unscheduled tab: no Mon–Fri F2F days
     const unschedMap = new Map();
     const weekdaySet = new Set(['Mon','Tue','Wed','Thu','Fri']);
     allCourses.forEach(c => {
       const f2f = Array.isArray(c.f2fDays) ? c.f2fDays : [];
       const hasWeekday = f2f.some(d => weekdaySet.has(d));
       if (hasWeekday) return;
-      const room = c.room || 'â€”';
-      const e = unschedMap.get(room) || { room, timeSet: new Map(), uniqueCount: 0, minTerm: 9, minStart: Infinity };
+      const room = c.room || 'N/A';
+      const e = unschedMap.get(room) || { room, timeSet: new Map(), minTerm: 9, minStart: Infinity };
       const label = c.schedule || '';
       const start = Number.isFinite(c.timeStartMinutes) ? c.timeStartMinutes : 1e9;
       if (label) {
@@ -74,9 +140,9 @@ export default function ViewsRooms() {
       return String(a.room).localeCompare(String(b.room));
     });
     const unschedCount = unschedRows.reduce((s, r) => s + (r.uniqueCount || 0), 0);
-    res.push({ day: 'Unscheduled', rows: unschedRows, count: unschedCount });
+    res.push({ day: 'Unscheduled', rows: unschedRows, count: unschedCount, mode: 'regular' });
     return res;
-  }, [allCourses]);
+  }, [allCourses, autoExamDays, viewMode]);
 
   const filteredGroups = useMemo(() => {
     const ql = q.trim().toLowerCase();
@@ -91,11 +157,12 @@ export default function ViewsRooms() {
     const headers = ['Room', 'Time Slots'];
     const rows = dayGroup.rows.map(r => [r.room, String(r.uniqueCount)]);
     const table = buildTable(headers, rows);
-    const weekDays = getCurrentWeekDays();
-    const labelByCode = Object.fromEntries(weekDays.map(d => [d.code, d.label]));
-    const label = labelByCode[dayGroup.day] || dayGroup.day;
-    printContent({ title: `Rooms — ${label}`, subtitle: 'Unique F2F Time Slots per Room', bodyHtml: table });
+    const wd = getCurrentWeekDays();
+    const lbc = Object.fromEntries(wd.map(d => [d.code, d.label]));
+    const label = lbc[dayGroup.day] || dayGroup.day;
+    printContent({ title: `Rooms - ${label}`, subtitle: 'Unique F2F Time Slots per Room', bodyHtml: table });
   }
+
   function roomAccent(room) {
     const r = String(room || '').toUpperCase();
     if (r.startsWith('OB')) return 'green.500';
@@ -107,19 +174,49 @@ export default function ViewsRooms() {
     return 'brand.500';
   }
 
-  const weekDays = useMemo(() => getCurrentWeekDays(), []);
-  const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
-
   return (
     <Box>
-      <HStack justify="space-between" mb={4}>
-        <Heading size="md">Loads by Room (F2F, Mon–Fri)</Heading>
-        <Input placeholder="Filter rooms…" value={q} onChange={e=>setQ(e.target.value)} maxW="280px" />
+      <HStack justify="space-between" mb={4} flexWrap="wrap" gap={3}>
+        <HStack align="center" spacing={3}>
+          <Heading size="md">Loads by Room (Mon-Fri)</Heading>
+          {viewMode === 'examination' && (
+            <Badge colorScheme="blue" variant="subtle">{autoExamDays.size > 0 ? 'Examination Mode' : 'Exam Mode Preview'}</Badge>
+          )}
+          {autoExamDays.size > 0 && viewMode === 'regular' && (
+            <Badge colorScheme="orange" variant="subtle">Exam Period Detected</Badge>
+          )}
+        </HStack>
+        <HStack spacing={4}>
+          <FormControl display="flex" alignItems="center" w="auto">
+            <FormLabel htmlFor="rooms-schedule-mode" mb="0" fontSize="sm" fontWeight="medium">
+              Regular F2F
+            </FormLabel>
+            <Switch
+              id="rooms-schedule-mode"
+              colorScheme="blue"
+              size="lg"
+              isChecked={viewMode === 'examination'}
+              onChange={(e) => setViewMode(e.target.checked ? 'examination' : 'regular')}
+            />
+            <FormLabel htmlFor="rooms-schedule-mode" mb="0" fontSize="sm" fontWeight="medium" ml={2}>
+              Examination
+            </FormLabel>
+          </FormControl>
+          <Input placeholder="Filter rooms." value={q} onChange={e=>setQ(e.target.value)} maxW="280px" />
+        </HStack>
       </HStack>
+
       <Tabs variant="enclosed-colored" colorScheme="brand">
         <TabList>
           {filteredGroups.map(g => (
-            <Tab key={g.day} isDisabled={g.rows.length === 0}>{labelByCode[g.day] || g.day} {g.count ? `(${g.count})` : ''}</Tab>
+            <Tab key={g.day} isDisabled={g.rows.length === 0}>
+              <HStack spacing={2}>
+                <Text>{labelByCode[g.day] || g.day}</Text>
+                {(autoExamDays.has(g.day) || (viewMode === 'examination' && daysWithExams.has(g.day))) && (
+                  <Badge size="sm" colorScheme="green" variant="subtle">Exam</Badge>
+                )}
+              </HStack>
+            </Tab>
           ))}
         </TabList>
         <TabPanels>
@@ -139,9 +236,10 @@ export default function ViewsRooms() {
                 </Box>
                 <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" p={4} display={{ base: 'none', md: 'block' }}>
                   <Text fontSize="xs" color={subtle}>Earliest Term</Text>
-                  <Text fontWeight="800" fontSize="xl">{(() => { const t = Math.min(...g.rows.map(r => r.minTerm || 9)); return t===1?'1st':t===2?'2nd':t===3?'Sem':'—'; })()}</Text>
+                  <Text fontWeight="800" fontSize="xl">{(() => { const t = Math.min(...g.rows.map(r => r.minTerm || 9)); return t===1?'1st':t===2?'2nd':t===3?'Sem':'-'; })()}</Text>
                 </Box>
               </SimpleGrid>
+
               {g.rows.length === 0 ? (
                 <Text color="gray.500">No rooms</Text>
               ) : (
@@ -182,6 +280,7 @@ export default function ViewsRooms() {
                   ))}
                 </SimpleGrid>
               )}
+
               <Box mt={4} bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
                 <Text fontWeight="700" mb={2}>Top Rooms by Time Slots</Text>
                 <MiniBarChart data={[...g.rows].sort((a,b)=> (b.uniqueCount||0) - (a.uniqueCount||0)).map(r => ({ key: r.room, value: r.uniqueCount }))} />
