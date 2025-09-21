@@ -8,6 +8,7 @@ import { useData } from '../context/DataContext';
 import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import SplashScreen from './SplashScreen';
+import FirstVisitModal from './FirstVisitModal';
 
 function Topbar({ onOpenMenu, onToggleSidebar }) {
   const { colorMode, toggleColorMode } = useColorMode();
@@ -95,7 +96,11 @@ export default function Layout({ children }) {
           Â© {new Date().getFullYear()} Office of the Vice President of Academic Affairs
         </Box>
       </Box>
-      {(loading || routeBusy) && <LoaderOverlay label={loading ? 'Loading dataâ€¦' : 'Loading viewâ€¦'} />}
+      {(loading || routeBusy) && <LoaderOverlay label={loading ? 'Loading data…' : 'Loading view…'} />}
+      <FirstVisitModal />
     </Flex>
   );
 }
+
+
+
