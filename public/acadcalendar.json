@@ -31,7 +31,7 @@
                             "event": "LGU Pantukan - Civil Service Month Opening",
                             "date": "September 22, 2025",
                             "type": "external",
-                            "mode": "assynchronous"
+                            "mode": "asynchronous"
                         },
                         {
                             "event": "Final Examination",

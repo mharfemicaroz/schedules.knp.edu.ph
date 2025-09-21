@@ -38,6 +38,15 @@ export default function ViewsRooms() {
 
   const weekDays = useMemo(() => getCurrentWeekDays(), []);
   const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
+  const dayAnnotations = useMemo(() => {
+    if (!acadData || !holidays) return {};
+    const ann = {};
+    weekDays.forEach(wd => {
+      const d = new Date(wd.date); d.setHours(0,0,0,0);
+      ann[wd.code] = findDayAnnotations(acadData, holidays, d);
+    });
+    return ann;
+  }, [acadData, holidays, weekDays]);
   const [viewMode, setViewMode] = useLocalStorage(
     'viewsRoomsViewMode',
     getInitialToggleState(acadData, 'viewsRoomsViewMode', 'regular')
@@ -215,6 +224,21 @@ export default function ViewsRooms() {
                 {(autoExamDays.has(g.day) || (viewMode === 'examination' && daysWithExams.has(g.day))) && (
                   <Badge size="sm" colorScheme="green" variant="subtle">Exam</Badge>
                 )}
+                {dayAnnotations[g.day]?.holiday && (
+                  <Badge size="sm" colorScheme="red" variant="subtle" title={dayAnnotations[g.day].holiday.name}>
+                    Holiday
+                  </Badge>
+                )}
+                {dayAnnotations[g.day]?.mode === 'asynchronous' && (
+                  <Badge size="sm" colorScheme="purple" variant="subtle" title="Asynchronous Mode">
+                    Async
+                  </Badge>
+                )}
+                {dayAnnotations[g.day]?.mode === 'no_class' && (
+                  <Badge size="sm" colorScheme="gray" variant="subtle" title="No Class">
+                    No Class
+                  </Badge>
+                )}
               </HStack>
             </Tab>
           ))}
@@ -225,6 +249,33 @@ export default function ViewsRooms() {
               <HStack justify="flex-end" mb={2}>
                 <Button leftIcon={<FiPrinter />} onClick={() => onPrint(g)} variant="outline" size="sm">Print</Button>
               </HStack>
+              {dayAnnotations[g.day]?.holiday && (
+                <Box p={4} mb={4} bg="red.50" borderWidth="1px" borderColor="red.200" rounded="md">
+                  <Text fontWeight="700" color="red.600">{dayAnnotations[g.day].holiday.name}</Text>
+                  <Text fontSize="sm" color="red.600">{dayAnnotations[g.day].holiday.type}</Text>
+                </Box>
+              )}
+              {dayAnnotations[g.day]?.events?.length > 0 && (
+                <Box p={4} mb={4} bg="purple.50" borderWidth="1px" borderColor="purple.200" rounded="md">
+                  {dayAnnotations[g.day].events
+                    .filter(evt => ['external','internal'].includes(String(evt.type||'').toLowerCase()) || String(evt.mode||'').toLowerCase() !== 'default')
+                    .map((evt, idx) => (
+                      <Box key={idx} mb={idx < dayAnnotations[g.day].events.length - 1 ? 2 : 0}>
+                        <Text fontWeight="700" color="purple.600">{evt.event}</Text>
+                        {evt.type && <Text fontSize="sm" color="purple.600">Type: {evt.type}</Text>}
+                        {evt.mode && <Text fontSize="sm" color="purple.600">Mode: {evt.mode}</Text>}
+                      </Box>
+                  ))}
+                </Box>
+              )}
+              {dayAnnotations[g.day]?.mode === 'no_class' ? (
+                <Box p={8} bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" mb={4} textAlign="center" color={subtle}>
+                  <Text fontWeight="700" fontSize="lg" mb={2}>No Classes Today</Text>
+                  <Text fontSize="md">The schedule for this day is disabled due to a no-class event.</Text>
+                </Box>
+              ) : null}
+
+              {dayAnnotations[g.day]?.mode === 'no_class' ? null : (
               <SimpleGrid columns={{ base: 2, md: 3 }} spacing={4} mb={4}>
                 <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
                   <Text fontSize="xs" color={subtle}>Rooms</Text>
@@ -238,9 +289,10 @@ export default function ViewsRooms() {
                   <Text fontSize="xs" color={subtle}>Earliest Term</Text>
                   <Text fontWeight="800" fontSize="xl">{(() => { const t = Math.min(...g.rows.map(r => r.minTerm || 9)); return t===1?'1st':t===2?'2nd':t===3?'Sem':'-'; })()}</Text>
                 </Box>
-              </SimpleGrid>
+                  </SimpleGrid>
+                  )}
 
-              {g.rows.length === 0 ? (
+                  {g.rows.length === 0 ? (
                 <Text color="gray.500">No rooms</Text>
               ) : (
                 <SimpleGrid columns={{ base: 1, sm: 2, lg: 3 }} spacing={4}>
@@ -283,8 +335,8 @@ export default function ViewsRooms() {
 
               <Box mt={4} bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
                 <Text fontWeight="700" mb={2}>Top Rooms by Time Slots</Text>
-                <MiniBarChart data={[...g.rows].sort((a,b)=> (b.uniqueCount||0) - (a.uniqueCount||0)).map(r => ({ key: r.room, value: r.uniqueCount }))} />
-              </Box>
+                  <MiniBarChart data={[...g.rows].sort((a,b)=> (b.uniqueCount||0) - (a.uniqueCount||0)).map(r => ({ key: r.room, value: r.uniqueCount }))} />
+                </Box>
             </TabPanel>
           ))}
         </TabPanels>

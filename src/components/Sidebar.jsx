@@ -27,7 +27,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
           <Text fontWeight="800" fontSize="sm">Kolehiyo ng Pantukan</Text>
         </HStack>
         <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mb={1}>Overview</Text>
-        <NavItem to="/" icon={FiGrid} onClick={onNavigate}>Visual Map</NavItem>
+        <NavItem to="/" icon={FiGrid} onClick={onNavigate}>Classroom Assigment</NavItem>
         <NavItem to="/overview/calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>
         <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Views</Text>
         <NavItem to="/views/faculty" icon={FiUsers} onClick={onNavigate}>By Faculty</NavItem>

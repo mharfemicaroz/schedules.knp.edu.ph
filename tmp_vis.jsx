@@ -194,8 +194,8 @@ export default function VisualMap() {
     const table = buildTable(headers, rows);
     const label = labelByCode[day.day] || day.day;
     printContent({
-      title: `Classroom Assigment - ${label}`,
-      subtitle: `Blocks per Room and Session - ${scheduleType}`,
+      title: `Visual Map — ${label}`,
+      subtitle: `Blocks per Room and Session • ${scheduleType}`,
       bodyHtml: table
     });
   }
@@ -204,7 +204,7 @@ export default function VisualMap() {
     <Box>
       <HStack justify="space-between" mb={4} flexWrap="wrap" gap={3}>
         <HStack align="center" spacing={3}>
-          <Heading size="md">Classroom Assigment</Heading>
+          <Heading size="md">Visual Map</Heading>
           {viewMode === 'examination' && (
             <Badge colorScheme="blue" variant="subtle">{autoExamDays.size > 0 ? 'Examination Mode' : 'Exam Mode Preview'}</Badge>
           )}
@@ -415,5 +415,4 @@ export default function VisualMap() {
     </Box>
   );
 }
-
 
