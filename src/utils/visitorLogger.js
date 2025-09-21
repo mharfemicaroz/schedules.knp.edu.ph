@@ -1,6 +1,6 @@
-// Minimal client for Google Apps Script Sheets logger
+// Minimal client for local Sheets API server
 
-const WEBAPP_URL = import.meta.env.VITE_SHEETS_WEBAPP_URL;
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export async function getClientIP() {
   try {
@@ -15,8 +15,7 @@ export async function getClientIP() {
 }
 
 export async function checkIpExists(ip) {
-  if (!WEBAPP_URL) return { exists: false, disabled: true };
-  const url = `${WEBAPP_URL}?ip=${encodeURIComponent(ip || '')}`;
+  const url = `${API_BASE}/api/visitor?ip=${encodeURIComponent(ip || '')}`;
   try {
     const res = await fetch(url, { method: 'GET' });
     if (!res.ok) throw new Error('check failed');
@@ -29,22 +28,15 @@ export async function checkIpExists(ip) {
 }
 
 export async function upsertVisitor({ name, role, ip }) {
-  if (!WEBAPP_URL) throw new Error('WEBAPP_URL not configured');
+  const url = `${API_BASE}/api/visitor`;
   try {
-    const body = new URLSearchParams({ name: name || '', role: role || '', ip: ip || '' });
-    const res = await fetch(WEBAPP_URL, {
+    const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-      body: body.toString(),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, role, ip })
     });
-    if (!res.ok) {
-      let txt = '';
-      try { txt = await res.text(); } catch {}
-      throw new Error('submit failed: ' + res.status + ' ' + txt);
-    }
-    let data = {};
-    try { data = await res.json(); } catch {}
-    return data;
+    if (!res.ok) throw new Error('submit failed');
+    return await res.json();
   } catch (e) {
     console.error('upsertVisitor error:', e);
     throw e;
@@ -52,16 +44,14 @@ export async function upsertVisitor({ name, role, ip }) {
 }
 
 export async function touchLastAccess(ip) {
-  if (!WEBAPP_URL) return;
+  const url = `${API_BASE}/api/visitor`;
   try {
-    const body = new URLSearchParams({ ip: ip || '', action: 'touch' });
-    await fetch(WEBAPP_URL, {
+    await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-      body: body.toString(),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip, action: 'touch' })
     });
   } catch (e) {
-    // non-fatal
     console.warn('touchLastAccess error:', e);
   }
 }

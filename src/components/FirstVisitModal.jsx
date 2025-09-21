@@ -47,13 +47,9 @@ export default function FirstVisitModal() {
         }
 
         if (clientIp) {
-          const resp = await checkIpExists(clientIp);
+          const { exists } = await checkIpExists(clientIp);
           if (!mounted) return;
-          if (resp.disabled) {
-            setChecking(false);
-            return;
-          }
-          if (resp.exists) {
+          if (exists) {
             // known IP, silently touch last access
             touchLastAccess(clientIp);
             setChecking(false);
@@ -122,5 +118,3 @@ export default function FirstVisitModal() {
     </Modal>
   );
 }
-
-

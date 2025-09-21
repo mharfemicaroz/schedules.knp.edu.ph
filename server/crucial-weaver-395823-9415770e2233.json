@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "crucial-weaver-395823",
+  "private_key_id": "9415770e223305ef4a420639cb172c4a8ff8315e",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDAZC1auImrp05P\nsRkDmtArXoDbXXBOyzUn6unUbRfVhKZumx26XzaezbQwcSOEWj9CWuouT+edmk5A\nQYjq7ORS02Pg1l/zo5xsVaVD71eHDg3ZwopoS1KuCF0siMyTKW3AfiyEt8v9xNZ0\nQQw8LJvme3KIFmUmJqDOsaN4XLToNHk2NWrA16I+bOE3gFhxYA7HRIbYZVzWdIPv\nVolXXxJen9L6Vc03i1FG8FRTwk41Ah3gCDuexmAiRnHJvy7XaTpWU/hsbgvXYmbj\n4mfoHSsxw2g7zpXjL/YrPl+wdMq0nM4wHJwsnbvT8X2Jrg3YFseqdc7tX6Hjd7aK\nS/jGOAo7AgMBAAECggEAOPBtC+B5vjex0ZwUTyDOY0eA02uABZHWlY3MznXLDAJK\nT4nQ7ounWrB+l6ekX1NmTXkivbogTmCQsCu1HfImUO0HLk/D7hOKA/YFB2oaeXoL\nV1tgIyXHvoHzMW77PMKSHNo6yryqvtw2rAlkWZrKORhn+SbHoNbl2MZyHvkxAVei\n7T7IrXQkEt/MIVEWcZd2qNY53HUQXc0lOeA4bzsSLfg8/gDOUxttPf2hg+0lmjdm\nn5JmWmXplbcOXwwSNw10iqUqxaNURAnSx0god0izFxBF9ysuTocec2Xt6Qfkkdjh\nUVvUSCiyJdusQJ6FhJIyWKy+ZZ94MSIPuIQZcUligQKBgQDkXFSxgZ4IXjqxxpJ+\nv2lsOiFHnVPNro/WGwOi9LeZ4JNNftIsEQ33dJ6LPZCsfrd9Ta6byVTsy/0zr782\nn3uQpYYlox+mU5FpcfK0fjyk8oQQX852/WmPrlB7kq6MqEszGoZxt59W741BAiST\nM4lhcNR6hRMU89w72+nHGGJZEQKBgQDXrVl95yc1XkVPXfW4SzNK2xpykHOI42Yk\nyb7wh3VZpY9cD+U982oTiJShNNUQHRGmqBZ/TUht9PpC00alBqzxOchrbkLPN7ZK\nqy3y4TrTA2MSSKLdx47LgNS+Yc10PrfhKmzb5iwH4zS/FguWy06kHXMzHZ+E9MBf\nCSO2YsbOiwKBgQCL9OKbX9thOY8zgYYrVFjiUcYvxAammoPhLvFNoDoefvsIld9t\nzo4GyVyZ7gOLFKaUj1WieQQplOP8F4xTh+8NOcU7r/wnzjPiskmTwYKdfVzfRDif\nyLQ3sRf2hHGiF0rvaSRY8bcgavThkNSluwJJzAMNjB2jy8mAjkl7EkDEYQKBgQCB\nT2jRiM7EO6I4pLAXb9bv8Y/Y0mzCzPxH4EG/uqeMOSxL2Sfrzc5yqbfbM27vO06C\n6lKavr5HVtLZUA0SEn+MHcXhS3l4/gEooZtp/MolC+nRY4VqjSQ7NSHYh5EEOjpL\nIQGlkkoh7IKKcvA91+Vtlk6kfgVPVOMl17f2uSBTYwKBgQCRrot6O/7ENj0l2c8C\nxUxAeziSj4Jfb/eNz+5WKTf/jQUlK2LWIPpgOc8t/ERfrErDyqrCh6o+NdhFQSMN\nyH/dbq1zW5JIJM1Bm4Thl2ae95iv3c3alFrMu4GECqqGfN7YZC53X7SJL3pACVLd\n3zMlI4MiA3RuRfUiPPAwst5pBg==\n-----END PRIVATE KEY-----\n",
+  "client_email": "knp-edu-ph@crucial-weaver-395823.iam.gserviceaccount.com",
+  "client_id": "103303956147010603252",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/knp-edu-ph%40crucial-weaver-395823.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
