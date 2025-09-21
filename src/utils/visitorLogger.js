@@ -1,6 +1,13 @@
-// Minimal client for local Sheets API server
+// Minimal client for Sheets API server (configurable path)
 
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '');
+const VISITOR_PATH = import.meta.env.VITE_VISITOR_PATH || '/visitor';
+
+function joinUrl(path) {
+  if (!API_BASE) return path; // relative
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE}${p}`;
+}
 
 export async function getClientIP() {
   try {
@@ -15,10 +22,10 @@ export async function getClientIP() {
 }
 
 export async function checkIpExists(ip) {
-  const url = `${API_BASE}/api/visitor?ip=${encodeURIComponent(ip || '')}`;
+  const url = `${joinUrl(VISITOR_PATH)}?ip=${encodeURIComponent(ip || '')}`;
   try {
     const res = await fetch(url, { method: 'GET' });
-    if (!res.ok) throw new Error('check failed');
+    if (!res.ok) throw new Error(`check failed: ${res.status}`);
     const data = await res.json();
     return { exists: !!data.exists };
   } catch (e) {
@@ -28,14 +35,14 @@ export async function checkIpExists(ip) {
 }
 
 export async function upsertVisitor({ name, role, ip }) {
-  const url = `${API_BASE}/api/visitor`;
+  const url = joinUrl(VISITOR_PATH);
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, role, ip })
     });
-    if (!res.ok) throw new Error('submit failed');
+    if (!res.ok) throw new Error(`submit failed: ${res.status}`);
     return await res.json();
   } catch (e) {
     console.error('upsertVisitor error:', e);
@@ -44,7 +51,7 @@ export async function upsertVisitor({ name, role, ip }) {
 }
 
 export async function touchLastAccess(ip) {
-  const url = `${API_BASE}/api/visitor`;
+  const url = joinUrl(VISITOR_PATH);
   try {
     await fetch(url, {
       method: 'POST',
@@ -55,3 +62,4 @@ export async function touchLastAccess(ip) {
     console.warn('touchLastAccess error:', e);
   }
 }
+
