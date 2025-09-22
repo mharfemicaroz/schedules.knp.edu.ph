@@ -26,7 +26,7 @@ import {
 import { FiInfo, FiUser } from 'react-icons/fi';
 import { checkIpExists, getClientIP, touchLastAccess, upsertVisitor } from '../utils/visitorLogger';
 
-const ROLES = ['Full-time', 'Part-time', 'Admin'];
+const ROLES = ['Full-time', 'Part-time', 'Admin', 'Student'];
 
 export default function FirstVisitModal() {
   const toast = useToast();
@@ -139,7 +139,7 @@ export default function FirstVisitModal() {
               <HStack align="start" spacing={3}>
                 <Icon as={FiInfo} mt={1} color="blue.500" />
                 <Text fontSize="xs" color={subtle}>
-                  Privacy notice: We collect your Name, Role, and IP address solely for educational and research purposes related to this system's usage. Data is kept confidential and used in aggregate. By submitting, you consent to this use.
+                  Privacy notice: We collect your Name and Role solely for educational and research purposes related to this system's usage. Data is kept confidential and used in aggregate. By submitting, you consent to this use.
                 </Text>
               </HStack>
             </Box>

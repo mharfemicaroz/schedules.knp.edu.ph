@@ -1,5 +1,12 @@
 "use strict";
 
+/**
+ * Complete, updated app.js for Passenger under /api/schedules
+ * - Adds a "/" route (so hitting /api/schedules no longer 404s)
+ * - Keeps dual mounting at "/" and BASE (BASE from PASSENGER_BASE_URI)
+ * - Expands CORS to include knp.edu.ph
+ */
+
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
@@ -35,6 +42,7 @@ else dotenv.config();
 
 const app = express();
 const isProd = process.env.NODE_ENV === "production";
+
 // Base path for mounting (Passenger base uri or custom)
 const BASE = process.env.PASSENGER_BASE_URI || "/api/schedules";
 
@@ -71,6 +79,8 @@ const corsOptions = {
     "http://localhost:5173",
     "https://knp.edu.ph",
     "https://www.knp.edu.ph",
+    "https://schedules.knp.edu.ph",
+    "https://www.schedules.knp.edu.ph",
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Request-Id"],
@@ -105,6 +115,16 @@ const router = express.Router();
 
 const spreadsheetId = process.env.SHEETS_SPREADSHEET_ID;
 const sheetName = process.env.SHEETS_WORKSHEET_NAME || "Sheet1";
+
+// Root route so /api/schedules returns something useful
+router.get("/", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  return res.json({
+    ok: true,
+    base: BASE,
+    endpoints: [`${BASE}/health`, `${BASE}/visitor`, `${BASE}/debug/auth`],
+  });
+});
 
 router.get("/health", (req, res) => {
   res.set("Cache-Control", "no-store");
