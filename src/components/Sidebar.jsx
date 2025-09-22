@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, VStack, Text, useColorModeValue, HStack, Icon, Image } from '@chakra-ui/react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar } from 'react-icons/fi';
+import { useVisitor } from '../context/VisitorContext';
 
 function NavItem({ to, icon, children, onClick }) {
   const { pathname } = useLocation();
@@ -17,8 +18,13 @@ function NavItem({ to, icon, children, onClick }) {
 }
 
 export default function Sidebar({ mobile = false, onNavigate }) {
+  const { visitorRole } = useVisitor();
   const bg = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
+
+  // Check if user is a student
+  const isStudent = visitorRole === 'Student';
+
   return (
     <Box as="nav" w={mobile ? '100%' : { base: '60px', md: '280px' }} h={mobile ? 'auto' : '100%'} display={mobile ? 'block' : { base: 'none', md: 'block' }} borderRightWidth={mobile ? '0' : '1px'} borderColor={border} bg={bg} px={4} py={6} overflowY={mobile ? 'visible' : 'auto'}>
       <VStack align="stretch" spacing={2}>
@@ -26,14 +32,22 @@ export default function Sidebar({ mobile = false, onNavigate }) {
           <Image src="/logo.png" alt="Logo" boxSize="28px" rounded="md" />
           <Text fontWeight="800" fontSize="sm">Kolehiyo ng Pantukan</Text>
         </HStack>
+
+        {/* Overview section - always visible */}
         <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mb={1}>Overview</Text>
         <NavItem to="/" icon={FiGrid} onClick={onNavigate}>Classroom Assigment</NavItem>
         <NavItem to="/overview/calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>
-        <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Views</Text>
-        <NavItem to="/views/faculty" icon={FiUsers} onClick={onNavigate}>By Faculty</NavItem>
-        <NavItem to="/views/departments" icon={FiLayers} onClick={onNavigate}>By Department</NavItem>
-        <NavItem to="/views/rooms" icon={FiMapPin} onClick={onNavigate}>By Rooms</NavItem>
-        <NavItem to="/views/session" icon={FiSun} onClick={onNavigate}>By Session</NavItem>
+
+        {/* Views section - only show for non-students */}
+        {!isStudent && (
+          <>
+            <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Views</Text>
+            <NavItem to="/views/faculty" icon={FiUsers} onClick={onNavigate}>By Faculty</NavItem>
+            <NavItem to="/views/departments" icon={FiLayers} onClick={onNavigate}>By Department</NavItem>
+            <NavItem to="/views/rooms" icon={FiMapPin} onClick={onNavigate}>By Rooms</NavItem>
+            <NavItem to="/views/session" icon={FiSun} onClick={onNavigate}>By Session</NavItem>
+          </>
+        )}
       </VStack>
     </Box>
   );

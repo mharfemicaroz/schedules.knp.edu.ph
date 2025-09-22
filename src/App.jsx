@@ -13,28 +13,31 @@ import DepartmentSchedule from './pages/DepartmentSchedule';
 import ViewsSession from './pages/ViewsSession';
 import BlockSchedule from './pages/BlockSchedule';
 import { DataProvider } from './context/DataContext';
+import { VisitorProvider } from './context/VisitorContext';
 
 function App() {
   const bg = useColorModeValue('gray.50', 'gray.900');
   return (
     <DataProvider>
-      <Box bg={bg} minH="100vh">
-        <Layout>
-          <Routes>
-            <Route path="/" element={<VisualMap />} />
-            <Route path="/overview/calendar" element={<AcademicCalendar />} />
-            <Route path="/faculty/:id" element={<FacultyDetail />} />
-            <Route path="/views/faculty" element={<Dashboard />} />
-            <Route path="/views/departments" element={<ViewsDepartments />} />
-            <Route path="/views/departments/:dept" element={<DepartmentSchedule />} />
-            <Route path="/views/rooms" element={<ViewsRooms />} />
-            <Route path="/views/rooms/:room" element={<RoomSchedule />} />
-            <Route path="/views/session" element={<ViewsSession />} />
-            <Route path="/views/session/block/:block" element={<BlockSchedule />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Layout>
-      </Box>
+      <VisitorProvider>
+        <Box bg={bg} minH="100vh">
+          <Layout>
+            <Routes>
+              <Route path="/" element={<VisualMap />} />
+              <Route path="/overview/calendar" element={<AcademicCalendar />} />
+              <Route path="/faculty/:id" element={<FacultyDetail />} />
+              <Route path="/views/faculty" element={<Dashboard />} />
+              <Route path="/views/departments" element={<ViewsDepartments />} />
+              <Route path="/views/departments/:dept" element={<DepartmentSchedule />} />
+              <Route path="/views/rooms" element={<ViewsRooms />} />
+              <Route path="/views/rooms/:room" element={<RoomSchedule />} />
+              <Route path="/views/session" element={<ViewsSession />} />
+              <Route path="/views/session/block/:block" element={<BlockSchedule />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Layout>
+        </Box>
+      </VisitorProvider>
     </DataProvider>
   );
 }
