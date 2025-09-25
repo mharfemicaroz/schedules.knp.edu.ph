@@ -3,8 +3,8 @@ const API_CONFIG = {
   // Base URL for API endpoints
   BASE_URL:
     import.meta.env.MODE === "production"
-      ? "/api/scheduleapp"
-      : import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api/scheduleapp",
+      ? import.meta.env.VITE_API_BASE_URL
+      : "http://localhost:3000/api/scheduleapp",
 
   // Timeout settings
   TIMEOUT: 10000, // 10 seconds
