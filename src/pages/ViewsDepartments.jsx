@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Box, Heading, SimpleGrid, useColorModeValue, IconButton, Tooltip, HStack, Text, Badge, VStack } from '@chakra-ui/react';
-import { useData } from '../context/DataContext';
+import { useSelector } from 'react-redux';
+import { selectAllCourses } from '../store/dataSlice';
 import { getProgramColor } from '../utils/programColors';
 import { Link as RouterLink } from 'react-router-dom';
 import { FiChevronRight } from 'react-icons/fi';
@@ -13,7 +14,7 @@ function canonFacultyKey(id, name) {
 }
 
 export default function ViewsDepartments() {
-  const { allCourses } = useData();
+  const allCourses = useSelector(selectAllCourses);
   const border = useColorModeValue('gray.200','gray.700');
   const cardBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.400');
@@ -58,7 +59,7 @@ export default function ViewsDepartments() {
               <Text fontWeight="800">{item.department}</Text>
             </HStack>
             <Tooltip label="View loads">
-              <IconButton as={RouterLink} to={`/views/departments/${encodeURIComponent(item.department)}`} aria-label="View" icon={<FiChevronRight />} size="sm" variant="ghost" onClick={(e)=>e.stopPropagation()} />
+              <IconButton aria-label="View" icon={<FiChevronRight />} size="sm" variant="ghost" onClick={(e)=>e.stopPropagation()} />
             </Tooltip>
           </HStack>
           <HStack spacing={4}>

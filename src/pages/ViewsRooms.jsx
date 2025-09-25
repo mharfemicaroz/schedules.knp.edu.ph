@@ -21,8 +21,9 @@ import {
   FormLabel,
   Badge,
 } from '@chakra-ui/react';
-import { useData } from '../context/DataContext';
-import { Link as RouterLink } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { selectAllCourses } from '../store/dataSlice';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { FiChevronRight, FiPrinter } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import MiniBarChart from '../components/MiniBarChart';
@@ -30,7 +31,10 @@ import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 import { useLocalStorage, getInitialToggleState, getExamDateSet, findDayAnnotations } from '../utils/scheduleUtils';
 
 export default function ViewsRooms() {
-  const { allCourses, acadData, holidays } = useData();
+  const navigate = useNavigate();
+  const allCourses = useSelector(selectAllCourses);
+  const acadData = useSelector(s => s.data.acadData);
+  const holidays = useSelector(s => s.data.holidays);
   const border = useColorModeValue('gray.200', 'gray.700');
   const cardBg = useColorModeValue('white', 'gray.800');
   const subtle = useColorModeValue('gray.600', 'gray.400');
@@ -98,17 +102,18 @@ export default function ViewsRooms() {
       allCourses.forEach(c => {
         const hasDay = Array.isArray(c.f2fDays) ? c.f2fDays.includes(day) : false;
         if (!hasDay) return;
-        const room = c.room || 'N/A';
-        const e = m.get(room) || { room, timeSet: new Map(), minTerm: 9, minStart: Infinity };
-        const label = c.schedule || '';
-        if (label) {
+        const roomKey = c.roomKey || String(c.room || 'N/A').trim().replace(/\s+/g,' ').toUpperCase();
+        const displayRoom = c.room || 'N/A';
+        const e = m.get(roomKey) || { room: displayRoom, timeSet: new Map(), minTerm: 9, minStart: Infinity };
+        const key = c.scheduleKey || '';
+        if (key) {
           const start = Number.isFinite(c.timeStartMinutes) ? c.timeStartMinutes : 1e9;
-          const prev = e.timeSet.get(label);
-          if (prev == null || start < prev) e.timeSet.set(label, start);
+          const prev = e.timeSet.get(key);
+          if (prev == null || start < prev) e.timeSet.set(key, start);
           if ((c.termOrder ?? 9) < e.minTerm) e.minTerm = c.termOrder ?? 9;
           if (start < e.minStart) e.minStart = start;
         }
-        m.set(room, e);
+        m.set(roomKey, e);
       });
       const rows = Array.from(m.values()).map(e => {
         const times = Array.from(e.timeSet.entries()).sort((a,b)=> a[1]-b[1]).map(x => x[0]);
@@ -317,7 +322,13 @@ export default function ViewsRooms() {
                         <HStack justify="space-between" w="full">
                           <Text fontWeight="800">{r.room}</Text>
                           <Tooltip label={`View schedule (${labelByCode[g.day] || g.day})`}>
-                            <IconButton as={RouterLink} to={`/views/rooms/${encodeURIComponent(r.room)}?day=${encodeURIComponent(g.day)}`} aria-label="View" icon={<FiChevronRight />} size="sm" variant="ghost" onClick={(e)=>e.stopPropagation()} />
+                            <IconButton
+                              aria-label="View"
+                              icon={<FiChevronRight />}
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e)=>{ e.stopPropagation(); navigate(`/views/rooms/${encodeURIComponent(r.room)}?day=${encodeURIComponent(g.day)}`); }}
+                            />
                           </Tooltip>
                         </HStack>
                         <HStack spacing={6}>

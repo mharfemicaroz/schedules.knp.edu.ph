@@ -1,24 +1,37 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, Link as RouterLink, useSearchParams } from 'react-router-dom';
-import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, Text, HStack, Switch, FormControl, FormLabel } from '@chakra-ui/react';
-import { FiPrinter, FiArrowLeft } from 'react-icons/fi';
-import { useData } from '../context/DataContext';
+import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, Text, HStack, Switch, FormControl, FormLabel, IconButton, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
+import { FiPrinter, FiArrowLeft, FiEdit, FiTrash } from 'react-icons/fi';
+import { useSelector, useDispatch } from 'react-redux';
+import { selectAllCourses } from '../store/dataSlice';
 import { buildTable, printContent } from '../utils/printDesign';
 import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
+import EditScheduleModal from '../components/EditScheduleModal';
+import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
 
 const DAY_ORDER = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 export default function RoomSchedule() {
   const { room: roomParam } = useParams();
   const room = decodeURIComponent(roomParam || '');
-  const { allCourses, loading, acadData } = useData();
+  const dispatch = useDispatch();
+  const allCourses = useSelector(selectAllCourses);
+  const loading = useSelector(s => s.data.loading);
+  const acadData = useSelector(s => s.data.acadData);
   const [searchParams] = useSearchParams();
   const [viewMode, setViewMode] = useLocalStorage('roomScheduleViewMode', getInitialToggleState(acadData, 'roomScheduleViewMode', 'regular'));
   const filterDay = searchParams.get('day');
   const border = useColorModeValue('gray.200','gray.700');
+  const authUser = useSelector(s => s.auth.user);
+  const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
+  const editDisc = useDisclosure();
+  const delDisc = useDisclosure();
+  const [selected, setSelected] = useState(null);
+  const cancelRef = React.useRef();
 
   const rows = useMemo(() => {
-    let list = allCourses.filter(c => String(c.room || '') === room);
+    const targetKey = String(room || '').trim().replace(/\s+/g,' ').toUpperCase();
+    let list = allCourses.filter(c => (c.roomKey || String(c.room || '').trim().replace(/\s+/g,' ').toUpperCase()) === targetKey);
     if (filterDay) {
       list = list.filter(c => Array.isArray(c.f2fDays) && c.f2fDays.includes(filterDay));
     }
@@ -48,7 +61,7 @@ export default function RoomSchedule() {
           c.code,
           c.title,
           c.section,
-          String(c.units ?? c.hours ?? ''),
+          String(c.unit ?? c.hours ?? ''),
           c.facultyName,
           c.examDay || '—',
           c.examSession || '—',
@@ -63,7 +76,7 @@ export default function RoomSchedule() {
           c.code,
           c.title,
           c.section,
-          String(c.units ?? c.hours ?? ''),
+          String(c.unit ?? c.hours ?? ''),
           c.facultyName
         ];
       }
@@ -72,6 +85,28 @@ export default function RoomSchedule() {
     const scheduleType = viewMode === 'examination' ? 'Examination Schedule' : 'Regular Schedule';
     const subtitle = `Room: ${room}${filterDay ? ` • ${filterDay}` : ''} - ${scheduleType}`;
     printContent({ title: 'Room Schedule', subtitle, bodyHtml: table });
+  }
+  async function handleSaveEdit(payload) {
+    if (!selected) return;
+    try {
+      await dispatch(updateScheduleThunk({ id: selected.id, changes: payload }));
+      editDisc.onClose();
+      setSelected(null);
+      dispatch(loadAllSchedules());
+    } catch (e) {
+      // Global toaster handles errors
+    }
+  }
+  async function confirmDelete() {
+    if (!selected) return;
+    try {
+      await dispatch(deleteScheduleThunk(selected.id));
+      delDisc.onClose();
+      setSelected(null);
+      dispatch(loadAllSchedules());
+    } catch (e) {
+      // Global toaster handles errors
+    }
   }
 
   return (
@@ -114,6 +149,7 @@ export default function RoomSchedule() {
               <Th>Section</Th>
               <Th>Units</Th>
               <Th>Faculty</Th>
+              {isAdmin && <Th textAlign="right">Actions</Th>}
               {viewMode === 'examination' && (
                 <>
                   <Th>Exam Day</Th>
@@ -133,8 +169,16 @@ export default function RoomSchedule() {
                 <Td>{c.code}</Td>
                 <Td maxW="380px">{c.title}</Td>
                 <Td>{c.section}</Td>
-                <Td>{c.units ?? c.hours ?? '—'}</Td>
+                <Td>{c.unit ?? c.hours ?? '—'}</Td>
                 <Td>{c.facultyName}</Td>
+                {isAdmin && (
+                  <Td textAlign="right">
+                    <HStack justify="end" spacing={1}>
+                      <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} />
+                      <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />
+                    </HStack>
+                  </Td>
+                )}
                 {viewMode === 'examination' && (
                   <>
                     <Td>{c.examDay || '—'}</Td>
@@ -147,6 +191,27 @@ export default function RoomSchedule() {
           </Tbody>
         </Table>
       </Box>
+      <EditScheduleModal
+        isOpen={editDisc.isOpen}
+        onClose={() => { editDisc.onClose(); setSelected(null); }}
+        schedule={selected}
+        onSave={handleSaveEdit}
+        viewMode={viewMode}
+      />
+      <AlertDialog isOpen={delDisc.isOpen} onClose={delDisc.onClose} leastDestructiveRef={cancelRef} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader>Delete schedule?</AlertDialogHeader>
+            <AlertDialogBody>
+              This action cannot be undone. Are you sure you want to delete <b>{selected?.code}</b> - {selected?.title}?
+            </AlertDialogBody>
+            <AlertDialogFooter>
+              <Button ref={cancelRef} onClick={delDisc.onClose} variant="ghost">Cancel</Button>
+              <Button colorScheme="red" onClick={confirmDelete} ml={3}>Delete</Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </Box>
   );
 }

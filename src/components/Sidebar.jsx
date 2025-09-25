@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, VStack, Text, useColorModeValue, HStack, Icon, Image } from '@chakra-ui/react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar } from 'react-icons/fi';
-import { useVisitor } from '../context/VisitorContext';
+import { useSelector } from 'react-redux';
 
 function NavItem({ to, icon, children, onClick }) {
   const { pathname } = useLocation();
@@ -18,7 +18,7 @@ function NavItem({ to, icon, children, onClick }) {
 }
 
 export default function Sidebar({ mobile = false, onNavigate }) {
-  const { visitorRole } = useVisitor();
+  const visitorRole = useSelector(s => s.visitor.role);
   const bg = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
 

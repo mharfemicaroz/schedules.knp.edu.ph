@@ -1,7 +1,8 @@
 ﻿import React, { useMemo, useState } from 'react';
 import { Box, Heading, Tabs, TabList, TabPanels, Tab, TabPanel, useColorModeValue, HStack, Text, Button, Input, VStack, Wrap, WrapItem, Tag, TagLabel, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody, PopoverCloseButton, SimpleGrid, RadioGroup, Radio, Switch, FormControl, FormLabel, Badge, Icon } from '@chakra-ui/react';
-import { useData } from '../context/DataContext';
-import { Link as RouterLink } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { selectAllCourses } from '../store/dataSlice';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { getProgramColor } from '../utils/programColors';
 import MiniBarChart from '../components/MiniBarChart';
 import { FiPrinter, FiAlertCircle } from 'react-icons/fi';
@@ -24,7 +25,10 @@ function deriveSession(timeStartMinutes, explicit) {
 }
 
 export default function ViewsSession() {
-  const { allCourses, acadData, holidays } = useData();
+  const navigate = useNavigate();
+  const allCourses = useSelector(selectAllCourses);
+  const acadData = useSelector(s => s.data.acadData);
+  const holidays = useSelector(s => s.data.holidays);
   const border = useColorModeValue('gray.200','gray.700');
   const cellBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.400');
@@ -422,7 +426,20 @@ export default function ViewsSession() {
                       const blocksAfternoon = Array.from(mAfternoon.keys()).sort((a,b)=>String(a).localeCompare(String(b)));
                       const blocksEvening = Array.from(mEvening.keys()).sort((a,b)=>String(a).localeCompare(String(b)));
                       return (
-                        <Box key={r} as={RouterLink} to={`/views/rooms/${encodeURIComponent(r)}?day=${encodeURIComponent(t.day)}`} className="view-card" bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" p={4} position="relative" transition="transform 0.18s ease, box-shadow 0.18s ease" cursor="pointer" _hover={{ textDecoration: 'none' }}>
+                        <Box
+                          key={r}
+                          className="view-card"
+                          bg={cellBg}
+                          borderWidth="1px"
+                          borderColor={border}
+                          rounded="xl"
+                          p={4}
+                          position="relative"
+                          transition="transform 0.18s ease, box-shadow 0.18s ease"
+                          cursor="pointer"
+                          _hover={{ textDecoration: 'none' }}
+                          onClick={() => navigate(`/views/rooms/${encodeURIComponent(r)}?day=${encodeURIComponent(t.day)}`)}
+                        >
                           <Box position="absolute" top={0} left={0} right={0} h="4px" bg={roomAccent(r)} roundedTop="xl" />
                           <VStack align="stretch" spacing={3}>
                             <HStack justify="space-between">

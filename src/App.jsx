@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box, useColorModeValue } from '@chakra-ui/react';
 import Layout from './components/Layout';
@@ -12,14 +12,24 @@ import RoomSchedule from './pages/RoomSchedule';
 import DepartmentSchedule from './pages/DepartmentSchedule';
 import ViewsSession from './pages/ViewsSession';
 import BlockSchedule from './pages/BlockSchedule';
-import { DataProvider } from './context/DataContext';
-import { VisitorProvider } from './context/VisitorContext';
+// DataProvider removed; using Redux directly
+// VisitorProvider removed; visitor state via Redux
+import { useDispatch } from 'react-redux';
+import { loadAllSchedules, loadAcademicCalendar, loadHolidaysThunk } from './store/dataThunks';
+import { checkRoleThunk } from './store/authThunks';
+import GlobalToaster from './components/GlobalToaster';
 
 function App() {
   const bg = useColorModeValue('gray.50', 'gray.900');
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    dispatch(loadAllSchedules());
+    dispatch(loadAcademicCalendar());
+    dispatch(loadHolidaysThunk(2025));
+    dispatch(checkRoleThunk());
+  }, [dispatch]);
   return (
-    <DataProvider>
-      <VisitorProvider>
         <Box bg={bg} minH="100vh">
           <Layout>
             <Routes>
@@ -36,9 +46,8 @@ function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>
+          <GlobalToaster />
         </Box>
-      </VisitorProvider>
-    </DataProvider>
   );
 }
 

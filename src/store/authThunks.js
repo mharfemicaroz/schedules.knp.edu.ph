@@ -1,0 +1,48 @@
+import { createAsyncThunk } from '@reduxjs/toolkit';
+import apiService from '../services/apiService';
+import { setTokens, setUser, setBusy, logout as logoutAction } from './authSlice';
+
+export const loginThunk = createAsyncThunk('auth/login', async ({ identifier, password }, { dispatch }) => {
+  dispatch(setBusy(true));
+  try {
+    const res = await apiService.login(identifier, password);
+    const accessToken = res.accessToken || res.token || null;
+    const refreshToken = res.refreshToken || null;
+    const userdata = res.userdata || null;
+    dispatch(setTokens({ accessToken, refreshToken }));
+    dispatch(setUser(userdata));
+    if (accessToken) localStorage.setItem('auth:accessToken', accessToken); else localStorage.removeItem('auth:accessToken');
+    if (refreshToken) localStorage.setItem('auth:refreshToken', refreshToken); else localStorage.removeItem('auth:refreshToken');
+    if (userdata) localStorage.setItem('auth:user', JSON.stringify(userdata)); else localStorage.removeItem('auth:user');
+    apiService.setAuthToken(accessToken);
+    // Optionally refine user via role check
+    try { await dispatch(checkRoleThunk()).unwrap(); } catch {}
+    return res;
+  } finally {
+    dispatch(setBusy(false));
+  }
+});
+
+export const changePasswordThunk = createAsyncThunk('auth/changePassword', async ({ old_password, new_password }) => {
+  return await apiService.changePassword(old_password, new_password);
+});
+
+export const updateProfileThunk = createAsyncThunk('auth/updateProfile', async (payload, { getState, dispatch }) => {
+  const user = getState().auth.user;
+  if (!user?.id) throw new Error('No user');
+  const res = await apiService.updateUser(user.id, payload);
+  const merged = { ...(user || {}), ...((res && res.data) || res) };
+  dispatch(setUser(merged));
+  localStorage.setItem('auth:user', JSON.stringify(merged));
+  return merged;
+});
+
+export const checkRoleThunk = createAsyncThunk('auth/checkRole', async (_, { dispatch }) => {
+  const res = await apiService.checkRole();
+  const u = res.userdata || null;
+  if (u) {
+    dispatch(setUser(u));
+    localStorage.setItem('auth:user', JSON.stringify(u));
+  }
+  return u;
+});

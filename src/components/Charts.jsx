@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Box, Grid, GridItem, Heading, Text, useColorModeValue } from '@chakra-ui/react';
-import { useData } from '../context/DataContext';
+import { useSelector } from 'react-redux';
+import { selectFilteredFaculties } from '../store/dataSlice';
 
 function Donut({ value, total, label }) {
   const size = 140;
@@ -44,7 +45,7 @@ function BarByDept({ data }) {
 }
 
 export default function Charts() {
-  const { faculties } = useData();
+  const faculties = useSelector(selectFilteredFaculties);
   const { overload, total } = useMemo(() => {
     let load = 0, over = 0;
     faculties.forEach(f => { load += f.stats?.loadHours || 0; over += Math.max(0, (f.stats?.loadHours||0) - 24); });
@@ -74,4 +75,3 @@ export default function Charts() {
     </Grid>
   );
 }
-

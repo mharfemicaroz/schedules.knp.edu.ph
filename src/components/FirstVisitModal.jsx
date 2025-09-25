@@ -25,13 +25,14 @@ import {
 } from '@chakra-ui/react';
 import { FiInfo, FiUser } from 'react-icons/fi';
 import { checkIpExists, getClientIP, touchLastAccess, upsertVisitor } from '../utils/visitorLogger';
-import { useVisitor } from '../context/VisitorContext';
+import { useDispatch } from 'react-redux';
+import { setVisitorRole } from '../store/visitorSlice';
 
 const ROLES = ['Full-time', 'Part-time', 'Admin', 'Student'];
 
 export default function FirstVisitModal() {
   const toast = useToast();
-  const { updateVisitorRole } = useVisitor();
+  const dispatch = useDispatch();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [name, setName] = React.useState('');
   const [role, setRole] = React.useState('');
@@ -96,7 +97,7 @@ export default function FirstVisitModal() {
       await upsertVisitor({ name: name.trim(), role, ip });
       localStorage.setItem('visit_info_submitted', '1');
       localStorage.setItem('visitor_role', role);
-      updateVisitorRole(role);
+      dispatch(setVisitorRole(role));
       toast({ title: 'Info saved', status: 'success' });
       onClose();
     } catch (e) {

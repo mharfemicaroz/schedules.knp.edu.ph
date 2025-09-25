@@ -24,6 +24,7 @@ import { FiCalendar, FiFlag, FiBookOpen, FiCheckCircle } from 'react-icons/fi';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import apiService from '../services/apiService';
 
 function parseDate(val) {
   if (!val) return null;
@@ -237,23 +238,18 @@ export default function AcademicCalendar() {
   useEffect(() => {
     let mounted = true;
 
-    // Load both academic calendar and holidays data
+    // Load both academic calendar and holidays data from API
     const loadData = async () => {
       try {
-        const [acadResponse, holidaysResponse] = await Promise.all([
-          fetch('/acadcalendar.json'),
-          fetch('/holidays.json')
+        const [acadJson, holidaysArr] = await Promise.all([
+          apiService.getAcademicCalendar(),
+          apiService.getHolidays(2025)
         ]);
 
         if (!mounted) return;
 
-        const [acadJson, holidaysJson] = await Promise.all([
-          acadResponse.json(),
-          holidaysResponse.json()
-        ]);
-
-        setData(acadJson);
-        setHolidays(holidaysJson.philippines_holidays_2025 || []);
+        setData(acadJson.data || acadJson);
+        setHolidays(Array.isArray(holidaysArr) ? holidaysArr : []);
         setLoading(false);
       } catch (e) {
         if (!mounted) return;

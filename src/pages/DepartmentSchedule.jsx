@@ -1,10 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, Link as RouterLink } from 'react-router-dom';
-import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, VStack, Text, HStack, Switch, FormControl, FormLabel } from '@chakra-ui/react';
+import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, VStack, Text, HStack, Switch, FormControl, FormLabel, IconButton, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
 import { FiPrinter, FiArrowLeft } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
-import { useData } from '../context/DataContext';
+import { useSelector, useDispatch } from 'react-redux';
+import { selectAllCourses } from '../store/dataSlice';
 import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
+import EditScheduleModal from '../components/EditScheduleModal';
+import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
+import { FiEdit, FiTrash } from 'react-icons/fi';
 
 function yearOrder(y) {
   const s = String(y || '').toLowerCase();
@@ -19,10 +23,21 @@ function yearOrder(y) {
 export default function DepartmentSchedule() {
   const { dept: deptParam } = useParams();
   const dept = decodeURIComponent(deptParam || '');
-  const { allCourses, loading, acadData } = useData();
+  const dispatch = useDispatch();
+  const allCourses = useSelector(selectAllCourses);
+  const loading = useSelector(s => s.data.loading);
+  const acadData = useSelector(s => s.data.acadData);
   const [viewMode, setViewMode] = useLocalStorage('departmentScheduleViewMode', getInitialToggleState(acadData, 'departmentScheduleViewMode', 'regular'));
   const border = useColorModeValue('gray.200','gray.700');
   const tableBg = useColorModeValue('white','gray.800');
+  const authUser = useSelector(s => s.auth.user);
+  const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
+
+  // Edit/Delete state
+  const editDisc = useDisclosure();
+  const delDisc = useDisclosure();
+  const [selected, setSelected] = useState(null);
+  const cancelRef = React.useRef();
 
   const groups = useMemo(() => {
     const m = new Map();
@@ -68,9 +83,9 @@ export default function DepartmentSchedule() {
       g.blocks.forEach(b => {
         b.items.forEach(c => {
           if (viewMode === 'examination') {
-            rows.push([g.yl, b.block, c.semester, c.schedule || '—', c.code, c.title, String(c.units ?? c.hours ?? ''), c.room || '—', c.facultyName, c.examDay || '—', c.examSession || '—', c.examRoom || '—']);
+            rows.push([g.yl, b.block, c.semester, c.schedule || '—', c.code, c.title, String(c.unit ?? c.hours ?? ''), c.room || '—', c.facultyName, c.examDay || '—', c.examSession || '—', c.examRoom || '—']);
           } else {
-            rows.push([g.yl, b.block, c.semester, c.schedule || '—', c.code, c.title, String(c.units ?? c.hours ?? ''), c.room || '—', c.facultyName]);
+            rows.push([g.yl, b.block, c.semester, c.schedule || '—', c.code, c.title, String(c.unit ?? c.hours ?? ''), c.room || '—', c.facultyName]);
           }
         });
       });
@@ -78,6 +93,32 @@ export default function DepartmentSchedule() {
     const table = buildTable(headers, rows);
     const scheduleType = viewMode === 'examination' ? 'Examination Schedule' : 'Regular Schedule';
     printContent({ title: `Program: ${dept}`, subtitle: `Year • Block • Term • Time - ${scheduleType}`, bodyHtml: table });
+  }
+
+  async function handleSaveEdit(payload) {
+    if (!selected) return;
+    try {
+      const data = { ...payload };
+      if (data.faculty == null && selected.facultyName) data.faculty = selected.facultyName;
+      await dispatch(updateScheduleThunk({ id: selected.id, changes: data }));
+      editDisc.onClose();
+      setSelected(null);
+      dispatch(loadAllSchedules());
+    } catch (e) {
+      // Global toaster handles errors
+    }
+  }
+
+  async function confirmDelete() {
+    if (!selected) return;
+    try {
+      await dispatch(deleteScheduleThunk(selected.id));
+      delDisc.onClose();
+      setSelected(null);
+      dispatch(loadAllSchedules());
+    } catch (e) {
+      // Global toaster handles errors
+    }
   }
 
   return (
@@ -121,7 +162,14 @@ export default function DepartmentSchedule() {
                       <Th>Title</Th>
                       <Th>Units</Th>
                       <Th>Room</Th>
+                      {viewMode !== 'examination' && (
+                        <>
+                          <Th>Day</Th>
+                          <Th>F2F</Th>
+                        </>
+                      )}
                       <Th>Faculty</Th>
+                      {isAdmin && <Th textAlign="right">Actions</Th>}
                       {viewMode === 'examination' && (
                         <>
                           <Th>Exam Day</Th>
@@ -138,9 +186,23 @@ export default function DepartmentSchedule() {
                         <Td>{c.schedule || '—'}</Td>
                         <Td>{c.code}</Td>
                         <Td maxW={{ base: '220px', md: '420px' }}><Text noOfLines={{ base: 2, md: 1 }}>{c.title}</Text></Td>
-                        <Td>{c.units ?? c.hours ?? '—'}</Td>
+                        <Td>{c.unit ?? c.hours ?? '—'}</Td>
                         <Td>{c.room || '—'}</Td>
+                        {viewMode !== 'examination' && (
+                          <>
+                            <Td>{c.day || '�?"'}</Td>
+                            <Td>{c.f2fSched || '�?"'}</Td>
+                          </>
+                        )}
                         <Td>{c.facultyName}</Td>
+                        {isAdmin && (
+                          <Td textAlign="right">
+                            <HStack justify="end" spacing={1}>
+                              <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} />
+                              <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />
+                            </HStack>
+                          </Td>
+                        )}
                         {viewMode === 'examination' && (
                           <>
                             <Td>{c.examDay || '—'}</Td>
@@ -157,6 +219,29 @@ export default function DepartmentSchedule() {
           ))}
         </Box>
       ))}
+      {/* Edit Modal */}
+      <EditScheduleModal
+        isOpen={editDisc.isOpen}
+        onClose={() => { editDisc.onClose(); setSelected(null); }}
+        schedule={selected}
+        onSave={handleSaveEdit}
+        viewMode={viewMode}
+      />
+      {/* Delete Confirm */}
+      <AlertDialog isOpen={delDisc.isOpen} onClose={delDisc.onClose} leastDestructiveRef={cancelRef} isCentered>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader>Delete schedule?</AlertDialogHeader>
+            <AlertDialogBody>
+              This action cannot be undone. Are you sure you want to delete <b>{selected?.code}</b> - {selected?.title}?
+            </AlertDialogBody>
+            <AlertDialogFooter>
+              <Button ref={cancelRef} onClick={delDisc.onClose} variant="ghost">Cancel</Button>
+              <Button colorScheme="red" onClick={confirmDelete} ml={3}>Delete</Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </VStack>
   );
 }

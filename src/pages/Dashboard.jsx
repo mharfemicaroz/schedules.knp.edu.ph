@@ -9,11 +9,21 @@ import FacultyTable from '../components/FacultyTable';
 import Pagination from '../components/Pagination';
 import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
-import { useData } from '../context/DataContext';
+import { useDispatch, useSelector } from 'react-redux';
+import { selectFilteredFaculties, selectPagedFaculties, selectPageCount, selectStats } from '../store/dataSlice';
+import { setPage, setPageSize } from '../store/dataSlice';
 import { buildTable, printContent } from '../utils/printDesign';
 
 export default function Dashboard() {
-  const { loading, error, paged, page, pageCount, setPage, pageSize, setPageSize, stats, faculties } = useData();
+  const dispatch = useDispatch();
+  const loading = useSelector(s => s.data.loading);
+  const error = useSelector(s => s.data.error);
+  const paged = useSelector(selectPagedFaculties);
+  const page = useSelector(s => s.data.page);
+  const pageCount = useSelector(selectPageCount);
+  const pageSize = useSelector(s => s.data.pageSize);
+  const stats = useSelector(selectStats);
+  const faculties = useSelector(selectFilteredFaculties);
 
   function onPrint() {
     const headers = ['Faculty', 'Units', 'Overload', 'Courses'];
@@ -53,7 +63,7 @@ export default function Dashboard() {
         <FacultyTable items={paged} />
       </Box>
 
-      <Pagination page={page} pageCount={pageCount} onPage={setPage} pageSize={pageSize} onPageSize={setPageSize} />
+      <Pagination page={page} pageCount={pageCount} onPage={(p)=>dispatch(setPage(p))} pageSize={pageSize} onPageSize={(ps)=>dispatch(setPageSize(ps))} />
 
       <Charts />
     </VStack>
