@@ -30,7 +30,6 @@ import { useSelector, useDispatch } from 'react-redux';
 import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import SplashScreen from './SplashScreen';
-import FirstVisitModal from './FirstVisitModal';
 import LoginModal from './LoginModal';
 import ChangePasswordModal from './ChangePasswordModal';
 import ProfileModal from './ProfileModal';
@@ -191,7 +190,6 @@ export default function Layout({ children }) {
       {(loading || routeBusy) && (
         <LoaderOverlay label={loading ? 'Loading data.' : 'Loading view.'} />
       )}
-      <FirstVisitModal />
       <LoginModal
         isOpen={loginDisc.isOpen}
         onClose={loginDisc.onClose}

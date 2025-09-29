@@ -135,9 +135,11 @@ class ApiService {
 
   // POST /api/schedules - Create new schedule
   async createSchedule(scheduleData) {
+    const payload = { ...(scheduleData || {}) };
+    if (payload.facultyId != null) { delete payload.faculty; }
     return this.request("/", {
       method: "POST",
-      body: JSON.stringify(scheduleData),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -151,9 +153,20 @@ class ApiService {
 
   // PUT /api/schedules/:id - Update schedule
   async updateSchedule(id, scheduleData) {
+    const payload = { ...(scheduleData || {}) };
+    // If setting by ID, drop name to avoid conflicts
+    if (payload.facultyId != null) { delete payload.faculty; }
+    // Mirror possible backend keys for null/clear semantics
+    if (Object.prototype.hasOwnProperty.call(payload, 'facultyId')) {
+      payload.faculty_id = payload.facultyId;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'faculty')) {
+      // Some backends use 'instructor' field
+      payload.instructor = payload.faculty;
+    }
     return this.request(`/${id}`, {
       method: "PUT",
-      body: JSON.stringify(scheduleData),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -179,6 +192,48 @@ class ApiService {
 
   async getProgramSchedules(programcode) {
     return this.getSchedulesByProgramCode(programcode);
+  }
+
+  // Faculty endpoints
+  async getFaculties(params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => { if (v != null && v !== '') search.set(k, v); });
+    const qs = search.toString();
+    const url = `${this.baseURL}/faculty${qs ? `/?${qs}` : '/'}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async createFaculty(payload) {
+    const url = `${this.baseURL}/faculty/`;
+    const body = JSON.stringify(this.#normalizeFacultyPayload(payload));
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async updateFaculty(id, payload) {
+    const url = `${this.baseURL}/faculty/${encodeURIComponent(id)}`;
+    const body = JSON.stringify(this.#normalizeFacultyPayload(payload));
+    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async deleteFaculty(id) {
+    const url = `${this.baseURL}/faculty/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  // Normalize frontend -> backend keys for faculty
+  #normalizeFacultyPayload(obj = {}) {
+    const p = { ...obj };
+    if (p.loadReleaseUnits != null && p.load_release_units == null) p.load_release_units = p.loadReleaseUnits;
+    if (p.load_release_units != null && p.loadReleaseUnits == null) p.loadReleaseUnits = p.load_release_units;
+    return p;
   }
 
   // Advanced filtering and search

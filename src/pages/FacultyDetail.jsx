@@ -1,32 +1,46 @@
 import React, { useState } from 'react';
-import { useParams, Link as RouterLink } from 'react-router-dom';
+import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Box, Heading, HStack, Avatar, Text, Badge, VStack, Divider, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, Switch, FormControl, FormLabel, IconButton, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
 import { FiPrinter, FiArrowLeft } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import { useSelector, useDispatch } from 'react-redux';
-import { selectFilteredFaculties } from '../store/dataSlice';
+import { selectFilteredFaculties, selectAllCourses } from '../store/dataSlice';
 import LoadingState from '../components/LoadingState';
 import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
 import EditScheduleModal from '../components/EditScheduleModal';
 import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
 import { FiEdit, FiTrash } from 'react-icons/fi';
+import FacultySelect from '../components/FacultySelect';
+import AssignSchedulesModal from '../components/AssignSchedulesModal';
+// conflict checking removed per request
+import { buildConflicts, buildCrossFacultyOverlaps, parseTimeBlockToMinutes } from '../utils/conflicts';
+import Pagination from '../components/Pagination';
+import { Tag, TagLabel, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Wrap, WrapItem } from '@chakra-ui/react';
+
 
 export default function FacultyDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const dispatch = useDispatch();
   const faculties = useSelector(selectFilteredFaculties);
+  const allCourses = useSelector(selectAllCourses);
   const loading = useSelector(s => s.data.loading);
   const acadData = useSelector(s => s.data.acadData);
   const [viewMode, setViewMode] = useLocalStorage('facultyDetailViewMode', getInitialToggleState(acadData, 'facultyDetailViewMode', 'regular'));
   // Hoist hooks before any early return to keep hook order stable across renders
   const _border = useColorModeValue('gray.200','gray.700');
   const _panelBg = useColorModeValue('white','gray.800');
+  const dangerRowBg = useColorModeValue('red.50','rgba(255,0,0,0.12)');
   const _authUser = useSelector(s => s.auth.user);
   const _editDisc = useDisclosure();
   const _delDisc = useDisclosure();
+  const _assignDisc = useDisclosure();
+  const _confDisc = useDisclosure();
   const [_selected, _setSelected] = useState(null);
+  const [editingName, setEditingName] = useState(false);
   const _cancelRef = React.useRef();
-  if (loading) return <LoadingState label="Loading faculty…" />;
+
+  const [, set] = useState('');
   const f = faculties.find(x => String(x.id) === String(id));
   const border = _border;
   const panelBg = _panelBg;
@@ -34,69 +48,303 @@ export default function FacultyDetail() {
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
   const editDisc = _editDisc;
   const delDisc = _delDisc;
+  const assignDisc = _assignDisc;
+  const confDisc = _confDisc;
   const [selected, setSelected] = [_selected, _setSelected];
   const cancelRef = _cancelRef;
 
-  if (!f) {
-    return (
-      <VStack align="center" spacing={6} py={10}>
-        <Heading size="md">Faculty not found</Heading>
-        <Button as={RouterLink} to="/" colorScheme="brand" variant="solid" leftIcon={<FiArrowLeft />}>Back to Dashboard</Button>
-      </VStack>
-    );
-  }
+    // Merge helper: combine same section + code + term + time; merge rooms and F2F days
+  const sortedCourses = React.useMemo(() => {
+    const list = (f && Array.isArray(f.courses) ? f.courses.slice() : []);
+    const startOf = (c) => {
+      if (Number.isFinite(c?.timeStartMinutes)) return c.timeStartMinutes;
+      const tStr = String(c?.scheduleKey || c?.schedule || c?.time || '').trim();
+      // Try AM/PM/NN parser first
+      const tr = parseTimeBlockToMinutes(tStr);
+      if (Number.isFinite(tr.start)) return tr.start;
+      // Try HH:MM-HH:MM (24h) e.g., 11:00-12:00 or 16:00-17:00
+      const m = tStr.match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+      if (m) {
+        const sh = parseInt(m[1], 10), sm = parseInt(m[2], 10);
+        if (!Number.isNaN(sh) && !Number.isNaN(sm)) return sh * 60 + sm;
+      }
+      return Infinity;
+    };
+    const keyOfTime = (c) => {
+      const s = startOf(c);
+      return Number.isFinite(s) ? s : Infinity;
+    };
+    if (viewMode === 'examination') {
+      // Examination view: no merging, keep original
+      return list.sort((a, b) => {
+        const oa = Number.isFinite(a.termOrder) ? a.termOrder : 99;
+        const ob = Number.isFinite(b.termOrder) ? b.termOrder : 99;
+        if (oa !== ob) return oa - ob;
+        const ta = keyOfTime(a);
+        const tb = keyOfTime(b);
+        if (ta !== tb) return ta - tb;
+        return String(a.scheduleKey || '').localeCompare(String(b.scheduleKey || ''));
+      });
+    }
+    const toDayCodes = (src) => {
+      const s = String(src || '').trim().toUpperCase();
+      if (!s) return [];
+      const map = { MON:'Mon', TUE:'Tue', WED:'Wed', THU:'Thu', FRI:'Fri', SAT:'Sat', SUN:'Sun' };
+      const parts = s.split(/[\/,;&\s]+/).filter(Boolean);
+      const out = new Set();
+      for (const p0 of parts) {
+        const p = p0.toUpperCase();
+        if (p.includes('-')) {
+          const [a,b] = p.split('-').map(t=>t.trim());
+          const order=["MON","TUE","WED","THU","FRI","SAT","SUN"]; const ai=order.indexOf(a), bi=order.indexOf(b);
+          if (ai!==-1 && bi!==-1) { for(let i=ai;i<=bi;i++){ out.add(map[order[i]]); } }
+        } else if (map[p]) out.add(map[p]);
+      }
+      const order = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      return order.filter(d => out.has(d));
+    };
+    const keyOf = (c) => [
+      String(c.code || c.courseName || '').toUpperCase().trim(),
+      String(c.section || '').toUpperCase().trim(),
+      String(c.semester || c.term || '').toUpperCase().trim(),
+      String(c.schedule || c.time || '').toUpperCase().trim(),
+    ].join('|');
+    const map = new Map();
+    for (const c of list) {
+      const k = keyOf(c);
+      const prev = map.get(k);
+      const f2fFromC = Array.isArray(c.f2fDays) && c.f2fDays.length
+        ? c.f2fDays
+        : toDayCodes(c.f2fSched || c.f2fsched || c.day);
+      const dayCodes = toDayCodes(c.day);
+      const rooms = new Set();
+      if (c.room) rooms.add(String(c.room).trim());
+      if (prev) {
+        // merge into prev
+        const roomSet = new Set(prev._rooms || []);
+        rooms.forEach(r => roomSet.add(r));
+        prev._rooms = Array.from(roomSet);
+        const fset = new Set(prev.f2fDays || []);
+        f2fFromC.forEach(d => fset.add(d));
+        prev.f2fDays = Array.from(fset);
+        const dset = new Set(prev._days || []);
+        dayCodes.forEach(d => dset.add(d));
+        prev._days = Array.from(dset);
+      } else {
+        map.set(k, {
+          ...c,
+          _rooms: Array.from(rooms),
+          f2fDays: f2fFromC.slice(),
+          _days: dayCodes.slice(),
+        });
+      }
+    }
+    const merged = Array.from(map.values()).map(x => {
+      const order = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      const daysJoined = (x._days && x._days.length) ? order.filter(d => new Set(x._days).has(d)).join(',') : (x.day || '');
+      const f2fJoined = (x.f2fDays && x.f2fDays.length) ? order.filter(d => new Set(x.f2fDays).has(d)).join(',') : (x.f2fSched || '');
+      return {
+        ...x,
+        day: daysJoined,
+        f2fSched: f2fJoined,
+        f2fsched: f2fJoined,
+        room: (x._rooms || []).filter(Boolean).join(', '),
+      };
+    });
+    return merged.sort((a, b) => {
+      const oa = Number.isFinite(a.termOrder) ? a.termOrder : 99;
+      const ob = Number.isFinite(b.termOrder) ? b.termOrder : 99;
+      if (oa !== ob) return oa - ob;
+      const ta = keyOfTime(a);
+      const tb = keyOfTime(b);
+      if (ta !== tb) return ta - tb;
+      return String(a.scheduleKey || '').localeCompare(String(b.scheduleKey || ''));
+    });
+  }, [f, viewMode]);
+
+  const mergedStats = React.useMemo(() => {
+    const release = Number(f?.loadReleaseUnits) || 0;
+    const baseline = Math.max(0, 24 - release);
+    const list = viewMode === 'examination' ? (f?.courses || []) : (sortedCourses || []);
+    const loadUnits = list.reduce((sum, c) => sum + (Number(c.unit) || 0), 0);
+    const overloadUnits = Math.max(0, loadUnits - baseline);
+    const courseCount = list.length;
+    return { loadUnits, overloadUnits, courseCount, release };
+  }, [f, sortedCourses, viewMode]);
+
+  // Group courses by term for display (1st, 2nd, Sem, then others)
+  const termGroups = React.useMemo(() => {
+    const order = ['1st', '2nd', 'Sem'];
+    const buckets = new Map();
+    (sortedCourses || []).forEach(c => {
+      const t = String(c.semester || c.term || '').trim() || 'N/A';
+      const arr = buckets.get(t) || [];
+      arr.push(c);
+      buckets.set(t, arr);
+    });
+    const used = new Set();
+    const groups = [];
+    order.forEach(t => { if (buckets.has(t)) { groups.push({ term: t, items: buckets.get(t) }); used.add(t); } });
+    buckets.forEach((items, t) => { if (!used.has(t)) groups.push({ term: t, items }); });
+    return groups;
+  }, [sortedCourses]);
+
+  // Conflicts relevant to this faculty (same-faculty reasons + cross-faculty overlaps in same section)
+  const facultyConflictGroups = React.useMemo(() => {
+    if (!f) return [];
+    const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const facObj = { id: f.id, name: f.name };
+    const isThisFaculty = (r) => {
+      const rObj = { id: r.facultyId || r.faculty_id, name: r.facultyName || r.faculty };
+      const aId = facObj.id != null ? String(facObj.id) : '';
+      const bId = rObj.id != null ? String(rObj.id) : '';
+      if (aId && bId && aId === bId) return true;
+      const aName = normalizeName(facObj.name);
+      const bName = normalizeName(rObj.name);
+      return !!aName && aName === bName;
+    };
+
+    // Build a filtered set of rows where we exclude merged duplicates for THIS faculty only
+    const termOf = (r) => String(r.semester || r.term || '').trim().toLowerCase();
+    const timeStrOf = (r) => String(r.scheduleKey || r.schedule || r.time || '').trim();
+    const timeKeyOf = (r) => {
+      const s = timeStrOf(r);
+      const start = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : undefined;
+      const end = Number.isFinite(r.timeEndMinutes) ? r.timeEndMinutes : undefined;
+      return (Number.isFinite(start) && Number.isFinite(end)) ? `${start}-${end}` : s.toLowerCase();
+    };
+    const sectionOf = (r) => normalizeName(r.section || '');
+    const facIdOf = (r) => (r.facultyId != null ? String(r.facultyId) : (r.faculty_id != null ? String(r.faculty_id) : ''));
+    const facNameNorm = normalizeName(f.name);
+    const seen = new Set();
+    const filteredAll = allCourses.filter(r => {
+      if (!isThisFaculty(r)) return true;
+      const k = ['merged', facIdOf(r) || facNameNorm, termOf(r), timeKeyOf(r), sectionOf(r)].join('|');
+      if (seen.has(k)) return false; // drop merged duplicate
+      seen.add(k);
+      return true;
+    });
+
+    // Sanitize/normalize times for consistent comparisons
+    const toKey = (start, end) => `${start}-${end}`;
+    const sanitized = filteredAll.map(r => {
+      const tStr = String(r.scheduleKey || r.schedule || r.time || '').trim();
+      const hasNums = Number.isFinite(r.timeStartMinutes) && Number.isFinite(r.timeEndMinutes);
+      if (hasNums) {
+        return { ...r, scheduleKey: toKey(r.timeStartMinutes, r.timeEndMinutes) };
+      }
+      const tr = parseTimeBlockToMinutes(tStr);
+      const valid = Number.isFinite(tr.start) && Number.isFinite(tr.end);
+      return valid ? { ...r, scheduleKey: toKey(tr.start, tr.end) } : { ...r, scheduleKey: '', schedule: '', time: '' };
+    });
+
+    const base = buildConflicts(sanitized).filter(g => g.items.some(isThisFaculty));
+    const cross = buildCrossFacultyOverlaps(sanitized).filter(g => g.items.some(isThisFaculty));
+
+    // Additional rule: Same faculty, same term, same time (ignore F2F day) — but NOT when same section (merged)
+    const sameTimeIgnoreF2F = [];
+    const map = new Map();
+    const key = (...parts) => parts.map(v => String(v ?? '').toLowerCase().trim()).join('|');
+    sanitized.forEach(r => {
+      if (!isThisFaculty(r)) return;
+      const t = termOf(r);
+      const tk = timeKeyOf(r);
+      if (!t || !tk) return;
+      const k = key('same-time-any-f2f', facIdOf(r) || facNameNorm, t, tk);
+      const arr = map.get(k) || [];
+      arr.push(r);
+      map.set(k, arr);
+    });
+    map.forEach((arr, k) => {
+      if (arr.length > 1) {
+        const secs = new Set(arr.map(x => sectionOf(x)).filter(Boolean));
+        if (secs.size > 1) {
+          sameTimeIgnoreF2F.push({ reason: 'Double-booked: same term and time (ignoring F2F day)', key: 'R:'+k, items: arr });
+        }
+      }
+    });
+
+    const allGroups = [...base, ...cross, ...sameTimeIgnoreF2F];
+    // Deduplicate redundant pairings: if A-B for same reason exists, drop B-A
+    const seenPairs = new Set();
+    const seenGroups = new Set();
+    const uniq = [];
+    for (const g of allGroups) {
+      const ids = (g.items || []).map(it => String(it.id)).filter(Boolean);
+      if (ids.length === 2) {
+        const [a, b] = ids;
+        const k = ['pair', String(g.reason || ''), a < b ? a : b, a < b ? b : a].join('|');
+        if (seenPairs.has(k)) continue;
+        seenPairs.add(k);
+        uniq.push(g);
+      } else {
+        const key = ['group', String(g.reason || ''), ...ids.sort()].join('|');
+        if (seenGroups.has(key)) continue;
+        seenGroups.add(key);
+        uniq.push(g);
+      }
+    }
+
+    return uniq;
+  }, [allCourses, f]);
+
+  const [confPage, setConfPage] = useState(1);
+  const [confPageSize, setConfPageSize] = useState(10);
+  const confPageCount = Math.max(1, Math.ceil(facultyConflictGroups.length / confPageSize));
+  const pagedConflicts = facultyConflictGroups.slice((confPage-1)*confPageSize, (confPage-1)*confPageSize + confPageSize);
+  const conflictIdSet = React.useMemo(() => {
+    const set = new Set();
+    if (!f) return set;
+    const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const aName = normalizeName(f.name);
+    const aId = f.id != null ? String(f.id) : '';
+    const isThisFaculty = (r) => {
+      const rId = r && (r.facultyId || r.faculty_id);
+      const rName = r && (r.facultyName || r.faculty);
+      if (aId && rId != null && String(rId) === aId) return true;
+      return !!aName && aName === normalizeName(rName);
+    };
+    facultyConflictGroups.forEach(g => {
+      g.items.forEach(it => { if (isThisFaculty(it) && it?.id != null) set.add(String(it.id)); });
+    });
+    return set;
+  }, [facultyConflictGroups, f]);
+
+  
 
   // Helper functions for mode switching
   const getTableHeaders = () => {
     if (viewMode === 'examination') {
-      return ['Code', 'Title', 'Section', 'Units', 'Term', 'Time', 'Exam Day', 'Exam Session', 'Exam Room'];
+      return ['Code', 'Title', 'Section', 'Units', 'Time', 'Exam Day', 'Exam Session', 'Exam Room'];
     }
-    return ['Code', 'Title', 'Section', 'Units', 'Day', 'Time', 'Term', 'Room', 'Session', 'F2F'];
+    return ['Code', 'Title', 'Section', 'Units', 'Day', 'Time', 'Room', 'Session', 'F2F'];
   };
 
   const getCourseData = (course) => {
     if (viewMode === 'examination') {
       return [
-        course.code || '—',
-        course.title || '—',
-        course.section || '—',
-        String(course.unit ?? course.hours ?? '—'),
-        [course.semester, course.year].filter(Boolean).join(' ') || '—',
-        course.schedule || '—',
-        course.examDay || '—',
-        course.examSession || '—',
-        course.examRoom || '—'
+        course.code || '–',
+        course.title || '–',
+        course.section || '–',
+        String(course.unit ?? course.hours ?? '–'),
+        course.schedule || '–',
+        course.examDay || '–',
+        course.examSession || '–',
+        course.examRoom || '–'
       ];
     }
     return [
-      course.code || '—',
-      course.title || '—',
-      course.section || '—',
-      String(course.unit ?? course.hours ?? '—'),
-      course.day || '—',
-      course.schedule || '—',
-      [course.semester, course.year].filter(Boolean).join(' ') || '—',
-      course.room || '—',
-      course.session || '—',
-      course.f2fSched || '—'
+      course.code || '–',
+      course.title || '–',
+      course.section || '–',
+      String(course.unit ?? course.hours ?? '–'),
+      course.day || '–',
+      course.schedule || '–',
+      course.room || '–',
+      course.session || '–',
+      course.f2fSched || '–'
     ];
   };
-
-  // Sort helper: time then term
-  const sortedCourses = (f.courses || [])
-    .slice()
-    .sort((a, b) => {
-      // Primary: term order (1st, 2nd, 3rd, Summer)
-      const oa = Number.isFinite(a.termOrder) ? a.termOrder : 99;
-      const ob = Number.isFinite(b.termOrder) ? b.termOrder : 99;
-      if (oa !== ob) return oa - ob;
-      // Secondary: start time within term
-      const ta = Number.isFinite(a.timeStartMinutes) ? a.timeStartMinutes : Infinity;
-      const tb = Number.isFinite(b.timeStartMinutes) ? b.timeStartMinutes : Infinity;
-      if (ta !== tb) return ta - tb;
-      // Stable fallback by schedule key to avoid jitter
-      return String(a.scheduleKey || '').localeCompare(String(b.scheduleKey || ''));
-    });
 
   function onPrint() {
     const headers = getTableHeaders();
@@ -107,7 +355,8 @@ export default function FacultyDetail() {
       <table class="prt-table"><tbody>
         <tr><th>Department</th><td>${esc(f.department || '')}</td><th>Employment</th><td>${esc(f.employment || '')}</td></tr>
         <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
-        <tr><th>Load Release Units</th><td>${esc(String(f.loadReleaseUnits ?? 0))}</td><th>Total Load Units</th><td>${esc(String(f.stats?.loadHours ?? 0))}</td></tr>
+        <tr><th>Load Release Units</th><td>${esc(String(f.loadReleaseUnits ?? 0))}</td><th>Total Load Units</th><td>${esc(String(mergedStats.loadUnits))}</td></tr>
+        <tr><th>Overload Units</th><td>${esc(String(mergedStats.overloadUnits))}</td><th>Courses</th><td>${esc(String(mergedStats.courseCount))}</td></tr>
         <tr><th>Schedule Type</th><td colspan="3">${esc(viewMode === 'examination' ? 'Examination Schedule' : 'Regular Schedule')}</td></tr>
       </tbody></table>`;
     printContent({ title: `Faculty: ${f.name}`, subtitle: f.email || '', bodyHtml: metaHtml + table });
@@ -115,9 +364,35 @@ export default function FacultyDetail() {
   async function handleSaveEdit(payload) {
     if (!selected) return;
     try {
+      // Save-time conflict check (regular mode only)
+      if (viewMode !== 'examination') {
+        // Build the would-be-updated row (local, no network)
+        const up = { ...selected };
+        if (payload?.time) { up.time = payload.time; up.schedule = payload.time; up.scheduleKey = payload.time; }
+        if (payload?.term) { up.term = payload.term; up.semester = payload.term; }
+        if (payload?.room) up.room = payload.room;
+        if (payload?.f2fSched || payload?.f2fsched) {
+          const f2f = String(payload.f2fSched || payload.f2fsched || '').trim();
+          up.f2fSched = f2f; up.f2fsched = f2f;
+        }
+        if (payload?.facultyId) up.facultyId = payload.facultyId;
+        if (payload?.faculty) { up.faculty = payload.faculty; up.facultyName = payload.faculty; }
+        if (payload?.session) up.session = payload.session;
+
+        const facKey = String(up.facultyId || up.facultyName || up.faculty || '').trim();
+        const term = String(up.semester || up.term || '').trim();
+        const time = String(up.scheduleKey || up.schedule || up.time || '').trim();
+        const days = [];
+
+        if (facKey && term && time && days.length) {
+          const daySet = new Set(days);
+          // conflict checking disabled per request
+        }
+      }
       await dispatch(updateScheduleThunk({ id: selected.id, changes: payload }));
       editDisc.onClose();
       setSelected(null);
+      set('');
       dispatch(loadAllSchedules());
     } catch (e) {
       // Global toaster handles errors
@@ -137,12 +412,35 @@ export default function FacultyDetail() {
 
   return (
     <>
+    {loading ? (
+      <LoadingState label="Loading faculty…" />
+    ) : !f ? (
+      <VStack align="center" spacing={6} py={10}>
+        <Heading size="md">Faculty not found</Heading>
+        <Button as={RouterLink} to="/" colorScheme="brand" variant="solid" leftIcon={<FiArrowLeft />}>Back to Dashboard</Button>
+      </VStack>
+    ) : (
     <VStack align="stretch" spacing={6}>
       <HStack spacing={4} justify="space-between" flexWrap="wrap" gap={3}>
         <HStack spacing={4}>
           <Avatar size="lg" name={f.name} />
           <Box>
-            <Heading size="md">{f.name}</Heading>
+            {editingName ? (
+              <HStack>
+                <FacultySelect
+                  value={f.name}
+                  onChange={(v) => { if (v) { navigate(`/faculty/${encodeURIComponent(v)}`); } setEditingName(false); }}
+                  onChangeId={() => {}}
+                  autoFocus
+                />
+                <Button size="xs" variant="ghost" onClick={() => setEditingName(false)}>Cancel</Button>
+              </HStack>
+            ) : (
+              <HStack>
+                <Heading size="md">{f.name}</Heading>
+                <IconButton aria-label="Change faculty" icon={<FiEdit />} size="sm" variant="ghost" onClick={() => setEditingName(true)} />
+              </HStack>
+            )}
             <VStack align="start" spacing={1} mt={2}>
               <HStack spacing={2}>
                 <Badge colorScheme="blue">{f.department || '—'}</Badge>
@@ -154,8 +452,8 @@ export default function FacultyDetail() {
             </VStack>
           </Box>
         </HStack>
-        <HStack spacing={4}>
-          <FormControl display="flex" alignItems="center" w="auto">
+      <HStack spacing={4}>
+        <FormControl display="flex" alignItems="center" w="auto">
             <FormLabel htmlFor="schedule-mode" mb="0" fontSize="sm" fontWeight="medium">
               Regular F2F
             </FormLabel>
@@ -171,59 +469,85 @@ export default function FacultyDetail() {
             </FormLabel>
           </FormControl>
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
+          <Button onClick={assignDisc.onOpen} variant="solid" size="sm" colorScheme="blue">Assign Schedules</Button>
+          {facultyConflictGroups.length > 0 && (
+            <Button variant="outline" size="sm" colorScheme="red" onClick={() => { setConfPage(1); confDisc.onOpen(); }}>
+              Conflicts <Tag colorScheme="red" ml={2}><TagLabel>{facultyConflictGroups.length}</TagLabel></Tag>
+            </Button>
+          )}
           <Button as={RouterLink} to="/" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />} w="fit-content">Back</Button>
         </HStack>
       </HStack>
+      
 
       <Box borderWidth="1px" borderColor={border} rounded="xl" p={4} bg={panelBg}>
         <HStack spacing={6}>
-          <Stat label="Load Units" value={f.stats?.loadHours ?? 0} />
+          <Stat label="Load Units" value={mergedStats.loadUnits} />
           <Stat label="Load Release Units" value={f.loadReleaseUnits ?? 0} />
-          <Stat label="Overload Units" value={(f.stats?.overloadHours != null ? f.stats.overloadHours : Math.max(0, (f.stats?.loadHours||0) - Math.max(0, 24 - (Number(f.loadReleaseUnits)||0))))} />
-          <Stat label="Courses" value={f.stats?.courseCount ?? (f.courses?.length || 0)} />
+          <Stat label="Overload Units" value={mergedStats.overloadUnits} />
+          <Stat label="Courses" value={mergedStats.courseCount} />
         </HStack>
       </Box>
 
-      <Box className="responsive-table table-fac-detail" borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} overflowX="auto">
-        <Table size={{ base: 'sm', md: 'md' }}>
-          <Thead>
-            <Tr>
-              {(() => { const h = getTableHeaders(); if (isAdmin) h.push('Actions'); return h; })().map((header, index) => (
-                <Th key={index}>{header}</Th>
-              ))}
-            </Tr>
-          </Thead>
-          <Tbody>
-            {sortedCourses.map(c => {
-              const courseData = getCourseData(c);
-              return (
-                <Tr key={c.id}>
-                  {courseData.map((data, index) => (
-                    <Td key={index}>
-                      {index === 1 ? (
-                        <Text maxW="380px" noOfLines={1}>{data}</Text>
-                      ) : (
-                        data
-                      )}
-                    </Td>
+      {sortedCourses.length === 0 ? (
+        <VStack align="center" spacing={3} py={12} borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg}>
+          <Heading size="sm">No schedules assigned</Heading>
+          <Text color="gray.500" fontSize="sm" textAlign="center">
+            This faculty has no {viewMode === 'examination' ? 'examination ' : ''}schedules yet.
+          </Text>
+          {isAdmin && (
+            <Button colorScheme="blue" size="sm" onClick={assignDisc.onOpen}>Assign Schedules</Button>
+          )}
+        </VStack>
+      ) : termGroups.map(group => (
+        <Box key={group.term}>
+          <HStack justify="space-between" mb={2}>
+            <Heading size="sm">Term: {group.term || 'N/A'}</Heading>
+          </HStack>
+          <Box className="responsive-table table-fac-detail" borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} overflowX="auto">
+            <Table size={{ base: 'sm', md: 'md' }}>
+              <Thead>
+                <Tr>
+                  {(() => { const h = getTableHeaders(); if (isAdmin) h.push('Actions'); return h; })().map((header, index) => (
+                    <Th key={index}>{header}</Th>
                   ))}
-                  {isAdmin && (
-                    <Td textAlign="right">
-                      <HStack justify="end" spacing={1}>
-                        <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} />
-                        <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />
-                      </HStack>
-                    </Td>
-                  )}
                 </Tr>
-              );
-            })}
-          </Tbody>
-        </Table>
-      </Box>
+              </Thead>
+              <Tbody>
+                {group.items.map(c => {
+                  const courseData = getCourseData(c);
+                  const isConflict = conflictIdSet.has(String(c.id));
+                  return (
+                    <Tr key={c.id} bg={isConflict ? dangerRowBg : undefined}>
+                      {courseData.map((data, index) => (
+                        <Td key={index}>
+                          {index === 1 ? (
+                            <Text maxW="380px" noOfLines={1}>{data}</Text>
+                          ) : (
+                            data
+                          )}
+                        </Td>
+                      ))}
+                      {isAdmin && (
+                        <Td textAlign="right">
+                          <HStack justify="end" spacing={1}>
+                            <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} />
+                            <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />
+                          </HStack>
+                        </Td>
+                      )}
+                    </Tr>
+                  );
+                })}
+              </Tbody>
+            </Table>
+          </Box>
+        </Box>
+      ))}
 
 
     </VStack>
+    )}
     <EditScheduleModal
       isOpen={editDisc.isOpen}
       onClose={() => { editDisc.onClose(); setSelected(null); }}
@@ -231,6 +555,40 @@ export default function FacultyDetail() {
       onSave={handleSaveEdit}
       viewMode={viewMode}
     />
+    <AssignSchedulesModal isOpen={assignDisc.isOpen} onClose={assignDisc.onClose} currentFacultyName={f?.name} />
+    <Modal isOpen={confDisc.isOpen} onClose={confDisc.onClose} size="4xl" isCentered>
+      <ModalOverlay backdropFilter="blur(6px)" />
+      <ModalContent>
+        <ModalHeader>Conflicts for {f?.name || 'Faculty'}</ModalHeader>
+        <ModalCloseButton />
+        <ModalBody>
+          <VStack align="stretch" spacing={4}>
+            {pagedConflicts.map(group => (
+              <Box key={group.key} borderWidth="1px" borderColor={border} rounded="md" p={3}>
+                <Text color="red.500" fontWeight="700" mb={2}>{group.reason}</Text>
+                <Wrap spacing={2}>
+                  {group.items.map((c, idx) => (
+                    <WrapItem key={`${c.id}-${idx}`}>
+                      <Badge variant="subtle" colorScheme="gray" px={2} py={1} rounded="md">
+                        <Text as="span" fontSize="xs" fontWeight="semibold">{c.code || c.courseName || 'Course'}</Text>
+                        <Text as="span">/{c.section || ''}</Text>
+                        <Text as="span" color="gray.500"> — {(c.f2fSched || c.f2fsched || c.day || '')} • {c.schedule || c.time || ''}</Text>
+                        <Text as="span" color="gray.600"> • {c.facultyName || c.faculty || 'Unknown'}</Text>
+                      </Badge>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+              </Box>
+            ))}
+          </VStack>
+        </ModalBody>
+        <ModalFooter w="full">
+          <VStack w="full">
+            <Pagination page={confPage} pageCount={confPageCount} onPage={setConfPage} pageSize={confPageSize} onPageSize={(n)=>{ setConfPageSize(n); setConfPage(1); }} />
+          </VStack>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
     <AlertDialog isOpen={delDisc.isOpen} onClose={delDisc.onClose} leastDestructiveRef={cancelRef} isCentered>
       <AlertDialogOverlay>
         <AlertDialogContent>
@@ -257,3 +615,9 @@ function Stat({ label, value }) {
     </Box>
   );
 }
+
+
+
+
+
+

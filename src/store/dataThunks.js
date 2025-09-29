@@ -84,22 +84,32 @@ function transformSchedulesToFacultyDataset(schedules) {
   };
 
   schedules.forEach((schedule) => {
-    const instructor = schedule.faculty || "Unknown";
+    const facProfile = schedule.facultyProfile || {};
+    const instructor = schedule.faculty || facProfile.faculty || "Unknown";
     if (!facultyMap.has(instructor)) {
       facultyMap.set(instructor, {
         id: instructor,
         name: instructor,
         email: `${instructor.toLowerCase().replace(/\s+/g, ".")}@knp.edu.ph`,
-        department: schedule.dept || "Unknown",
+        department: schedule.dept || facProfile.dept || "Unknown",
+        designation: schedule.designation || facProfile.designation || "",
+        employment: schedule.employment || facProfile.employment || "",
         courses: [],
         stats: { loadHours: 0, courseCount: 0, overloadHours: 0 },
-        loadReleaseUnits: schedule.loadReleaseUnits || 0,
+        loadReleaseUnits: (schedule.loadReleaseUnits ?? schedule.load_release_units ?? facProfile.load_release_units) || 0,
       });
     }
     const facultyData = facultyMap.get(instructor);
+    // Backfill profile fields if missing from earlier rows
+    if (!facultyData.designation && (schedule.designation || facProfile.designation)) facultyData.designation = schedule.designation || facProfile.designation;
+    if (!facultyData.employment && (schedule.employment || facProfile.employment)) facultyData.employment = schedule.employment || facProfile.employment;
+    if (!facultyData.loadReleaseUnits && (schedule.load_release_units != null || schedule.loadReleaseUnits != null || facProfile.load_release_units != null)) {
+      facultyData.loadReleaseUnits = schedule.loadReleaseUnits ?? schedule.load_release_units ?? facProfile.load_release_units ?? facultyData.loadReleaseUnits;
+    }
     const t = parseTimeRange(schedule.time);
     const course = {
       id: schedule.id,
+      facultyId: schedule.facultyId || schedule.faculty_id || null,
       courseName: schedule.courseName,
       courseTitle: schedule.courseTitle,
       unit: schedule.unit,
@@ -109,7 +119,7 @@ function transformSchedulesToFacultyDataset(schedules) {
       block: schedule.block,
       yearlevel: schedule.yearlevel,
       instructor: schedule.instructor,
-      faculty: schedule.faculty,
+      faculty: schedule.faculty || facProfile.faculty,
       blockCode: schedule.blockCode,
       dept: schedule.dept,
       room: schedule.room,

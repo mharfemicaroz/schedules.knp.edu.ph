@@ -1,7 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 import authReducer from './authSlice';
 import dataReducer from './dataSlice';
-import visitorReducer from './visitorSlice';
+import facultyReducer from './facultySlice';
 import uiReducer, { setError, setToast } from './uiSlice';
 
 const toastMiddleware = storeAPI => next => action => {
@@ -23,6 +23,12 @@ const toastMiddleware = storeAPI => next => action => {
       storeAPI.dispatch(setToast({ status: 'success', title: 'Password updated' }));
     } else if (t.startsWith('auth/updateProfile/')) {
       storeAPI.dispatch(setToast({ status: 'success', title: 'Profile updated' }));
+    } else if (t.startsWith('faculty/create/')) {
+      storeAPI.dispatch(setToast({ status: 'success', title: 'Faculty created' }));
+    } else if (t.startsWith('faculty/update/')) {
+      storeAPI.dispatch(setToast({ status: 'success', title: 'Faculty updated' }));
+    } else if (t.startsWith('faculty/delete/')) {
+      storeAPI.dispatch(setToast({ status: 'success', title: 'Faculty deleted' }));
     }
   }
   return result;
@@ -32,7 +38,7 @@ const store = configureStore({
   reducer: {
     auth: authReducer,
     data: dataReducer,
-    visitor: visitorReducer,
+    faculty: facultyReducer,
     ui: uiReducer,
   },
   middleware: (getDefault) => getDefault().concat(toastMiddleware),
