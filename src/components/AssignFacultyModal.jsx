@@ -148,6 +148,47 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
     };
   }, [schedule]);
 
+  // Deterministic tie-break randomness for score sorting (advisable only for near-ties)
+  const seededRand = (seedStr) => {
+    // xmur3 hash to 32-bit seed
+    const xmur3 = (str) => {
+      let h = 1779033703 ^ str.length;
+      for (let i = 0; i < str.length; i++) {
+        h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+        h = (h << 13) | (h >>> 19);
+      }
+      return () => {
+        h = Math.imul(h ^ (h >>> 16), 2246822507);
+        h = Math.imul(h ^ (h >>> 13), 3266489909);
+        h ^= h >>> 16;
+        return h >>> 0;
+      };
+    };
+    const mulberry32 = (a) => {
+      let t = a >>> 0;
+      return () => {
+        t = (t + 0x6D2B79F5) >>> 0;
+        let r = Math.imul(t ^ (t >>> 15), 1 | t);
+        r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+      };
+    };
+    const seedFn = xmur3(String(seedStr || ''));
+    const prng = mulberry32(seedFn());
+    return prng();
+  };
+  const scoreTieJitter = (fac) => {
+    const sId = String(schedule?.id || '')
+      + '|' + String(schedule?.code || schedule?.courseName || '')
+      + '|' + String(schedule?.section || '')
+      + '|' + String(schedule?.semester || schedule?.term || '');
+    const fId = String(fac?.id || fac?.email || fac?.name || '');
+    const r = seededRand(sId + '|' + fId);
+    // return jitter in range [-A, +A]
+    const A = 0.03; // on 1..10 score scale, this is ±0.03
+    return (r * 2 - 1) * A;
+  };
+
   // Compute fitness score (1-10) per faculty for this schedule
   const scoreOf = useMemo(() => {
     const norm = (s) => String(s || '').toLowerCase();
@@ -158,12 +199,115 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
     const tr = parseTimeBlockToMinutes(timeStr);
     const candMid = Number.isFinite(tr.start) && Number.isFinite(tr.end) ? (tr.start + tr.end)/2 : NaN;
     const term = String(schedule?.semester || schedule?.term || '').trim().toLowerCase();
-    const tok = (s) => String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/).filter(Boolean);
-    const candTokens = (() => {
-      const a = tok(schedule?.code || schedule?.courseName || '');
-      const b = tok(schedule?.title || schedule?.courseTitle || '');
-      return Array.from(new Set(a.concat(b)));
+    const candDays = (() => {
+      const arr = parseF2FDays(schedule?.f2fDays || schedule?.f2fSched || schedule?.f2fsched || schedule?.day);
+      return Array.isArray(arr) && arr.length ? arr : ['ANY'];
     })();
+    const bandOf = (mid) => (Number.isFinite(mid) && mid < 12*60) ? 'AM' : 'PM';
+    const candBand = bandOf(candMid);
+    const termOrder = (t) => {
+      const s = String(t||'').toLowerCase();
+      // Extract years like 2024 or 2024-2025
+      const years = Array.from(s.matchAll(/(20\d{2})/g)).map(m=>parseInt(m[1],10));
+      let year = years.length ? Math.min(...years) : NaN;
+      // Semester index
+      let sem = 0;
+      if (/summer|mid\s*year|midyear/.test(s)) sem = 3;
+      else if (/(^|[^a-z])2(nd)?([^a-z]|$)|\bsem\s*2\b|\bterm\s*2\b/.test(s)) sem = 2;
+      else if (/(^|[^a-z])1(st)?([^a-z]|$)|\bsem\s*1\b|\bterm\s*1\b/.test(s)) sem = 1;
+      else if (/\b3(rd)?\b/.test(s)) sem = 3;
+      // Fallback: if only one year and contains '2nd', assume sem=2, else 1
+      if (!sem) sem = /2(nd)?|second/.test(s) ? 2 : 1;
+      if (!Number.isFinite(year)) {
+        // Try to infer year from patterns like 'ay 24-25'
+        const yy = s.match(/\b(\d{2})\s*[-/]\s*(\d{2})\b/);
+        if (yy) {
+          const y = parseInt(yy[1],10);
+          year = 2000 + (y >= 50 ? y : y); // assume 20xx
+        }
+      }
+      if (!Number.isFinite(year)) return NaN;
+      return year*10 + sem;
+    };
+    const candTermOrder = termOrder(term);
+    const tok = (s) => String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/).filter(Boolean);
+    const normalizeTight = (s) => String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+    const hasDigits = (s) => /\d/.test(String(s||''));
+
+    // Efficient token-level fuzzy matching with normalized Levenshtein and bigram Dice
+    const levenshtein = (a, b) => {
+      if (a === b) return 0;
+      const m = a.length, n = b.length;
+      if (m === 0) return n; if (n === 0) return m;
+      // Use two-row DP to reduce memory
+      let prev = new Array(n + 1);
+      let curr = new Array(n + 1);
+      for (let j = 0; j <= n; j++) prev[j] = j;
+      for (let i = 1; i <= m; i++) {
+        curr[0] = i;
+        const ca = a.charCodeAt(i - 1);
+        for (let j = 1; j <= n; j++) {
+          const cost = (ca === b.charCodeAt(j - 1)) ? 0 : 1;
+          const del = prev[j] + 1;
+          const ins = curr[j - 1] + 1;
+          const sub = prev[j - 1] + cost;
+          curr[j] = del < ins ? (del < sub ? del : sub) : (ins < sub ? ins : sub);
+        }
+        const tmp = prev; prev = curr; curr = tmp;
+      }
+      return prev[n];
+    };
+    const simRatio = (a, b) => {
+      if (!a && !b) return 1;
+      if (!a || !b) return 0;
+      const maxLen = Math.max(a.length, b.length);
+      if (maxLen === 0) return 1;
+      const d = levenshtein(a, b);
+      return Math.max(0, 1 - d / maxLen);
+    };
+    const dice2Gram = (a, b) => {
+      a = normalizeTight(a); b = normalizeTight(b);
+      if (a === b) return 1;
+      if (a.length < 2 || b.length < 2) return simRatio(a, b);
+      const grams = (s) => {
+        const map = new Map();
+        for (let i = 0; i < s.length - 1; i++) {
+          const g = s.slice(i, i + 2);
+          map.set(g, (map.get(g) || 0) + 1);
+        }
+        return map;
+      };
+      const ga = grams(a), gb = grams(b);
+      let inter = 0;
+      for (const [g, ca] of ga.entries()) {
+        const cb = gb.get(g);
+        if (cb) inter += Math.min(ca, cb);
+      }
+      const total = Array.from(ga.values()).reduce((s,v)=>s+v,0) + Array.from(gb.values()).reduce((s,v)=>s+v,0);
+      return total ? (2 * inter) / total : 0;
+    };
+    const tokenFuzzyBestRatio = (queryTokens, poolTokens) => {
+      if (!queryTokens.length || !poolTokens.length) return 0;
+      // For each query token, take the best similarity among pool tokens
+      let sum = 0;
+      for (const q of queryTokens) {
+        let best = 0;
+        for (const p of poolTokens) {
+          const r = simRatio(q, p);
+          if (r > best) best = r;
+          if (best >= 1) break;
+        }
+        sum += best;
+      }
+      return sum / queryTokens.length; // 0..1
+    };
+    const candCodeTokens = tok(schedule?.code || schedule?.courseName || '');
+    const candTitleTokens = tok(schedule?.title || schedule?.courseTitle || '');
+    const candTokens = Array.from(new Set(candCodeTokens.concat(candTitleTokens)));
+    const candCodeJoined = normalizeTight(String(schedule?.code || schedule?.courseName || ''));
+    const candTitleJoined = normalizeTight(String(schedule?.title || schedule?.courseTitle || ''));
+    const candJoined = normalizeTight(`${String(schedule?.code || schedule?.courseName || '')} ${String(schedule?.title || schedule?.courseTitle || '')}`);
+    const codeHasDigits = hasDigits(candCodeJoined);
 
     const map = new Map();
     (faculties || []).forEach(f => {
@@ -193,28 +337,171 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       // Time proximity (same term)
       const rowsAll = ((indexes.byFac.get(`id:${f.id}`) || []).concat(indexes.byFac.get(`nm:${norm(f.name || f.faculty || f.full_name)}`) || []));
       const rows = rowsAll.filter(r => String(r.semester || r.term || '').trim().toLowerCase() === term);
-      let avg = NaN; if (rows.length) {
-        let sum=0, cnt=0; rows.forEach(r => { let s=r.timeStartMinutes,e=r.timeEndMinutes; const tS=String(r.scheduleKey||r.schedule||r.time||'').trim(); if(!Number.isFinite(s)||!Number.isFinite(e)){const tt=parseTimeBlockToMinutes(tS); s=tt.start; e=tt.end;} if(Number.isFinite(s)&&Number.isFinite(e)){ sum+=(s+e)/2; cnt++; } }); avg = cnt? sum/cnt : NaN;
+      // Statistical time preference with recency weighting and AM/PM bands; plus KDE smoothing
+      const timePoints = [];
+      if (rowsAll.length) {
+        rowsAll.forEach(r => {
+          // Recency weighting: ignore future terms, decay older ones
+          const rTerm = String(r.semester || r.term || '').trim().toLowerCase();
+          const rOrd = termOrder(rTerm);
+          if (Number.isFinite(candTermOrder) && Number.isFinite(rOrd) && rOrd > candTermOrder) return; // skip future
+          let rec = 1;
+          if (Number.isFinite(candTermOrder) && Number.isFinite(rOrd)) {
+            const dOrd = Math.max(0, candTermOrder - rOrd);
+            rec = Math.pow(0.75, dOrd); // exponential decay per term step
+            if (rec < 0.25) rec = 0.25; // floor
+          }
+          let s=r.timeStartMinutes,e=r.timeEndMinutes;
+          const tS=String(r.scheduleKey||r.schedule||r.time||'').trim();
+          if (!Number.isFinite(s) || !Number.isFinite(e)) { const tt=parseTimeBlockToMinutes(tS); s=tt.start; e=tt.end; }
+          if (!Number.isFinite(s) || !Number.isFinite(e)) return;
+          const mid = (s+e)/2;
+          const wUnits = Math.max(0.5, Number(r.unit || 0) || 1); // weight by units (min 0.5)
+          const w = wUnits * rec;
+          const days = parseF2FDays(r.f2fDays || r.f2fSched || r.f2fsched || r.day);
+          const band = bandOf(mid);
+          if (days && days.length) {
+            days.forEach(d => timePoints.push({ day: d, band, mid, w }));
+          } else {
+            timePoints.push({ day: 'ANY', band, mid, w });
+          }
+        });
+      }
+      // Build stats per day-band and per day plus global
+      const byDayBand = new Map();
+      const byDay = new Map();
+      let gSum = 0, gW = 0;
+      timePoints.forEach(p => {
+        const k = `${p.day}|${p.band}`; const a = byDayBand.get(k) || []; a.push(p); byDayBand.set(k, a);
+        const ad = byDay.get(p.day) || []; ad.push(p); byDay.set(p.day, ad);
+        gSum += p.mid * p.w; gW += p.w;
+      });
+      const gMean = gW > 0 ? gSum / gW : NaN;
+      let gVarNum = 0; if (gW > 0) { timePoints.forEach(p => { gVarNum += p.w * (p.mid - gMean) * (p.mid - gMean); }); }
+      const gSigma = gW > 0 ? Math.sqrt(gVarNum / gW) : NaN;
+      const minSigma = 45; // minutes, floor for narrow distributions
+      const dayBandStats = new Map();
+      byDayBand.forEach((arr, k) => {
+        let s=0,w=0; arr.forEach(p => { s += p.mid * p.w; w += p.w; });
+        const mean = w>0 ? s/w : NaN;
+        let varNum=0; if (w>0) arr.forEach(p => { varNum += p.w * (p.mid - mean) * (p.mid - mean); });
+        let sigma = w>0 ? Math.sqrt(varNum / w) : NaN;
+        if (!Number.isFinite(sigma) || sigma < minSigma) sigma = Math.max(minSigma, Number.isFinite(gSigma)? gSigma : minSigma);
+        dayBandStats.set(k, { mean, sigma, w });
+      });
+      const dayStats = new Map();
+      byDay.forEach((arr, d) => {
+        let s=0,w=0; arr.forEach(p => { s += p.mid * p.w; w += p.w; });
+        const mean = w>0 ? s/w : NaN;
+        let varNum=0; if (w>0) arr.forEach(p => { varNum += p.w * (p.mid - mean) * (p.mid - mean); });
+        let sigma = w>0 ? Math.sqrt(varNum / w) : NaN;
+        if (!Number.isFinite(sigma) || sigma < minSigma) sigma = Math.max(minSigma, Number.isFinite(gSigma)? gSigma : minSigma);
+        dayStats.set(d, { mean, sigma, w });
+      });
+      const getStat = (d, b) => dayBandStats.get(`${d}|${b}`) || dayStats.get(d) || (Number.isFinite(gMean) ? { mean: gMean, sigma: Math.max(minSigma, Number.isFinite(gSigma)? gSigma : minSigma), w: gW } : null);
+      // Likelihood-based score: Gaussian around preferred time
+      let probBest = 0;
+      if (Number.isFinite(candMid) && (timePoints.length > 0)) {
+        for (const d of candDays) {
+          const st = getStat(d, candBand);
+          if (!st) continue;
+          const z = Math.abs(candMid - st.mean) / (st.sigma || minSigma);
+          const prob = Math.exp(-0.5 * z * z); // 0..1
+          if (prob > probBest) probBest = prob;
+        }
+      }
+      // KDE smoothing score with bandwidth h
+      const kdeH = 60; // minutes
+      const kde = (arr) => {
+        let num = 0, den = 0;
+        for (const p of arr) {
+          const diff = (candMid - p.mid) / kdeH;
+          const k = Math.exp(-0.5 * diff * diff);
+          num += p.w * k; den += p.w;
+        }
+        return den > 0 ? (num / den) : 0;
+      };
+      let kdeBest = 0;
+      if (Number.isFinite(candMid) && (timePoints.length > 0)) {
+        // Try day+band first, then day, then global
+        for (const d of candDays) {
+          const arrDB = byDayBand.get(`${d}|${candBand}`);
+          if (arrDB && arrDB.length) kdeBest = Math.max(kdeBest, kde(arrDB));
+          const arrD = byDay.get(d);
+          if (arrD && arrD.length) kdeBest = Math.max(kdeBest, kde(arrD));
+        }
+        if (kdeBest === 0) kdeBest = kde(timePoints);
+      }
+      // Nearest neighbor closeness in minutes within same term
+      let nearest = 0;
+      if (Number.isFinite(candMid) && rows.length) {
+        let minDiff = Infinity;
+        rows.forEach(r => {
+          let s=r.timeStartMinutes,e=r.timeEndMinutes; const tS=String(r.scheduleKey||r.schedule||r.time||'').trim();
+          if(!Number.isFinite(s)||!Number.isFinite(e)){const tt=parseTimeBlockToMinutes(tS); s=tt.start; e=tt.end;}
+          if(Number.isFinite(s)&&Number.isFinite(e)){
+            const mid=(s+e)/2; const d=Math.abs(candMid - mid); if (d < minDiff) minDiff = d;
+          }
+        });
+        // 0 at >= 4h difference, 1 when identical
+        nearest = Math.max(0, 1 - (minDiff/240));
       }
       let timeScore = 0.7;
-      if (Number.isFinite(candMid) && Number.isFinite(avg)) {
-        const diff = Math.abs(candMid - avg); // minutes
-        timeScore = Math.max(0, 1 - diff/360); // within 6h -> reduces to 0
+      if (Number.isFinite(candMid) && (timePoints.length > 0)) {
+        timeScore = 0.5 * kdeBest + 0.3 * probBest + 0.2 * nearest; // KDE + Gaussian + proximity
+        // Slight bonus if candidate days intersect faculty's most frequent day
+        const dayFreq = new Map(); timePoints.forEach(p => dayFreq.set(p.day, (dayFreq.get(p.day)||0)+p.w));
+        let topDay = null, topW = -1; dayFreq.forEach((w,d)=>{ if (w>topW) { topW=w; topDay=d; } });
+        if (topDay && candDays.includes(topDay)) timeScore = Math.min(1, timeScore + 0.05);
       }
       // String match between candidate code/title and faculty catalog
+      // Use fuzzy token similarity + whole-string bigram Dice for misspellings and near-matches
       let matchScore = 0.5;
       if (candTokens.length) {
         let best = 0;
         for (const r of rowsAll) {
-          const rTokens = Array.from(new Set(tok(r.code || r.courseName || '').concat(tok(r.title || r.courseTitle || ''))));
-          if (!rTokens.length) continue;
-          let hit = 0; const setR = new Set(rTokens);
-          for (const t of candTokens) { if (setR.has(t)) hit++; }
-          const ratio = hit / candTokens.length;
-          if (ratio > best) best = ratio;
+          const rCodeTokens = tok(r.code || r.courseName || '');
+          const rTitleTokens = tok(r.title || r.courseTitle || '');
+          const rTokensAll = Array.from(new Set(rCodeTokens.concat(rTitleTokens)));
+          if (!rTokensAll.length) continue;
+          const rCodeJoined = normalizeTight(String(r.code || r.courseName || ''));
+          const rTitleJoined = normalizeTight(String(r.title || r.courseTitle || ''));
+          const rJoined = normalizeTight(`${String(r.code || r.courseName || '')} ${String(r.title || r.courseTitle || '')}`);
+
+          // Exact code equality (ignoring dashes/spaces/case) dominates
+          if (candCodeJoined && rCodeJoined && candCodeJoined === rCodeJoined) {
+            best = 1;
+            break;
+          }
+
+          // Token-level: bias course code over title
+          const codeTokenMatch = tokenFuzzyBestRatio(candCodeTokens, rCodeTokens.length ? rCodeTokens : rTokensAll);
+          const titleTokenMatch = tokenFuzzyBestRatio(candTitleTokens, rTitleTokens.length ? rTitleTokens : rTokensAll);
+          const tokenCodeW = codeHasDigits ? 0.88 : 0.82;
+          const tokenTitleW = 1 - tokenCodeW;
+          const tokenMatch = tokenCodeW * codeTokenMatch + tokenTitleW * titleTokenMatch;
+
+          // Char-level: bias code string over title string
+          const codeDice = dice2Gram(candCodeJoined, rCodeJoined);
+          const titleDice = dice2Gram(candTitleJoined, rTitleJoined);
+          const charMatch = 0.8 * codeDice + 0.2 * titleDice;
+
+          let combo = 0.75 * tokenMatch + 0.25 * charMatch; // emphasize word-level, smooth with char-level
+
+          // Strong near-exact code match boost
+          const codeNear = Math.max(simRatio(candCodeJoined, rCodeJoined), codeDice);
+          if (codeNear >= 0.94) combo = Math.max(combo, 1.0);
+          if (combo > best) best = combo;
           if (best >= 1) break;
         }
-        matchScore = 0.5 + 0.5 * best; // 0.5..1.0 boost
+        // Threshold weak matches to avoid noise; scale above threshold
+        const weakThresh = 0.5;
+        if (best <= weakThresh) {
+          matchScore = 0.5; // keep baseline
+        } else {
+          const scaled = (best - weakThresh) / (1 - weakThresh);
+          matchScore = 0.5 + 0.5 * Math.max(0, Math.min(1, scaled)); // 0.5..1.0 boost
+        }
       }
       // Load and overload
       const baseline = Math.max(0, 24 - (stat.release||0));
@@ -223,9 +510,9 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       const overloadScore = Math.max(0, 1 - (stat.overload||0)/6);
       // Term experience count
       const termCount = rows.length; const expScore = Math.min(1, termCount/8);
-      // Weighted sum -> 1..10 (rebalanced to emphasize Course Match)
-      // Weights: dept 0.16, emp 0.16, degree 0.10, time 0.10, load 0.16, overload 0.08, exp 0.08, match 0.16 => 1.00
-      const score01 = 0.16*deptScore + 0.16*empScore + 0.10*degreeScore + 0.10*timeScore + 0.16*loadScore + 0.08*overloadScore + 0.08*expScore + 0.16*matchScore;
+      // Weighted sum -> 1..10 (standardized, code-first course alignment)
+      // Weights: dept 0.13, emp 0.13, degree 0.09, time 0.08, load 0.15, overload 0.08, exp 0.09, match 0.25 => 1.00
+      const score01 = 0.13*deptScore + 0.13*empScore + 0.09*degreeScore + 0.08*timeScore + 0.15*loadScore + 0.08*overloadScore + 0.09*expScore + 0.25*matchScore;
       const score = Math.max(1, Math.min(10, (score01*10)));
       map.set(String(f.id), {
         score,
@@ -276,7 +563,17 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
     const arr = eligibles.slice().sort((a,b) => {
       const va = get(a), vb = get(b);
       if (typeof va === 'number' && typeof vb === 'number') {
-        if (va !== vb) return (va - vb) * dir;
+        if (sortKey === 'score') {
+          const diff = va - vb;
+          const eps = 0.15; // treat scores within 0.15 (on 1..10 scale) as near-ties
+          if (Math.abs(diff) > eps) return diff * dir;
+          // near tie: break deterministically with seeded jitter
+          const ja = scoreTieJitter(a);
+          const jb = scoreTieJitter(b);
+          if (ja !== jb) return (ja - jb) * dir;
+        } else {
+          if (va !== vb) return (va - vb) * dir;
+        }
       } else {
         const sa = String(va), sb = String(vb);
         if (sa !== sb) return (sa < sb ? -1 : 1) * dir;
@@ -325,7 +622,7 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
               <>
               <Box borderWidth="1px" borderColor={border} rounded="md" bg={useColorModeValue('blue.50','whiteAlpha.200')} p={3}>
                 <Text fontSize="sm" color={useColorModeValue('blue.900','blue.100')}>
-                  Score ranks faculty by: department alignment, employment priority (full-time first), academic degree (doctorate/masters), closeness to their usual schedule time, current load vs. capacity, overload, experience in the same term, and course name/code similarity. Higher is better (1–10).
+                  Score ranks faculty by: department alignment, employment priority (full-time first), academic degree (doctorate/masters), recency‑weighted time preference (AM/PM aware; Gaussian + KDE), current load vs. capacity, overload, experience in the same term, and code‑weighted fuzzy course matching (typo tolerant; exact code prioritized). Higher is better (1–10).
                 </Text>
               </Box>
 
