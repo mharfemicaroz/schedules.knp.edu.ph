@@ -6,6 +6,7 @@ import { buildTable, printContent } from '../utils/printDesign';
 import Pagination from '../components/Pagination';
 import { getTimeOptions } from '../utils/timeOptions';
 import EditScheduleModal from '../components/EditScheduleModal';
+import AssignFacultyModal from '../components/AssignFacultyModal';
 import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
 
 function isInvalidFacultyName(s) {
@@ -39,6 +40,7 @@ export default function UnassignedSchedules() {
   // Edit/Delete
   const editDisc = useDisclosure();
   const delDisc = useDisclosure();
+  const assignDisc = useDisclosure();
   const [selected, setSelected] = useState(null);
   const cancelRef = React.useRef();
 
@@ -76,6 +78,7 @@ export default function UnassignedSchedules() {
         semester: r.term,
         day: r.day,
         schedule: r.time,
+        f2fSched: r.f2fSched || r.f2fsched,
         room: r.room,
         session: r.session,
         dept: r.dept,
@@ -84,6 +87,7 @@ export default function UnassignedSchedules() {
         examDay: r.examDay || r.Exam_Day,
         examSession: r.examSession || r.Exam_Session,
         examRoom: r.examRoom || r.Exam_Room,
+        _raw: r,
       }));
     // Sort by selected column/direction
     const dir = (sortDir === 'asc') ? 1 : -1;
@@ -250,6 +254,7 @@ export default function UnassignedSchedules() {
                 <Td>{r.session || '-'}</Td>
                 <Td textAlign="right">
                   <HStack justify="end" spacing={1}>
+                    <Button size="sm" colorScheme="blue" onClick={()=>{ setSelected(r); assignDisc.onOpen(); }}>Assign</Button>
                     <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(r); editDisc.onOpen(); }} />
                     <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => { setSelected(r); delDisc.onOpen(); }} />
                   </HStack>
@@ -264,6 +269,23 @@ export default function UnassignedSchedules() {
 
       {/* Edit Modal */}
       <EditScheduleModal isOpen={editDisc.isOpen} onClose={() => { editDisc.onClose(); setSelected(null); }} schedule={selected} onSave={handleSaveEdit} viewMode={'regular'} />
+
+      <AssignFacultyModal
+        isOpen={assignDisc.isOpen}
+        onClose={() => { assignDisc.onClose(); setSelected(null); }}
+        schedule={selected}
+        onAssign={async (fac) => {
+          if (!selected || !fac) return;
+          try {
+            await dispatch(updateScheduleThunk({ id: selected.id, changes: { facultyId: fac.id } }));
+            assignDisc.onClose();
+            setSelected(null);
+            dispatch(loadAllSchedules());
+          } catch {}
+        }}
+      />
+
+      {/* Assignment modal removed by request */}
 
       {/* Delete Confirm */}
       <AlertDialog isOpen={delDisc.isOpen} onClose={delDisc.onClose} leastDestructiveRef={cancelRef} isCentered>

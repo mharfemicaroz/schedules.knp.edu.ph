@@ -1,19 +1,29 @@
-import React, { useMemo, useState } from 'react';
-import { Box, Heading, HStack, VStack, Text, Input, Select, Table, Thead, Tbody, Tr, Th, Td, Tag, TagLabel, useColorModeValue, Button } from '@chakra-ui/react';
-import { useSelector } from 'react-redux';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Box, Heading, HStack, VStack, Text, Input, Select, Table, Thead, Tbody, Tr, Th, Td, Tag, TagLabel, useColorModeValue, Button, Spinner } from '@chakra-ui/react';
+import { useDispatch, useSelector } from 'react-redux';
 import { FiChevronUp, FiChevronDown, FiPrinter, FiDownload } from 'react-icons/fi';
 import Pagination from '../components/Pagination';
 import { selectAllCourses } from '../store/dataSlice';
 import { selectAllFaculty, selectFacultyFilterOptions } from '../store/facultySlice';
+import { loadFacultiesThunk } from '../store/facultyThunks';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
 import { buildTable, printContent } from '../utils/printDesign';
 
 export default function ReportsFacultySummary() {
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
+  const dispatch = useDispatch();
   const allCourses = useSelector(selectAllCourses);
   const faculties = useSelector(selectAllFaculty);
   const opts = useSelector(selectFacultyFilterOptions);
+  const facultyLoading = useSelector(s => s.faculty.loading);
+  const dataLoading = useSelector(s => s.data.loading);
+
+  useEffect(() => {
+    if (!faculties || faculties.length === 0) {
+      dispatch(loadFacultiesThunk({}));
+    }
+  }, [dispatch]);
 
   const [q, setQ] = useState('');
   const [department, setDepartment] = useState('');
@@ -136,6 +146,15 @@ export default function ReportsFacultySummary() {
     printContent({ title: 'Faculty Loading Summary', subtitle: 'Computed from current schedules and faculty records', bodyHtml: html });
   };
 
+  if ((facultyLoading || dataLoading) && (faculties?.length || 0) === 0) {
+    return (
+      <VStack align="center" spacing={4} py={12}>
+        <Spinner thickness="3px" speed="0.6s" color="blue.400" size="lg" />
+        <Text color={useColorModeValue('gray.600','gray.300')}>Loading faculty summary…</Text>
+      </VStack>
+    );
+  }
+
   return (
     <VStack align="stretch" spacing={6}>
       <HStack justify="space-between" flexWrap="wrap" gap={3}>
@@ -153,13 +172,13 @@ export default function ReportsFacultySummary() {
         <HStack spacing={3} wrap="wrap">
           <Input placeholder="Search faculty or department" value={q} onChange={(e)=>{ setQ(e.target.value); setPage(1); }} maxW="280px" />
           <Select placeholder="Department" value={department} onChange={(e)=>{ setDepartment(e.target.value); setPage(1); }} maxW="200px">
-            {opts.departments.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            {(opts?.departments || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
           <Select placeholder="Designation" value={designation} onChange={(e)=>{ setDesignation(e.target.value); setPage(1); }} maxW="200px">
-            {opts.designations.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            {(opts?.designations || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
           <Select placeholder="Employment" value={employment} onChange={(e)=>{ setEmployment(e.target.value); setPage(1); }} maxW="180px">
-            {opts.employments.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            {(opts?.employments || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
           <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)||15); setPage(1); }} maxW="110px">
             {[10,15,20,30,50].map(n => <option key={n} value={n}>{n}/page</option>)}
