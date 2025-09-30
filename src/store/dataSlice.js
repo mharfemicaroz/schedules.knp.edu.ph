@@ -11,6 +11,9 @@ const initialState = {
   // UI state
   query: '',
   semester: 'All',
+  facultyFilter: '',
+  departmentFilter: '',
+  employmentFilter: '',
   page: 1,
   pageSize: 10,
   useApiFiltering: true,
@@ -29,6 +32,9 @@ const dataSlice = createSlice({
     setHolidays(state, action) { state.holidays = Array.isArray(action.payload) ? action.payload : []; },
     setQuery(state, action) { state.query = action.payload || ''; state.page = 1; },
     setSemester(state, action) { state.semester = action.payload || 'All'; state.page = 1; },
+    setFacultyFilter(state, action) { state.facultyFilter = action.payload || ''; state.page = 1; },
+    setDepartmentFilter(state, action) { state.departmentFilter = action.payload || ''; state.page = 1; },
+    setEmploymentFilter(state, action) { state.employmentFilter = action.payload || ''; state.page = 1; },
     setPage(state, action) { state.page = Number(action.payload) || 1; },
     setPageSize(state, action) { state.pageSize = Number(action.payload) || 10; state.page = 1; },
     setUseApiFiltering(state, action) { state.useApiFiltering = !!action.payload; },
@@ -80,7 +86,7 @@ const dataSlice = createSlice({
   }
 });
 
-export const { setLoading, setError, setRaw, setFaculties, setAcadData, setHolidays, setQuery, setSemester, setPage, setPageSize, setUseApiFiltering, setApiFilters } = dataSlice.actions;
+export const { setLoading, setError, setRaw, setFaculties, setAcadData, setHolidays, setQuery, setSemester, setFacultyFilter, setDepartmentFilter, setEmploymentFilter, setPage, setPageSize, setUseApiFiltering, setApiFilters } = dataSlice.actions;
 export default dataSlice.reducer;
 
 // Memoized selectors
@@ -92,15 +98,18 @@ export const selectSemesters = createSelector(selectData, (data) => {
 });
 
 export const selectFilteredFaculties = createSelector(selectData, (data) => {
-  const { query, semester } = data;
+  const { query, facultyFilter, departmentFilter, employmentFilter } = data;
   const q = String(query || '').trim().toLowerCase();
   const byQuery = (f) => {
     if (!q) return true;
     const values = [f.name, f.email, f.department].map(v => (v == null ? '' : String(v)).toLowerCase());
     return values.some(v => v.includes(q));
   };
-  const bySem = (f) => (semester === 'All') ? true : (f.courses || []).some(c => c.semester === semester);
-  const list = data.faculties.filter(f => byQuery(f) && bySem(f));
+  const norm = (s) => String(s || '').toLowerCase().trim();
+  const byFaculty = (f) => !facultyFilter || norm(f.name) === norm(facultyFilter) || norm(f.faculty) === norm(facultyFilter);
+  const byDept = (f) => !departmentFilter || norm(f.department) === norm(departmentFilter) || norm(f.dept) === norm(departmentFilter);
+  const byEmp = (f) => !employmentFilter || norm(f.employment) === norm(employmentFilter);
+  const list = data.faculties.filter(f => byQuery(f) && byFaculty(f) && byDept(f) && byEmp(f));
   return list.sort((a, b) => String(a.name).localeCompare(String(b.name)));
 });
 
