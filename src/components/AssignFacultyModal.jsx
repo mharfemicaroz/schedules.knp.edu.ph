@@ -123,12 +123,24 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
   const indexes = useIndexes(allCourses);
 
   const filtered = useMemo(() => {
-    const ql = q.trim().toLowerCase();
-    const norm = (s) => String(s || '').toLowerCase();
+    const norm = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').trim();
+    const ql = norm(q).replace(/\s+/g, ' ');
+    const eq = (a, b) => norm(a) === norm(b);
+    const first = (obj, ...keys) => keys.map(k => obj?.[k]).find(v => v != null && String(v).trim() !== '');
     return (faculties || [])
-      .filter(f => (!department || String(f.department || f.dept || '') === department))
-      .filter(f => (!employment || String(f.employment || '') === employment))
-      .filter(f => (!ql || [f.name, f.email, f.department, f.dept].some(v => norm(v).includes(ql))));
+      .filter(f => {
+        const deptVal = first(f, 'department','dept','department_name','departmentName');
+        return !department || eq(deptVal, department);
+      })
+      .filter(f => (!employment || eq(f.employment, employment)))
+      .filter(f => {
+        if (!ql) return true;
+        const name = first(f, 'name','faculty','full_name','instructorName','instructor');
+        const email = first(f, 'email');
+        const deptVal = first(f, 'department','dept','department_name','departmentName');
+        const hay = [name, email, deptVal].map(norm).join(' ');
+        return hay.includes(ql);
+      });
   }, [faculties, q, department, employment]);
 
   const [eligibles, setEligibles] = useState([]);
@@ -194,6 +206,8 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
     const norm = (s) => String(s || '').toLowerCase();
     const deptOf = (f) => String(f.department || f.dept || '');
     const prog = String(schedule?.program || schedule?.programcode || '').toLowerCase();
+    const progKey = String(schedule?.program || schedule?.programcode || '')
+      .toLowerCase().replace(/[^a-z0-9]+/g,'').trim();
     const schedDept = String(schedule?.dept || '').toLowerCase();
     const timeStr = String(schedule?.scheduleKey || schedule?.schedule || schedule?.time || '').trim();
     const tr = parseTimeBlockToMinutes(timeStr);
@@ -204,7 +218,19 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       return Array.isArray(arr) && arr.length ? arr : ['ANY'];
     })();
     const bandOf = (mid) => (Number.isFinite(mid) && mid < 12*60) ? 'AM' : 'PM';
+    const sessionOf = (mid) => {
+      const m = Number.isFinite(mid) ? mid : NaN;
+      if (!Number.isFinite(m)) return 'AM';
+      if (m >= 17*60) return 'EVE'; // 5:00 PM and later → Evening
+      if (m >= 13*60) return 'PM';  // 1:00 PM–5:00 PM → PM
+      return 'AM';                  // 7:00 AM–12:00 NN (and earlier) → AM
+    };
     const candBand = bandOf(candMid);
+    const candSession = (() => {
+      const raw = String(schedule?.session || '').trim().toUpperCase();
+      if (raw === 'AM' || raw === 'PM' || raw === 'EVE' || raw === 'EVENING') return raw === 'EVENING' ? 'EVE' : raw;
+      return sessionOf(candMid);
+    })();
     const termOrder = (t) => {
       const s = String(t||'').toLowerCase();
       // Extract years like 2024 or 2024-2025
@@ -312,11 +338,38 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
     const map = new Map();
     (faculties || []).forEach(f => {
       const stat = stats.get(String(f.id)) || { load:0, release:0, overload:0, courses:0 };
-      // Department-program match
+      const rowsAll = ((indexes.byFac.get(`id:${f.id}`) || []).concat(indexes.byFac.get(`nm:${norm(f.name || f.faculty || f.full_name)}`) || []));
+      // Department-program score: frequency of matching programcode in faculty's schedules (recency-weighted),
+      // blended with a small department alignment factor
       const d = deptOf(f).toLowerCase();
-      let deptScore = 0.5;
-      if (prog && d.includes(prog)) deptScore = 1.0;
-      else if (schedDept && d === schedDept) deptScore = 0.9;
+      // Recency-weighted program frequency
+      let wProg = 0, wTot = 0;
+      if (rowsAll.length) {
+        for (const r of rowsAll) {
+          const rProgKey = String(r.programcode || r.program || r.program_code || r.programCode || '')
+            .toLowerCase().replace(/[^a-z0-9]+/g,'').trim();
+          const rTerm = String(r.semester || r.term || '').trim().toLowerCase();
+          const rOrd = termOrder(rTerm);
+          if (Number.isFinite(candTermOrder) && Number.isFinite(rOrd) && rOrd > candTermOrder) continue; // skip future terms
+          let rec = 1;
+          if (Number.isFinite(candTermOrder) && Number.isFinite(rOrd)) {
+            const dOrd = Math.max(0, candTermOrder - rOrd);
+            rec = Math.pow(0.75, dOrd);
+            if (rec < 0.25) rec = 0.25;
+          }
+          const wUnits = Math.max(0.5, Number(r.unit || 0) || 1);
+          const w = rec * wUnits;
+          wTot += w;
+          if (progKey && rProgKey && rProgKey === progKey) wProg += w;
+        }
+      }
+      const progFreq = wTot > 0 ? (wProg + 0.5) / (wTot + 1) : 0.5; // Laplace smoothing; 0.5 when unknown
+      // Department alignment factor (small portion): includes program code in dept OR exact dept match
+      let deptAlign = 0.6;
+      if (prog && d.includes(prog)) deptAlign = 1.0;
+      else if (schedDept && d === schedDept) deptAlign = 0.85;
+      // Blend: emphasize program frequency, keep some dept alignment influence
+      let deptScore = 0.75 * progFreq + 0.25 * deptAlign;
       // Employment priority
       const emp = norm(f.employment);
       let empScore = 0.6;
@@ -335,7 +388,6 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       else if (reAny(rxProfession)) degreeScore = 0.75;
       else if (reAny(rxLicense)) degreeScore = 0.7;
       // Time proximity (same term)
-      const rowsAll = ((indexes.byFac.get(`id:${f.id}`) || []).concat(indexes.byFac.get(`nm:${norm(f.name || f.faculty || f.full_name)}`) || []));
       const rows = rowsAll.filter(r => String(r.semester || r.term || '').trim().toLowerCase() === term);
       // Statistical time preference with recency weighting and AM/PM bands; plus KDE smoothing
       const timePoints = [];
@@ -360,10 +412,11 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
           const w = wUnits * rec;
           const days = parseF2FDays(r.f2fDays || r.f2fSched || r.f2fsched || r.day);
           const band = bandOf(mid);
+          const sess = sessionOf(mid);
           if (days && days.length) {
-            days.forEach(d => timePoints.push({ day: d, band, mid, w }));
+            days.forEach(d => timePoints.push({ day: d, band, sess, mid, w }));
           } else {
-            timePoints.push({ day: 'ANY', band, mid, w });
+            timePoints.push({ day: 'ANY', band, sess, mid, w });
           }
         });
       }
@@ -432,6 +485,15 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
         }
         if (kdeBest === 0) kdeBest = kde(timePoints);
       }
+      // Session match score (AM / PM / EVE) using weighted frequency
+      let sessionMatch = 0.5;
+      if (timePoints.length) {
+        const sessW = new Map();
+        timePoints.forEach(p => sessW.set(p.sess, (sessW.get(p.sess) || 0) + p.w));
+        const tot = Array.from(sessW.values()).reduce((s,v)=>s+v,0);
+        const sw = sessW.get(candSession) || 0;
+        sessionMatch = tot > 0 ? sw / tot : 0.5;
+      }
       // Nearest neighbor closeness in minutes within same term
       let nearest = 0;
       if (Number.isFinite(candMid) && rows.length) {
@@ -448,7 +510,7 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       }
       let timeScore = 0.7;
       if (Number.isFinite(candMid) && (timePoints.length > 0)) {
-        timeScore = 0.5 * kdeBest + 0.3 * probBest + 0.2 * nearest; // KDE + Gaussian + proximity
+        timeScore = 0.4 * kdeBest + 0.25 * probBest + 0.2 * nearest + 0.15 * sessionMatch; // add session alignment
         // Slight bonus if candidate days intersect faculty's most frequent day
         const dayFreq = new Map(); timePoints.forEach(p => dayFreq.set(p.day, (dayFreq.get(p.day)||0)+p.w));
         let topDay = null, topW = -1; dayFreq.forEach((w,d)=>{ if (w>topW) { topW=w; topDay=d; } });
@@ -510,9 +572,9 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       const overloadScore = Math.max(0, 1 - (stat.overload||0)/6);
       // Term experience count
       const termCount = rows.length; const expScore = Math.min(1, termCount/8);
-      // Weighted sum -> 1..10 (standardized, code-first course alignment)
-      // Weights: dept 0.13, emp 0.13, degree 0.09, time 0.08, load 0.15, overload 0.08, exp 0.09, match 0.25 => 1.00
-      const score01 = 0.13*deptScore + 0.13*empScore + 0.09*degreeScore + 0.08*timeScore + 0.15*loadScore + 0.08*overloadScore + 0.09*expScore + 0.25*matchScore;
+      // Weighted sum -> 1..10 (refactored importance: stronger time/session + program/course fit)
+      // Weights: dept 0.18, emp 0.10, degree 0.05, time 0.20, load 0.15, overload 0.06, exp 0.06, match 0.22 => 1.00
+      const score01 = 0.18*deptScore + 0.10*empScore + 0.05*degreeScore + 0.20*timeScore + 0.15*loadScore + 0.06*overloadScore + 0.06*expScore + 0.22*matchScore;
       const score = Math.max(1, Math.min(10, (score01*10)));
       map.set(String(f.id), {
         score,
@@ -564,16 +626,12 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       const va = get(a), vb = get(b);
       if (typeof va === 'number' && typeof vb === 'number') {
         if (sortKey === 'score') {
-          const diff = va - vb;
-          const eps = 0.15; // treat scores within 0.15 (on 1..10 scale) as near-ties
-          if (Math.abs(diff) > eps) return diff * dir;
-          // near tie: break deterministically with seeded jitter
-          const ja = scoreTieJitter(a);
-          const jb = scoreTieJitter(b);
-          if (ja !== jb) return (ja - jb) * dir;
-        } else {
-          if (va !== vb) return (va - vb) * dir;
+          // Sort by displayed precision (2 decimals), highest to lowest by default
+          const ra = Math.round(va * 100) / 100;
+          const rb = Math.round(vb * 100) / 100;
+          if (ra !== rb) return (ra - rb) * dir;
         }
+        if (va !== vb) return (va - vb) * dir;
       } else {
         const sa = String(va), sb = String(vb);
         if (sa !== sb) return (sa < sb ? -1 : 1) * dir;
@@ -622,7 +680,7 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
               <>
               <Box borderWidth="1px" borderColor={border} rounded="md" bg={useColorModeValue('blue.50','whiteAlpha.200')} p={3}>
                 <Text fontSize="sm" color={useColorModeValue('blue.900','blue.100')}>
-                  Score ranks faculty by: department alignment, employment priority (full-time first), academic degree (doctorate/masters), recency‑weighted time preference (AM/PM aware; Gaussian + KDE), current load vs. capacity, overload, experience in the same term, and code‑weighted fuzzy course matching (typo tolerant; exact code prioritized). Higher is better (1–10).
+                  Score shows how suitable each teacher is for this class. We look at: how often they teach this program (recent classes count more), whether the department fits, work status (full‑time first), qualifications, how close the time is to their usual class times and the same session (AM / PM / Evening), current load and any overload, experience this term, and how similar the course code/title is (spelling differences allowed). Higher is better (1–10).
                 </Text>
               </Box>
 
@@ -683,7 +741,7 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
                                 return `Dept:${(p.dept??0).toFixed(2)}  Emp:${(p.employment??0).toFixed(2)}  Degree:${(p.degree??0).toFixed(2)}\nTime:${(p.time??0).toFixed(2)}  Load:${(p.load??0).toFixed(2)}  Overload:${(p.overload??0).toFixed(2)}\nTermExp:${(p.termExp??0).toFixed(2)}  Match:${(p.match??0).toFixed(2)}`;
                               })()
                             }>
-                              <Text as="span">{score.toFixed(1)}</Text>
+                              <Text as="span">{score.toFixed(2)}</Text>
                             </Tooltip>
                           </Td>
                           <Td textAlign="right">
