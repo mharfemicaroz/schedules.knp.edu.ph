@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Box, Heading, HStack, VStack, Table, Thead, Tbody, Tr, Th, Td, Text, useColorModeValue, IconButton, Button, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, FormControl, FormLabel, Input, Select } from '@chakra-ui/react';
 import { useSelector, useDispatch } from 'react-redux';
-import { FiEdit, FiTrash } from 'react-icons/fi';
+import { FiEdit, FiTrash, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import Pagination from '../components/Pagination';
 import { getTimeOptions } from '../utils/timeOptions';
 import EditScheduleModal from '../components/EditScheduleModal';
@@ -26,6 +26,13 @@ export default function UnassignedSchedules() {
   const [time, setTime] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize] = useState(15);
+  const [sortKey, setSortKey] = useState('term'); // 'term' | 'time' | 'program' | 'code' | 'title' | 'section' | 'units' | 'room' | 'session'
+  const [sortDir, setSortDir] = useState('asc');
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+    setPage(1);
+  };
 
   // Edit/Delete
   const editDisc = useDisclosure();
@@ -68,15 +75,40 @@ export default function UnassignedSchedules() {
         examSession: r.examSession || r.Exam_Session,
         examRoom: r.examRoom || r.Exam_Room,
       }));
-    // Sort term then time then program/code
+    // Sort by selected column/direction
+    const dir = (sortDir === 'asc') ? 1 : -1;
+    const get = (r, k) => {
+      switch(k){
+        case 'term': return String(r.semester||'');
+        case 'time': return String(r.schedule||'');
+        case 'program': return String(r.program||'');
+        case 'code': return String(r.code||'');
+        case 'title': return String(r.title||'');
+        case 'section': return String(r.section||'');
+        case 'units': return String(r.unit ?? r.hours ?? '');
+        case 'room': return String(r.room||'');
+        case 'session': return String(r.session||'');
+        default: return '';
+      }
+    };
     return list.sort((a,b)=>{
-      const ta = String(a.semester||'').toLowerCase();
-      const tb = String(b.semester||'').toLowerCase();
-      if (ta !== tb) return ta.localeCompare(tb);
-      if (a.schedule !== b.schedule) return String(a.schedule||'').localeCompare(String(b.schedule||''));
-      return String(a.code||'').localeCompare(String(b.code||''));
+      const va = get(a, sortKey).toLowerCase();
+      const vb = get(b, sortKey).toLowerCase();
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      // tiebreakers
+      const ta = get(a, 'term').toLowerCase();
+      const tb = get(b, 'term').toLowerCase();
+      if (ta !== tb) return ta < tb ? -1 : 1;
+      const sa = get(a, 'time').toLowerCase();
+      const sb = get(b, 'time').toLowerCase();
+      if (sa !== sb) return sa < sb ? -1 : 1;
+      const ca = get(a, 'code').toLowerCase();
+      const cb = get(b, 'code').toLowerCase();
+      if (ca !== cb) return ca < cb ? -1 : 1;
+      return 0;
     });
-  }, [raw, query, term, time]);
+  }, [raw, query, term, time, sortKey, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const paged = useMemo(() => rows.slice((page-1)*pageSize, (page)*pageSize), [rows, page, pageSize]);
@@ -138,15 +170,33 @@ export default function UnassignedSchedules() {
         <Table size="sm">
           <Thead>
             <Tr>
-              <Th>Term</Th>
-              <Th>Time</Th>
-              <Th>Program</Th>
-              <Th>Code</Th>
-              <Th>Title</Th>
-              <Th>Section</Th>
-              <Th>Units</Th>
-              <Th>Room</Th>
-              <Th>Session</Th>
+              <Th onClick={()=>toggleSort('term')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}><Text>Term</Text>{sortKey==='term' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('time')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}><Text>Time</Text>{sortKey==='time' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('program')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}><Text>Program</Text>{sortKey==='program' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('code')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}><Text>Code</Text>{sortKey==='code' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('title')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}><Text>Title</Text>{sortKey==='title' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('section')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}><Text>Section</Text>{sortKey==='section' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('units')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}><Text>Units</Text>{sortKey==='units' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('room')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}><Text>Room</Text>{sortKey==='room' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('session')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}><Text>Session</Text>{sortKey==='session' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack>
+              </Th>
               <Th textAlign="right">Actions</Th>
             </Tr>
           </Thead>
@@ -197,4 +247,3 @@ export default function UnassignedSchedules() {
     </VStack>
   );
 }
-

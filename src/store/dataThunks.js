@@ -65,15 +65,36 @@ function transformSchedulesToFacultyDataset(schedules) {
         employment: schedule.employment || facProfile.employment || "",
         courses: [],
         stats: { loadHours: 0, courseCount: 0, overloadHours: 0 },
-        loadReleaseUnits: (schedule.loadReleaseUnits ?? schedule.load_release_units ?? facProfile.load_release_units) || 0,
+        loadReleaseUnits:
+          (schedule.loadReleaseUnits ??
+            schedule.load_release_units ??
+            facProfile.load_release_units) ||
+          0,
       });
     }
     const facultyData = facultyMap.get(instructor);
     // Backfill profile fields if missing from earlier rows
-    if (!facultyData.designation && (schedule.designation || facProfile.designation)) facultyData.designation = schedule.designation || facProfile.designation;
-    if (!facultyData.employment && (schedule.employment || facProfile.employment)) facultyData.employment = schedule.employment || facProfile.employment;
-    if (!facultyData.loadReleaseUnits && (schedule.load_release_units != null || schedule.loadReleaseUnits != null || facProfile.load_release_units != null)) {
-      facultyData.loadReleaseUnits = schedule.loadReleaseUnits ?? schedule.load_release_units ?? facProfile.load_release_units ?? facultyData.loadReleaseUnits;
+    if (
+      !facultyData.designation &&
+      (schedule.designation || facProfile.designation)
+    )
+      facultyData.designation = schedule.designation || facProfile.designation;
+    if (
+      !facultyData.employment &&
+      (schedule.employment || facProfile.employment)
+    )
+      facultyData.employment = schedule.employment || facProfile.employment;
+    if (
+      !facultyData.loadReleaseUnits &&
+      (schedule.load_release_units != null ||
+        schedule.loadReleaseUnits != null ||
+        facProfile.load_release_units != null)
+    ) {
+      facultyData.loadReleaseUnits =
+        schedule.loadReleaseUnits ??
+        schedule.load_release_units ??
+        facProfile.load_release_units ??
+        facultyData.loadReleaseUnits;
     }
     const tn = normalizeTimeBlock(schedule.time);
     const course = {
@@ -109,7 +130,7 @@ function transformSchedulesToFacultyDataset(schedules) {
       ),
       timeStartMinutes: tn?.start ?? Infinity,
       timeEndMinutes: tn?.end ?? Infinity,
-      scheduleKey: tn?.key || '',
+      scheduleKey: tn?.key || "",
       roomKey: String(schedule.room || "N/A")
         .trim()
         .replace(/\s+/g, " ")

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Box, Heading, HStack, VStack, Table, Thead, Tbody, Tr, Th, Td, Text, useColorModeValue, IconButton, Button, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Tag, TagLabel, Badge, Wrap, WrapItem, FormControl, FormLabel, Input, Select } from '@chakra-ui/react';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
-import { FiAlertTriangle, FiEdit, FiTrash } from 'react-icons/fi';
+import { FiAlertTriangle, FiEdit, FiTrash, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import EditScheduleModal from '../components/EditScheduleModal';
 import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
 import Pagination from '../components/Pagination';
@@ -23,6 +23,17 @@ export default function ConflictSchedules() {
 
   // Build conflicts consistent with Edit modal and Faculty Detail
   const conflicts = useMemo(() => {
+    const isUnknownFaculty = (val) => {
+      const s = String(val || '').trim();
+      if (!s) return true;
+      const n = s.toLowerCase();
+      // broader match: catch variations like "unknown faculty", "t.b.a.", "no faculty", etc.
+      if (/(unknown|unassigned|no\s*faculty|not\s*assigned)/i.test(n)) return true;
+      if (/^n\/?a$/.test(n)) return true;
+      if (/^t\.?b\.?a\.?$/.test(n) || n === 'tba') return true;
+      if (n === '-' || n === '--') return true;
+      return false;
+    };
     const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
     const termOf = (r) => String(r.semester || r.term || '').trim().toLowerCase();
     const timeStrOf = (r) => String(r.scheduleKey || r.schedule || r.time || '').trim();
@@ -103,17 +114,36 @@ export default function ConflictSchedules() {
       kept.push(g);
     }
 
-    return kept;
+    // Exclude groups with unknown/placeholder faculty labels
+    const facFiltered = kept.filter(g => {
+      const rep = (g.items && g.items[0]) || {};
+      const fac = rep.facultyName || rep.faculty || rep.instructor || '';
+      return !isUnknownFaculty(fac);
+    });
+
+    return facFiltered;
   }, [allCourses]);
   // Filters
   const [query, setQuery] = useState('');
   const [term, setTerm] = useState('');
   const [time, setTime] = useState('');
   const [reason, setReason] = useState('');
+  const [sortKey, setSortKey] = useState('reason'); // 'reason' | 'faculty' | 'term' | 'time'
+  const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
+
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+    setPage(1);
+  };
 
   const filtered = useMemo(() => {
     const q = String(query || '').trim().toLowerCase();
-    return conflicts.filter(g => {
+    const arr = conflicts.filter(g => {
       // reason filter
       if (reason && g.reason !== reason) return false;
       // term filter (any item in group matching term)
@@ -132,7 +162,35 @@ export default function ConflictSchedules() {
       }
       return true;
     });
-  }, [conflicts, query, term, time, reason]);
+
+    const getRep = (g) => g.items[0] || {};
+    const valOf = (g, key) => {
+      const rep = getRep(g);
+      if (key === 'reason') return String(g.reason || '');
+      if (key === 'faculty') return String(rep.facultyName || rep.faculty || rep.instructor || '');
+      if (key === 'term') return String(rep.semester || rep.term || '');
+      if (key === 'time') return String(rep.schedule || rep.time || '');
+      return '';
+    };
+    const dir = (sortDir === 'asc') ? 1 : -1;
+    return arr.slice().sort((a,b)=>{
+      const va = valOf(a, sortKey).toLowerCase();
+      const vb = valOf(b, sortKey).toLowerCase();
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      // tie-breakers for stability
+      const fa = valOf(a, 'faculty').toLowerCase();
+      const fb = valOf(b, 'faculty').toLowerCase();
+      if (fa !== fb) return fa < fb ? -1 : 1;
+      const ta = valOf(a, 'term').toLowerCase();
+      const tb = valOf(b, 'term').toLowerCase();
+      if (ta !== tb) return ta < tb ? -1 : 1;
+      const sa = valOf(a, 'time').toLowerCase();
+      const sb = valOf(b, 'time').toLowerCase();
+      if (sa !== sb) return sa < sb ? -1 : 1;
+      return 0;
+    });
+  }, [conflicts, query, term, time, reason, sortKey, sortDir]);
 
   // Pagination for filtered groups
   const [page, setPage] = useState(1);
@@ -200,10 +258,30 @@ export default function ConflictSchedules() {
         <Table size="sm">
           <Thead>
             <Tr>
-              <Th>Reason</Th>
-              <Th>Faculty</Th>
-              <Th>Term</Th>
-              <Th>Time</Th>
+              <Th onClick={()=>toggleSort('reason')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}>
+                  <Text>Reason</Text>
+                  {sortKey==='reason' && (sortDir==='asc' ? <FiChevronUp/> : <FiChevronDown/>) }
+                </HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('faculty')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}>
+                  <Text>Faculty</Text>
+                  {sortKey==='faculty' && (sortDir==='asc' ? <FiChevronUp/> : <FiChevronDown/>) }
+                </HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('term')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}>
+                  <Text>Term</Text>
+                  {sortKey==='term' && (sortDir==='asc' ? <FiChevronUp/> : <FiChevronDown/>) }
+                </HStack>
+              </Th>
+              <Th onClick={()=>toggleSort('time')} cursor="pointer" userSelect="none">
+                <HStack spacing={1}>
+                  <Text>Time</Text>
+                  {sortKey==='time' && (sortDir==='asc' ? <FiChevronUp/> : <FiChevronDown/>) }
+                </HStack>
+              </Th>
               <Th>Course/Section</Th>
               <Th>Location</Th>
               <Th textAlign="right">Actions</Th>

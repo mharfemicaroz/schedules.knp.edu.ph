@@ -427,12 +427,14 @@ export default function FacultyDetail() {
           <Box>
             {editingName ? (
               <HStack>
-                <FacultySelect
+                <Box minW={{ base: '260px', md: '420px', lg: '640px' }} w={{ base: 'full', md: 'auto' }}>
+                  <FacultySelect
                   value={f.name}
                   onChange={(v) => { if (v) { navigate(`/faculty/${encodeURIComponent(v)}`); } setEditingName(false); }}
                   onChangeId={() => {}}
                   autoFocus
-                />
+                  />
+                </Box>
                 <Button size="xs" variant="ghost" onClick={() => setEditingName(false)}>Cancel</Button>
               </HStack>
             ) : (
