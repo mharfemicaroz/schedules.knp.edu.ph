@@ -188,6 +188,14 @@ export default function ViewsRooms() {
     return 'brand.500';
   }
 
+  const defaultDayIndex = useMemo(() => {
+    const dow = new Date().getDay(); // 0=Sun,1=Mon,...,6=Sat
+    const idx = (dow >= 1 && dow <= 5) ? dow - 1 : 0;
+    const code = DAY_CODES[idx];
+    const pos = filteredGroups.findIndex(g => g.day === code);
+    return pos >= 0 ? pos : 0;
+  }, [filteredGroups]);
+
   return (
     <Box>
       <HStack justify="space-between" mb={4} flexWrap="wrap" gap={3}>
@@ -220,7 +228,7 @@ export default function ViewsRooms() {
         </HStack>
       </HStack>
 
-      <Tabs variant="enclosed-colored" colorScheme="brand">
+      <Tabs variant="enclosed-colored" colorScheme="brand" defaultIndex={defaultDayIndex}>
         <TabList>
           {filteredGroups.map(g => (
             <Tab key={g.day} isDisabled={g.rows.length === 0}>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, HStack, VStack, Heading, Text, Button, IconButton, Input, Select, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Tag, TagLabel, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
-import { FiPlus, FiEdit, FiTrash, FiFilter } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiTrash, FiFilter, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadFacultiesThunk, createFacultyThunk, updateFacultyThunk, deleteFacultyThunk } from '../store/facultyThunks';
 import { selectFilteredFaculty, selectFacultyFilterOptions, selectFacultyFilters } from '../store/facultySlice';
@@ -24,6 +24,8 @@ export default function AdminFaculty() {
   const [toDelete, setToDelete] = React.useState(null);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(10);
+  const [sortKey, setSortKey] = React.useState('name'); // name | email | department | designation | employment | lru | rank
+  const [sortDir, setSortDir] = React.useState('asc');
 
   React.useEffect(() => { dispatch(loadFacultiesThunk({})); }, [dispatch]);
   React.useEffect(() => { setPage(1); }, [filters, items.length]);
@@ -31,6 +33,50 @@ export default function AdminFaculty() {
   const onAdd = () => { setEditing(null); formDisc.onOpen(); };
   const onEdit = (row) => { setEditing(row); formDisc.onOpen(); };
   const onDelete = (row) => { setToDelete(row); delDisc.onOpen(); };
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+    setPage(1);
+  };
+
+  const access = React.useCallback((row, key) => {
+    switch (key) {
+      case 'name': return String(row.name || row.faculty || row.instructorName || row.instructor || row.full_name || '');
+      case 'email': return String(row.email || '');
+      case 'department': return String(row.department || row.dept || row.department_name || row.departmentName || '');
+      case 'designation': return String(row.designation || '');
+      case 'employment': return String(row.employment || '');
+      case 'lru': return String(row.load_release_units ?? row.loadReleaseUnits ?? '');
+      case 'rank': return String(row.rank || '');
+      default: return '';
+    }
+  }, []);
+
+  const sortedItems = React.useMemo(() => {
+    const dir = (sortDir === 'asc') ? 1 : -1;
+    const arr = (items || []).slice();
+    return arr.sort((a,b) => {
+      const va = access(a, sortKey).toLowerCase();
+      const vb = access(b, sortKey).toLowerCase();
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      // stability tie-breakers
+      const na = access(a, 'name').toLowerCase();
+      const nb = access(b, 'name').toLowerCase();
+      if (na !== nb) return na < nb ? -1 : 1;
+      const da = access(a, 'department').toLowerCase();
+      const db = access(b, 'department').toLowerCase();
+      if (da !== db) return da < db ? -1 : 1;
+      return 0;
+    });
+  }, [items, sortKey, sortDir, access]);
+
+  const pageCount = Math.max(1, Math.ceil(sortedItems.length / pageSize));
+  const paged = React.useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sortedItems.slice(start, start + pageSize);
+  }, [sortedItems, page, pageSize]);
 
   return (
     <VStack align="stretch" spacing={6}>
@@ -64,18 +110,27 @@ export default function AdminFaculty() {
       </Box>
 
       <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} overflowX="auto">
-        <Table size={{ base: 'sm', md: 'md' }}>
+        <HStack justify="space-between" px={4} pt={3} pb={1}>
+          <Tag colorScheme="blue" variant="subtle"><TagLabel>{sortedItems.length} results</TagLabel></Tag>
+          <Select size="sm" value={pageSize} onChange={(e)=>{ const n=Number(e.target.value)||10; setPageSize(n); setPage(1); }} maxW="100px">
+            {[10,15,20,30,50].map(n => <option key={n} value={n}>{n}/page</option>)}
+          </Select>
+        </HStack>
+        <Table size={{ base: 'sm', md: 'md' }} variant="striped" colorScheme="gray">
           <Thead>
             <Tr>
-              {['Name','Email','Department','Designation','Employment','Load Release Units','Rank', isAdmin ? 'Actions' : ''].filter(Boolean).map((h,i)=> <Th key={i}>{h}</Th>)}
+              <Th onClick={()=>toggleSort('name')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Name</Text>{sortKey==='name' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
+              <Th onClick={()=>toggleSort('email')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Email</Text>{sortKey==='email' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
+              <Th onClick={()=>toggleSort('department')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Department</Text>{sortKey==='department' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
+              <Th onClick={()=>toggleSort('designation')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Designation</Text>{sortKey==='designation' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
+              <Th onClick={()=>toggleSort('employment')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Employment</Text>{sortKey==='employment' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
+              <Th onClick={()=>toggleSort('lru')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Load Release Units</Text>{sortKey==='lru' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
+              <Th onClick={()=>toggleSort('rank')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Rank</Text>{sortKey==='rank' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
+              {isAdmin && <Th>Actions</Th>}
             </Tr>
           </Thead>
           <Tbody>
-            {(() => {
-              const start = (page - 1) * pageSize;
-              const paged = items.slice(start, start + pageSize);
-              return paged;
-            })().map(row => {
+            {paged.map(row => {
               const name = row.name || row.faculty || row.instructorName || row.instructor || row.full_name || '—';
               const dept = row.department || row.dept || row.department_name || row.departmentName || '—';
               const lru = row.load_release_units ?? row.loadReleaseUnits ?? '0';
@@ -101,7 +156,7 @@ export default function AdminFaculty() {
             })}
           </Tbody>
         </Table>
-        {items.length === 0 && (
+        {sortedItems.length === 0 && (
           <VStack py={10}>
             <Heading size="sm">No faculty found</Heading>
             <Text color="gray.500">Adjust filters or add a new record.</Text>
@@ -109,11 +164,11 @@ export default function AdminFaculty() {
         )}
       </Box>
 
-      {items.length > 0 && (
+      {sortedItems.length > 0 && (
         <VStack>
           <Pagination
             page={page}
-            pageCount={Math.max(1, Math.ceil(items.length / pageSize))}
+            pageCount={pageCount}
             onPage={setPage}
             pageSize={pageSize}
             onPageSize={(n)=>{ setPageSize(n); setPage(1); }}

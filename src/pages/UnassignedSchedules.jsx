@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Box, Heading, HStack, VStack, Table, Thead, Tbody, Tr, Th, Td, Text, useColorModeValue, IconButton, Button, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, FormControl, FormLabel, Input, Select } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Table, Thead, Tbody, Tr, Th, Td, Text, useColorModeValue, IconButton, Button, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, FormControl, FormLabel, Input, Select, Tag, TagLabel } from '@chakra-ui/react';
 import { useSelector, useDispatch } from 'react-redux';
-import { FiEdit, FiTrash, FiChevronUp, FiChevronDown } from 'react-icons/fi';
+import { FiEdit, FiTrash, FiChevronUp, FiChevronDown, FiDownload, FiPrinter } from 'react-icons/fi';
+import { buildTable, printContent } from '../utils/printDesign';
 import Pagination from '../components/Pagination';
 import { getTimeOptions } from '../utils/timeOptions';
 import EditScheduleModal from '../components/EditScheduleModal';
@@ -25,7 +26,8 @@ export default function UnassignedSchedules() {
   const [term, setTerm] = useState('');
   const [time, setTime] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(15);
+  const [pageSize, setPageSize] = useState(15);
+  const [program, setProgram] = useState('');
   const [sortKey, setSortKey] = useState('term'); // 'term' | 'time' | 'program' | 'code' | 'title' | 'section' | 'units' | 'room' | 'session'
   const [sortDir, setSortDir] = useState('asc');
   const toggleSort = (key) => {
@@ -41,16 +43,24 @@ export default function UnassignedSchedules() {
   const cancelRef = React.useRef();
 
   // Build rows and apply filters
+  const programOptions = useMemo(() => {
+    const set = new Set();
+    (raw||[]).forEach(r => { const p = r.programcode || r.program; if (p) set.add(String(p)); });
+    return Array.from(set).sort((a,b)=>String(a).localeCompare(String(b)));
+  }, [raw]);
+
   const rows = useMemo(() => {
+    const norm = (v) => String(v || '').trim().toLowerCase();
     const list = (raw || [])
       .filter(r => {
         const unassigned = (r.facultyId == null) && isInvalidFacultyName(r.instructor);
         if (!unassigned) return false;
+        if (program && norm(r.programcode || r.program) !== norm(program)) return false;
         if (term && String(r.term || '').trim() !== term) return false;
         if (time && String(r.time || '') !== time) return false;
         const q = query.trim().toLowerCase();
         if (q) {
-          const vals = [r.programcode, r.course_name, r.course_title, r.block_code, r.dept, r.room, r.session, r.time, r.day]
+          const vals = [r.programcode, r.program, r.course_name, r.course_title, r.block_code, r.section, r.dept, r.room, r.session, r.time, r.day, r.term]
             .map(v => String(v || '').toLowerCase());
           if (!vals.some(v => v.includes(q))) return false;
         }
@@ -108,7 +118,7 @@ export default function UnassignedSchedules() {
       if (ca !== cb) return ca < cb ? -1 : 1;
       return 0;
     });
-  }, [raw, query, term, time, sortKey, sortDir]);
+  }, [raw, query, term, time, sortKey, sortDir, program]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const paged = useMemo(() => rows.slice((page-1)*pageSize, (page)*pageSize), [rows, page, pageSize]);
@@ -137,6 +147,25 @@ export default function UnassignedSchedules() {
       <HStack spacing={3}>
         <Heading size="md">Unassigned Schedules</Heading>
         <Text color="gray.500">Items with no faculty assigned</Text>
+        <Tag colorScheme="blue"><TagLabel>{rows.length} results</TagLabel></Tag>
+        <HStack ml="auto" spacing={2}>
+          <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)||15); setPage(1); }} maxW="100px">
+            {[10,15,20,30,50].map(n => <option key={n} value={n}>{n}/page</option>)}
+          </Select>
+          <Button size="sm" leftIcon={<FiDownload />} variant="outline" onClick={()=>{
+            const headers = ['Term','Time','Program','Code','Title','Section','Units','Room','Session'];
+            const data = rows.map(r => [r.semester||'-', r.schedule||'-', r.program||'-', r.code||'-', r.title||'-', r.section||'-', r.unit ?? r.hours ?? '-', r.room||'-', r.session||'-']);
+            const esc=(v)=>{const s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+            const csv=[headers.map(esc).join(','),...data.map(x=>x.map(esc).join(','))].join('\n');
+            const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='unassigned_schedules.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+          }}>Export CSV</Button>
+          <Button size="sm" leftIcon={<FiPrinter />} colorScheme="blue" onClick={()=>{
+            const headers = ['Term','Time','Program','Code','Title','Section','Units','Room','Session'];
+            const data = rows.map(r => [r.semester||'-', r.schedule||'-', r.program||'-', r.code||'-', r.title||'-', r.section||'-', String(r.unit ?? r.hours ?? '-'), r.room||'-', r.session||'-']);
+            const html = buildTable(headers, data);
+            printContent({ title: 'Unassigned Schedules', subtitle: `${rows.length} entries`, bodyHtml: html });
+          }}>Print</Button>
+        </HStack>
       </HStack>
 
       {/* Filters */}
@@ -144,7 +173,14 @@ export default function UnassignedSchedules() {
         <HStack spacing={3} wrap="wrap">
           <FormControl maxW="260px">
             <FormLabel m={0} fontSize="xs" color="gray.500">Search</FormLabel>
-            <Input size="sm" value={query} onChange={(e)=>{ setQuery(e.target.value); setPage(1); }} placeholder="Program / Code / Title / Section / Room" />
+            <Input size="sm" value={query} onChange={(e)=>{ setQuery(e.target.value); setPage(1); }} placeholder="Program / Code / Title / Section / Room / Term" />
+          </FormControl>
+          <FormControl maxW="200px">
+            <FormLabel m={0} fontSize="xs" color="gray.500">Program</FormLabel>
+            <Select size="sm" value={program} onChange={(e)=>{ setProgram(e.target.value); setPage(1); }}>
+              <option value="">All</option>
+              {programOptions.map(p => (<option key={p} value={p}>{p}</option>))}
+            </Select>
           </FormControl>
           <FormControl maxW="160px">
             <FormLabel m={0} fontSize="xs" color="gray.500">Term</FormLabel>
@@ -162,12 +198,12 @@ export default function UnassignedSchedules() {
               {getTimeOptions().map((t,i)=>(<option key={`${t}-${i}`} value={t}>{t || '-'}</option>))}
             </Select>
           </FormControl>
-          <Button size="sm" variant="ghost" onClick={()=>{ setQuery(''); setTerm(''); setTime(''); setPage(1); }}>Clear</Button>
+          <Button size="sm" variant="ghost" onClick={()=>{ setQuery(''); setProgram(''); setTerm(''); setTime(''); setPage(1); }}>Clear</Button>
         </HStack>
       </Box>
 
       <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg}>
-        <Table size="sm">
+        <Table size="sm" variant="striped" colorScheme="gray">
           <Thead>
             <Tr>
               <Th onClick={()=>toggleSort('term')} cursor="pointer" userSelect="none">

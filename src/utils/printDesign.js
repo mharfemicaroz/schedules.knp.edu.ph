@@ -28,9 +28,10 @@ export function printContent({ title, subtitle = '', bodyHtml = '' }) {
     .prt-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
     .prt-table th, .prt-table td { border: 1px solid #ddd; padding: 8px 10px; font-size: 12px; }
     .prt-table th { background: #f6f9fc; text-align: left; font-weight: 700; }
-    .prt-footer { padding: 0 24px 24px; margin-top: 12px; font-size: 13px; }
-    .prt-verify { margin-top: 40px; }
-    .prt-sign { margin-top: 28px; display: inline-block; border-top: 1px solid #333; padding-top: 6px; font-weight: 700; }
+    .prt-footer { padding: 0 24px 24px; margin-top: 12px; font-size: 13px; display: flex; gap: 32px; justify-content: space-between; flex-wrap: wrap; }
+    .prt-block { min-width: 260px; }
+    .prt-verify, .prt-approve { margin-top: 24px; font-weight: 800; }
+    .prt-sign { margin-top: 18px; display: inline-block; border-top: 1px solid #333; padding-top: 6px; font-weight: 700; }
     .prt-role { color: #444; font-size: 12px; }
   `;
   const now = new Date().toLocaleString();
@@ -55,9 +56,16 @@ export function printContent({ title, subtitle = '', bodyHtml = '' }) {
       ${bodyHtml}
     </div>
     <div class='prt-footer'>
-      <div class='prt-verify'>Verified by:</div>
-      <div class='prt-sign'>Dr. Mharfe M. Micaroz</div>
-      <div class='prt-role'>Vice President of Academic Affairs</div>
+      <div class='prt-block'>
+        <div class='prt-verify'>Verified by:</div>
+        <div class='prt-sign'>Dr. Mharfe M. Micaroz</div>
+        <div class='prt-role'>Vice President of Academic Affairs</div>
+      </div>
+      <div class='prt-block'>
+        <div class='prt-approve'>Approved by:</div>
+        <div class='prt-sign'>Dr. Mary Ann R. Araula</div>
+        <div class='prt-role'>Acting College President</div>
+      </div>
     </div>
     <script>window.onload = () => { window.print(); setTimeout(()=>window.close(), 300); };</script>
   </body></html>`;

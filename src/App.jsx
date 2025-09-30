@@ -15,6 +15,7 @@ import BlockSchedule from './pages/BlockSchedule';
 import ConflictSchedules from './pages/ConflictSchedules';
 import UnassignedSchedules from './pages/UnassignedSchedules';
 import AdminFaculty from './pages/AdminFaculty';
+import ReportsFacultySummary from './pages/ReportsFacultySummary';
 // DataProvider removed; using Redux directly
 // VisitorProvider removed
 import { useDispatch } from 'react-redux';
@@ -49,6 +50,7 @@ function App() {
               <Route path="/admin/conflicts" element={<ConflictSchedules />} />
               <Route path="/admin/unassigned" element={<UnassignedSchedules />} />
               <Route path="/admin/faculty" element={<AdminFaculty />} />
+              <Route path="/reports/faculty-summary" element={<ReportsFacultySummary />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>

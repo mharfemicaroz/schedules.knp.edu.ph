@@ -284,6 +284,11 @@ export default function ViewsSession() {
     );
   }
 
+  const defaultDayIndex = useMemo(() => {
+    const dow = new Date().getDay(); // 0=Sun,1=Mon,...,6=Sat
+    return (dow >= 1 && dow <= 5) ? (dow - 1) : 0;
+  }, []);
+
   return (
     <Box>
       <HStack justify="space-between" mb={4} flexWrap="wrap" gap={3}>
@@ -323,7 +328,7 @@ export default function ViewsSession() {
       </HStack>
 
       {mode === 'day' ? (
-        <Tabs variant="enclosed-colored" colorScheme="brand">
+        <Tabs variant="enclosed-colored" colorScheme="brand" defaultIndex={defaultDayIndex}>
           <TabList>
             {filteredTabs.map(t => (
               <Tab key={t.day}>

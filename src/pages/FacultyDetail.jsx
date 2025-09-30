@@ -217,9 +217,11 @@ export default function FacultyDetail() {
     const facIdOf = (r) => (r.facultyId != null ? String(r.facultyId) : (r.faculty_id != null ? String(r.faculty_id) : ''));
     const facNameNorm = normalizeName(f.name);
     const seen = new Set();
+    const codeOf = (r) => String(r.code || r.courseName || '').trim().toLowerCase();
     const filteredAll = allCourses.filter(r => {
       if (!isThisFaculty(r)) return true;
-      const k = ['merged', facIdOf(r) || facNameNorm, termOf(r), timeKeyOf(r), sectionOf(r)].join('|');
+      // Include course code in dedupe key so different codes don't merge away
+      const k = ['merged', facIdOf(r) || facNameNorm, termOf(r), timeKeyOf(r), sectionOf(r), codeOf(r)].join('|');
       if (seen.has(k)) return false; // drop merged duplicate
       seen.add(k);
       return true;
@@ -347,10 +349,10 @@ export default function FacultyDetail() {
   };
 
   function onPrint() {
-    const headers = getTableHeaders();
-    const rows = sortedCourses.map(c => getCourseData(c));
-    const table = buildTable(headers, rows);
-    const esc = (val) => String(val ?? '').replace(/&/g,'&amp;').replace(/</g,'<').replace(/>/g,'>').replace(/\"/g,'"').replace(/'/g,'&#039;');
+    const esc = (val) => String(val ?? '')
+      .replace(/&/g,'&amp;').replace(/</g,'<').replace(/>/g,'>')
+      .replace(/\"/g,'"').replace(/'/g,'&#039;');
+
     const metaHtml = `
       <table class="prt-table"><tbody>
         <tr><th>Department</th><td>${esc(f.department || '')}</td><th>Employment</th><td>${esc(f.employment || '')}</td></tr>
@@ -359,7 +361,56 @@ export default function FacultyDetail() {
         <tr><th>Overload Units</th><td>${esc(String(mergedStats.overloadUnits))}</td><th>Courses</th><td>${esc(String(mergedStats.courseCount))}</td></tr>
         <tr><th>Schedule Type</th><td colspan="3">${esc(viewMode === 'examination' ? 'Examination Schedule' : 'Regular Schedule')}</td></tr>
       </tbody></table>`;
-    printContent({ title: `Faculty: ${f.name}`, subtitle: f.email || '', bodyHtml: metaHtml + table });
+
+    const preferredOrder = ['1st', '2nd', 'Sem'];
+    const orderedGroups = (() => {
+      const map = new Map((termGroups || []).map(g => [String(g.term || 'N/A'), g]));
+      const out = [];
+      preferredOrder.forEach(t => { if (map.has(t)) out.push(map.get(t)); map.delete(t); });
+      map.forEach(g => out.push(g));
+      return out;
+    })();
+
+    const buildRows = (c) => {
+      if (viewMode === 'examination') {
+        return [
+          c.semester || c.term || '—',
+          c.code || '—',
+          c.title || '—',
+          c.section || '—',
+          String(c.unit ?? c.hours ?? '—'),
+          c.schedule || '—',
+          c.examDay || '—',
+          c.examSession || '—',
+          c.examRoom || '—',
+        ];
+      }
+      return [
+        c.semester || c.term || '—',
+        c.code || '—',
+        c.title || '—',
+        c.section || '—',
+        String(c.unit ?? c.hours ?? '—'),
+        c.day || '—',
+        c.schedule || '—',
+        c.room || '—',
+        c.session || '—',
+        c.f2fSched || '—',
+      ];
+    };
+
+    const headers = (viewMode === 'examination')
+      ? ['Term','Code','Title','Section','Units','Time','Exam Day','Exam Session','Exam Room']
+      : ['Term','Code','Title','Section','Units','Day','Time','Room','Session','F2F Sched'];
+
+    const sectionsHtml = orderedGroups.map(g => {
+      const rows = (g.items || []).map(buildRows);
+      if (rows.length === 0) return '';
+      const table = buildTable(headers, rows);
+      return `<p class="prt-sub" style="margin-top:18px;font-weight:800">Term: ${esc(g.term || 'N/A')}</p>${table}`;
+    }).join('');
+
+    printContent({ title: `Faculty: ${f.name}`, subtitle: f.email || '', bodyHtml: metaHtml + sectionsHtml });
   }
   async function handleSaveEdit(payload) {
     if (!selected) return;
@@ -471,7 +522,9 @@ export default function FacultyDetail() {
             </FormLabel>
           </FormControl>
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
-          <Button onClick={assignDisc.onOpen} variant="solid" size="sm" colorScheme="blue">Assign Schedules</Button>
+          {isAdmin && (
+            <Button onClick={assignDisc.onOpen} variant="solid" size="sm" colorScheme="blue">Assign Schedules</Button>
+          )}
           {facultyConflictGroups.length > 0 && (
             <Button variant="outline" size="sm" colorScheme="red" onClick={() => { setConfPage(1); confDisc.onOpen(); }}>
               Conflicts <Tag colorScheme="red" ml={2}><TagLabel>{facultyConflictGroups.length}</TagLabel></Tag>
@@ -557,7 +610,9 @@ export default function FacultyDetail() {
       onSave={handleSaveEdit}
       viewMode={viewMode}
     />
-    <AssignSchedulesModal isOpen={assignDisc.isOpen} onClose={assignDisc.onClose} currentFacultyName={f?.name} />
+    {isAdmin && (
+      <AssignSchedulesModal isOpen={assignDisc.isOpen} onClose={assignDisc.onClose} currentFacultyName={f?.name} />
+    )}
     <Modal isOpen={confDisc.isOpen} onClose={confDisc.onClose} size="4xl" isCentered>
       <ModalOverlay backdropFilter="blur(6px)" />
       <ModalContent>

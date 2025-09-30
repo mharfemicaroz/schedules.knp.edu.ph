@@ -6,6 +6,7 @@ import {
   IconButton,
   useColorModeValue,
   HStack,
+  VStack,
   Text,
   Image,
   Drawer,
@@ -21,13 +22,18 @@ import {
   MenuList,
   MenuItem,
   MenuDivider,
+  SimpleGrid,
+  Tag,
+  TagLabel,
+  Wrap,
+  WrapItem,
 } from '@chakra-ui/react';
 import Sidebar from './Sidebar';
 import { FiMoon, FiSun, FiMenu, FiSidebar, FiLogIn, FiUser, FiKey, FiLogOut } from 'react-icons/fi';
 import LoaderOverlay from './LoaderOverlay';
 import RouteProgress from './RouteProgress';
 import { useSelector, useDispatch } from 'react-redux';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link as RouterLink } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import SplashScreen from './SplashScreen';
 import LoginModal from './LoginModal';
@@ -183,8 +189,12 @@ export default function Layout({ children }) {
         <Box as="main" px={{ base: 4, md: 6 }} py={6} maxW="1400px" mx="auto">
           {splash ? <SplashScreen /> : children}
         </Box>
-        <Box as="footer" px={{ base: 4, md: 6 }} py={6} textAlign="center" color={useColorModeValue('gray.600','gray.400')}>
-          Ac {new Date().getFullYear()} Office of the Vice President of Academic Affairs
+        <Box as="footer" borderTopWidth="1px" borderColor={useColorModeValue('gray.200','gray.700')} px={{ base: 4, md: 6 }} py={6} bg={useColorModeValue('white','gray.800')}>
+          <VStack spacing={1} align="center">
+            <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.200')}>Kolehiyo ng Pantukan</Text>
+            <Text fontSize="xs" color={useColorModeValue('gray.600','gray.400')}>Office of the Vice President of Academic Affairs</Text>
+            <Text fontSize="xs" color={useColorModeValue('gray.500','gray.500')}>© {new Date().getFullYear()}</Text>
+          </VStack>
         </Box>
       </Box>
       {(loading || routeBusy) && (

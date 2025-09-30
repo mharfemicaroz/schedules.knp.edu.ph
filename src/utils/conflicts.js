@@ -37,7 +37,11 @@ export function expandedByF2FDay(rows){
     const term = r.semester || r.term || '';
     const tkey = r.scheduleKey || r.schedule || r.time || '';
     if (invalidFac || !term || !tkey) return;
-    const days = (Array.isArray(r.f2fDays) ? r.f2fDays : parseF2FDays(r.f2fSched || r.f2fsched));
+    let days = (Array.isArray(r.f2fDays) ? r.f2fDays : parseF2FDays(r.f2fSched || r.f2fsched));
+    if (!days || days.length === 0) {
+      // Fallback to class day when F2F schedule is missing
+      days = parseF2FDays(r.day);
+    }
     if (!days || days.length === 0) return;
     days.forEach(day => out.push({ ...r, _day: day }));
   });

@@ -7,6 +7,7 @@ import { getProgramColor } from '../utils/programColors';
 import { buildTable, printContent } from '../utils/printDesign';
 import MiniBarChart from '../components/MiniBarChart';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
+import { parseF2FDays } from '../utils/conflicts';
 import { FiPrinter, FiInfo, FiAlertCircle } from 'react-icons/fi';
 import { findDayAnnotations } from '../utils/scheduleUtils';
 import { useLocalStorage, getInitialToggleState, getExamDateSet } from '../utils/scheduleUtils';
@@ -128,6 +129,17 @@ export default function VisualMap() {
 
   const tabs = useMemo(() => {
     const norm = (v) => String(v || 'N/A').trim().replace(/\s+/g, ' ').toUpperCase();
+    const resolveRoomForDay = (c, day) => {
+      const rawRooms = String(c.room || '').split(',').map(s => s.trim()).filter(Boolean);
+      const days = (Array.isArray(c.f2fDays) && c.f2fDays.length)
+        ? c.f2fDays
+        : parseF2FDays(c.f2fSched || c.f2fsched || c.day);
+      if (rawRooms.length > 1 && Array.isArray(days) && days.length === rawRooms.length) {
+        const idx = days.findIndex(d => String(d) === String(day));
+        if (idx >= 0) return rawRooms[idx] || (c.room || 'N/A');
+      }
+      return c.room || 'N/A';
+    };
     return DAY_CODES.map(day => {
       const hasExamData = daysWithExams.has(day);
       const useExamMode = (autoExamDays.has(day) && hasExamData) || (viewMode === 'examination' && hasExamData);
@@ -157,12 +169,13 @@ export default function VisualMap() {
         return { day, rooms, matrix, hasExamData: true, mode: 'exam' };
       }
 
-      // Regular mode with normalized rooms
+      // Regular mode with normalized rooms and per-day room resolution
       const displayByKey = new Map();
       (allCourses || []).forEach(c => {
         if (!(Array.isArray(c.f2fDays) && c.f2fDays.includes(day))) return;
-        const key = c.roomKey || norm(c.room);
-        if (!displayByKey.has(key)) displayByKey.set(key, c.room || 'N/A');
+        const roomForDay = resolveRoomForDay(c, day);
+        const key = norm(roomForDay);
+        if (!displayByKey.has(key)) displayByKey.set(key, roomForDay || 'N/A');
       });
       const rooms = Array.from(displayByKey.values()).sort((a,b)=>String(a).localeCompare(String(b)));
       const matrix = {};
@@ -170,7 +183,8 @@ export default function VisualMap() {
       (allCourses || []).forEach(c => {
         if (!(Array.isArray(c.f2fDays) && c.f2fDays.includes(day))) return;
         const session = deriveSession(c.timeStartMinutes, c.session);
-        const room = displayByKey.get(c.roomKey || norm(c.room)) || 'N/A';
+        const roomForDay = resolveRoomForDay(c, day);
+        const room = displayByKey.get(norm(roomForDay)) || 'N/A';
         const block = c.section || 'N/A';
         const prog = c.program || '';
         if (!matrix[session]) matrix[session] = new Map(rooms.map(r => [r, new Map()]));
@@ -206,6 +220,12 @@ export default function VisualMap() {
     });
   }
 
+  const defaultTabIndex = useMemo(() => {
+    const dow = new Date().getDay(); // 0=Sun,1=Mon,...,6=Sat
+    const idx = (dow >= 1 && dow <= 5) ? dow - 1 : 0;
+    return idx;
+  }, []);
+
   return (
     <Box>
       <HStack justify="space-between" mb={4} flexWrap="wrap" gap={3}>
@@ -238,7 +258,7 @@ export default function VisualMap() {
         </HStack>
       </HStack>
 
-      <Tabs variant="enclosed-colored" colorScheme="brand">
+      <Tabs variant="enclosed-colored" colorScheme="brand" defaultIndex={defaultTabIndex}>
         <TabList>
           {filteredTabs.map(t => (
             <Tab key={t.day}>

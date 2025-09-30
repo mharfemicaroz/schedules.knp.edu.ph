@@ -2,11 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { Box, Heading, HStack, VStack, Table, Thead, Tbody, Tr, Th, Td, Text, useColorModeValue, IconButton, Button, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Tag, TagLabel, Badge, Wrap, WrapItem, FormControl, FormLabel, Input, Select } from '@chakra-ui/react';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
-import { FiAlertTriangle, FiEdit, FiTrash, FiChevronUp, FiChevronDown } from 'react-icons/fi';
+import { FiAlertTriangle, FiEdit, FiTrash, FiChevronUp, FiChevronDown, FiDownload, FiPrinter } from 'react-icons/fi';
 import EditScheduleModal from '../components/EditScheduleModal';
 import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
 import Pagination from '../components/Pagination';
 import { getTimeOptions } from '../utils/timeOptions';
+import { buildTable, printContent } from '../utils/printDesign';
 import { buildConflicts, buildCrossFacultyOverlaps, parseTimeBlockToMinutes } from '../utils/conflicts';
 
 export default function ConflictSchedules() {
@@ -44,13 +45,14 @@ export default function ConflictSchedules() {
       return (Number.isFinite(start) && Number.isFinite(end)) ? `${start}-${end}` : s.toLowerCase();
     };
     const sectionOf = (r) => normalizeName(r.section || '');
+    const codeOf = (r) => String(r.code || r.courseName || '').trim().toLowerCase();
     const facIdOf = (r) => (r.facultyId != null ? String(r.facultyId) : (r.faculty_id != null ? String(r.faculty_id) : ''));
     const facKeyOf = (r) => facIdOf(r) || normalizeName(r.facultyName || r.faculty || r.instructor);
 
-    // 1) Exclude merged duplicates globally: same faculty, term, time, section
+    // 1) Exclude merged duplicates globally: same faculty, term, time, section, code
     const seen = new Set();
     const filtered = (allCourses || []).filter(r => {
-      const k = ['merged', facKeyOf(r), termOf(r), timeKeyOf(r), sectionOf(r)].join('|');
+      const k = ['merged', facKeyOf(r), termOf(r), timeKeyOf(r), sectionOf(r), codeOf(r)].join('|');
       if (seen.has(k)) return false; seen.add(k); return true;
     });
 
@@ -128,6 +130,7 @@ export default function ConflictSchedules() {
   const [term, setTerm] = useState('');
   const [time, setTime] = useState('');
   const [reason, setReason] = useState('');
+  const [program, setProgram] = useState('');
   const [sortKey, setSortKey] = useState('reason'); // 'reason' | 'faculty' | 'term' | 'time'
   const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
 
@@ -141,8 +144,18 @@ export default function ConflictSchedules() {
     setPage(1);
   };
 
+  const programOptions = useMemo(() => {
+    const set = new Set();
+    (allCourses||[]).forEach(c => {
+      const p = c.programcode || c.program || '';
+      if (p) set.add(String(p));
+    });
+    return Array.from(set).sort((a,b)=>String(a).localeCompare(String(b)));
+  }, [allCourses]);
+
   const filtered = useMemo(() => {
     const q = String(query || '').trim().toLowerCase();
+    const norm = (v) => String(v || '').trim().toLowerCase();
     const arr = conflicts.filter(g => {
       // reason filter
       if (reason && g.reason !== reason) return false;
@@ -150,13 +163,18 @@ export default function ConflictSchedules() {
       if (term && !g.items.some(x => (x.semester || x.term || '') === term)) return false;
       // time filter
       if (time && !g.items.some(x => (x.schedule || x.time || '') === time)) return false;
+      // program filter
+      if (program && !g.items.some(x => norm(x.programcode || x.program) === norm(program))) return false;
       // text query across faculty, code, section
       if (q) {
         const hit = g.items.some(x => {
           const fac = String(x.facultyName || x.faculty || x.instructor || '').toLowerCase();
           const code = String(x.code || '').toLowerCase();
           const sec = String(x.section || '').toLowerCase();
-          return fac.includes(q) || code.includes(q) || sec.includes(q);
+          const prog = String(x.programcode || x.program || '').toLowerCase();
+          const room = String(x.room || '').toLowerCase();
+          const rsn = String(g.reason || '').toLowerCase();
+          return fac.includes(q) || code.includes(q) || sec.includes(q) || prog.includes(q) || room.includes(q) || rsn.includes(q);
         });
         if (!hit) return false;
       }
@@ -190,11 +208,11 @@ export default function ConflictSchedules() {
       if (sa !== sb) return sa < sb ? -1 : 1;
       return 0;
     });
-  }, [conflicts, query, term, time, reason, sortKey, sortDir]);
+  }, [conflicts, query, term, time, reason, sortKey, sortDir, program]);
 
   // Pagination for filtered groups
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(10);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
 
@@ -218,6 +236,49 @@ export default function ConflictSchedules() {
         <FiAlertTriangle />
         <Heading size="md">Conflict Schedules</Heading>
         <Tag colorScheme="red" ml={2}><TagLabel>{filtered.length} groups</TagLabel></Tag>
+        <HStack ml="auto" spacing={2}>
+          <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)||10); setPage(1); }} maxW="100px">
+            {[10,15,20,30,50].map(n => (<option key={n} value={n}>{n}/page</option>))}
+          </Select>
+          <Button size="sm" leftIcon={<FiDownload />} variant="outline" onClick={() => {
+            const headers = ['Reason','Faculty','Term','Time','Program','Code','Section','Room','Session'];
+            const rows = filtered.flatMap(group => group.items.map(it => [
+              group.reason,
+              it.facultyName || it.faculty || it.instructor || '',
+              it.semester || it.term || '',
+              it.schedule || it.time || '',
+              it.programcode || it.program || '',
+              it.code || '',
+              it.section || '',
+              it.room || '',
+              it.session || '',
+            ]));
+            const esc = (v) => {
+              const s = String(v ?? '');
+              return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+            };
+            const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'conflict_schedules.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+          }}>Export CSV</Button>
+          <Button size="sm" leftIcon={<FiPrinter />} colorScheme="blue" variant="solid" onClick={() => {
+            const headers = ['Reason','Faculty','Term','Time','Program','Code','Section','Room','Session'];
+            const rows = filtered.flatMap(group => group.items.map(it => [
+              group.reason,
+              it.facultyName || it.faculty || it.instructor || '',
+              it.semester || it.term || '',
+              it.schedule || it.time || '',
+              it.programcode || it.program || '',
+              it.code || '',
+              it.section || '',
+              it.room || '',
+              it.session || '',
+            ]));
+            const html = buildTable(headers, rows);
+            printContent({ title: 'Conflict Schedules', subtitle: `${filtered.length} groups`, bodyHtml: html });
+          }}>Print</Button>
+        </HStack>
       </HStack>
 
       {/* Filters */}
@@ -226,6 +287,13 @@ export default function ConflictSchedules() {
           <FormControl maxW="260px">
             <FormLabel m={0} fontSize="xs" color="gray.500">Search</FormLabel>
             <Input size="sm" value={query} onChange={(e)=>{ setQuery(e.target.value); setPage(1); }} placeholder="Faculty / Code / Section" />
+          </FormControl>
+          <FormControl maxW="200px">
+            <FormLabel m={0} fontSize="xs" color="gray.500">Program</FormLabel>
+            <Select size="sm" value={program} onChange={(e)=>{ setProgram(e.target.value); setPage(1); }}>
+              <option value="">All</option>
+              {programOptions.map(p => (<option key={p} value={p}>{p}</option>))}
+            </Select>
           </FormControl>
           <FormControl maxW="160px">
             <FormLabel m={0} fontSize="xs" color="gray.500">Term</FormLabel>
@@ -250,7 +318,7 @@ export default function ConflictSchedules() {
               {[...new Set(conflicts.map(c=>c.reason))].map(r => (<option key={r} value={r}>{r}</option>))}
             </Select>
           </FormControl>
-          <Button size="sm" variant="ghost" onClick={()=>{ setQuery(''); setTerm(''); setTime(''); setReason(''); setPage(1); }}>Clear</Button>
+          <Button size="sm" variant="ghost" onClick={()=>{ setQuery(''); setTerm(''); setTime(''); setReason(''); setProgram(''); setPage(1); }}>Clear</Button>
         </HStack>
       </Box>
 

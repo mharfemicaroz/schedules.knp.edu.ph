@@ -174,7 +174,9 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
         const sameTime = (Number.isFinite(candStart) && Number.isFinite(candEnd) && Number.isFinite(rStart) && Number.isFinite(rEnd) && candStart === rStart && candEnd === rEnd) || (!!timeStr && !!rTimeStr && timeStr === rTimeStr);
         const sameTerm = !!rTerm && rTerm === term;
         const sameSection = normalizeName(r.section || '') === candSecNorm2;
-        const isMergedDup = sameFac && sameTerm && sameTime && sameSection;
+        const sameCode = normalizeName(r.code || r.courseName || '') === normalizeName(cand.code || cand.courseName || '');
+        // Only treat as merged duplicate if code also matches
+        const isMergedDup = sameFac && sameTerm && sameTime && sameSection && sameCode;
         return !isMergedDup;
       })
       .concat([candRow]);
@@ -237,7 +239,9 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
       const rEnd0 = Number.isFinite(r.timeEndMinutes) ? r.timeEndMinutes : rr0.end;
       const sameTime0 = (Number.isFinite(candStart) && Number.isFinite(candEnd) && Number.isFinite(rStart0) && Number.isFinite(rEnd0) && candStart === rStart0 && candEnd === rEnd0) || (rTime0 && timeStr && rTime0 === timeStr);
       const sameSection0 = normalizeName(r.section || '') === candSecNorm2;
-      if (sameFaculty(candFacObj, rFacObj) && rTerm0 === term && sameTime0 && sameSection0) continue;
+      const sameCode0 = normalizeName(r.code || r.courseName || '') === normalizeName(cand.code || cand.courseName || '');
+      // Skip only exact duplicates (same code too); otherwise surface data-quality conflict
+      if (sameFaculty(candFacObj, rFacObj) && rTerm0 === term && sameTime0 && sameSection0 && sameCode0) continue;
       if (!sameFaculty(candFacObj, rFacObj)) continue;
       const rTerm = rTerm0;
       if (!rTerm || rTerm !== term) continue;
