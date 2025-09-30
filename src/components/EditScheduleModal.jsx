@@ -14,23 +14,28 @@ import {
   FormLabel,
   Input,
   Select,
-  InputGroup,
-  InputRightElement,
-  IconButton,
   useColorModeValue,
   Text,
   Switch,
+  Progress,
+  Badge,
+  Alert,
+  AlertIcon,
+  AlertTitle,
+  AlertDescription,
+  UnorderedList,
+  ListItem,
+  Collapse,
+  Box,
 } from '@chakra-ui/react';
-import { FiX, FiEdit } from 'react-icons/fi';
+import { FiEdit } from 'react-icons/fi';
 import FacultySelect from './FacultySelect';
 import DayMultiSelect from './DayMultiSelect';
 import { getTimeOptions } from '../utils/timeOptions';
 import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
-import { Alert, AlertIcon, AlertTitle, AlertDescription, UnorderedList, ListItem } from '@chakra-ui/react';
 import { buildConflicts, parseF2FDays, parseTimeBlockToMinutes } from '../utils/conflicts';
 import { useLocalStorage } from '../utils/scheduleUtils';
- 
 
 export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, viewMode }) {
   const emptyForm = {
@@ -48,17 +53,22 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
     courseName: '',
     courseTitle: '',
   };
+
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
-  const [facQuery] = useState('');
   const [facultyId, setFacultyId] = useState(null);
   const [f2fDaysSel, setF2fDaysSel] = useState([]);
   const [isEditingCourse, setIsEditingCourse] = useState(false);
   const headerBg = useColorModeValue('gray.50', 'gray.700');
-  const subtleText = useColorModeValue('gray.600','gray.400');
+  const subtleText = useColorModeValue('gray.600', 'gray.400');
   const allCourses = useSelector(selectAllCourses);
   const [preventSave, setPreventSave] = useLocalStorage('schedPreventSaveOnConflict', true);
-  
+
+  const [suggOpen, setSuggOpen] = useState(false);
+  const [suggBusy, setSuggBusy] = useState(false);
+  const [suggPlans, setSuggPlans] = useState([]);
+  const [suggPercent, setSuggPercent] = useState(0);
+  const [suggNote, setSuggNote] = useState('');
 
   useEffect(() => {
     if (schedule) {
@@ -91,7 +101,15 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
     }
   }, [schedule, isOpen]);
 
-  // Faculty options provided by useFaculties
+  const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const sameFaculty = (a, b) => {
+    const aId = a && a.id != null ? String(a.id) : '';
+    const bId = b && b.id != null ? String(b.id) : '';
+    if (aId && bId && aId === bId) return true;
+    const aName = normalizeName(a && a.name);
+    const bName = normalizeName(b && b.name);
+    return !!aName && aName === bName;
+  };
 
   const hasFacultyChange = useMemo(() => {
     if (!schedule) return false;
@@ -111,25 +129,10 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
   }, [form, schedule, viewMode, isEditingCourse, hasFacultyChange]);
 
   const update = (key) => (e) => setForm((s) => ({ ...s, [key]: e.target.value }));
-  const filteredFacs = [];
 
-  function normalizeName(s){
-    return String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
-  }
-  function sameFaculty(a, b){
-    const aId = a && a.id != null ? String(a.id) : '';
-    const bId = b && b.id != null ? String(b.id) : '';
-    if (aId && bId && aId === bId) return true;
-    const aName = normalizeName(a && a.name);
-    const bName = normalizeName(b && b.name);
-    return !!aName && aName === bName;
-  }
-
-  // Compute conflicts live as user edits (regular view only): use same rules as ConflictSchedules
   const liveConflictGroups = useMemo(() => {
     if (!isOpen || !schedule || viewMode === 'examination') return [];
     const cand = { ...schedule };
-    // apply form changes into candidate
     if (form?.time != null) { cand.time = form.time; cand.schedule = form.time; cand.scheduleKey = form.time; }
     if (form?.term != null) { cand.term = form.term; cand.semester = form.term; }
     if (form?.room != null) cand.room = form.room;
@@ -151,15 +154,12 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
     const candFac = { id: cand.facultyId || cand.faculty_id, name: cand.facultyName || cand.faculty };
     if ((!candFac.id && !candFac.name) || !term || !timeStr || !candDays || candDays.length === 0) return [];
 
-    // Prepare candidate minutes for overlap checks used in buildConflicts
     const tr = parseTimeBlockToMinutes(timeStr);
     const candStart = Number.isFinite(schedule?.timeStartMinutes) && schedule?.time === timeStr ? schedule.timeStartMinutes : tr.start;
     const candEnd = Number.isFinite(schedule?.timeEndMinutes) && schedule?.time === timeStr ? schedule.timeEndMinutes : tr.end;
     const candId = `cand-${schedule.id ?? 'x'}`;
     const candRow = { ...cand, id: candId, scheduleKey: timeStr, time: timeStr, timeStartMinutes: candStart, timeEndMinutes: candEnd, f2fDays: candDays, __cid: candId };
 
-    // Exclude the original row and also exclude rows that are considered "merged duplicates"
-    // Merged duplicates: same faculty, same term, same time, same section (block)
     const candSecNorm2 = normalizeName(cand.section || '');
     const rows = (allCourses || [])
       .filter(r => String(r.id) !== String(schedule.id))
@@ -178,66 +178,58 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
         return !isMergedDup;
       })
       .concat([candRow]);
+
     const groups = buildConflicts(rows);
     const candSecNorm = normalizeName(cand.section || '');
-    // Keep only groups that include the candidate row
     let rel = groups
       .map(g => ({ reason: g.reason, key: g.key, items: g.items }))
       .filter(g => g.items.some(it => String(it.id) === candId || it.__cid === candId))
       .map(g => ({
         reason: g.reason,
-        // Same-faculty conflicts from buildConflicts: include regardless of section/course code
         items: g.items.filter(it => (String(it.id) !== candId && it.__cid !== candId))
       }))
       .filter(g => g.items.length > 0)
-      // Exclude self-clash groups in the edit modal
       .filter(g => !/^Self-clash/i.test(String(g.reason || '')));
-    // Additional broad overlaps (any faculty): same term + any F2F day intersect + overlapping time
+
     const candTerm = term;
     const seenIds = new Set(rel.flatMap(g => g.items.map(it => String(it.id))));
     const extra = [];
-    // Require same section as candidate for broad overlaps
     if (candSecNorm) {
-    for (const r of allCourses || []) {
-      if (!r || String(r.id) === String(schedule.id)) continue;
-      const rTerm = String(r.semester || r.term || '').trim().toLowerCase();
-      if (!rTerm || rTerm !== candTerm) continue;
-      if (normalizeName(r.section) !== candSecNorm) continue;
-      // If same faculty+term+time+section, treat as merged duplicate; skip
-      const rFacObj = { id: r.facultyId || r.faculty_id, name: r.facultyName || r.faculty };
-      const rTimeStr0 = String(r.scheduleKey || r.schedule || r.time || '').trim();
-      const rrX = parseTimeBlockToMinutes(rTimeStr0);
-      const rStartX = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : rrX.start;
-      const rEndX = Number.isFinite(r.timeEndMinutes) ? r.timeEndMinutes : rrX.end;
-      const sameTimeX = (Number.isFinite(candStart) && Number.isFinite(candEnd) && Number.isFinite(rStartX) && Number.isFinite(rEndX) && candStart === rStartX && candEnd === rEndX) || (rTimeStr0 && timeStr && rTimeStr0 === timeStr);
-      if (sameFaculty({ id: cand.facultyId || cand.faculty_id, name: cand.facultyName || cand.faculty }, rFacObj) && sameTimeX) continue;
-      const rDays = Array.isArray(r.f2fDays) && r.f2fDays.length ? r.f2fDays : parseF2FDays(r.f2fSched || r.f2fsched || r.day);
-      if (!rDays || rDays.length === 0) continue;
-      const dayHit = rDays.some(d => candDays.includes(d));
-      if (!dayHit) continue;
-      const rTimeStr = String(r.scheduleKey || r.schedule || r.time || '').trim();
-      const rr = parseTimeBlockToMinutes(rTimeStr);
-      const rStart = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : rr.start;
-      const rEnd = Number.isFinite(r.timeEndMinutes) ? r.timeEndMinutes : rr.end;
-      const sameKey = timeStr && rTimeStr && timeStr === rTimeStr;
-      const timeHit = sameKey || (Number.isFinite(candStart) && Number.isFinite(candEnd) && Number.isFinite(rStart) && Number.isFinite(rEnd) && Math.max(candStart, rStart) < Math.min(candEnd, rEnd));
-      if (!timeHit) continue;
-      const idStr = String(r.id);
-      if (!seenIds.has(idStr)) { seenIds.add(idStr); extra.push(r); }
+      for (const r of allCourses || []) {
+        if (!r || String(r.id) === String(schedule.id)) continue;
+        const rTerm = String(r.semester || r.term || '').trim().toLowerCase();
+        if (!rTerm || rTerm !== candTerm) continue;
+        if (normalizeName(r.section) !== candSecNorm) continue;
+        const rFacObj = { id: r.facultyId || r.faculty_id, name: r.facultyName || r.faculty };
+        const rTimeStr0 = String(r.scheduleKey || r.schedule || r.time || '').trim();
+        const rrX = parseTimeBlockToMinutes(rTimeStr0);
+        const rStartX = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : rrX.start;
+        const rEndX = Number.isFinite(r.timeEndMinutes) ? r.timeEndMinutes : rrX.end;
+        const sameTimeX = (Number.isFinite(candStart) && Number.isFinite(candEnd) && Number.isFinite(rStartX) && Number.isFinite(rEndX) && candStart === rStartX && candEnd === rEndX) || (rTimeStr0 && timeStr && rTimeStr0 === timeStr);
+        if (sameFaculty({ id: cand.facultyId || cand.faculty_id, name: cand.facultyName || cand.faculty }, rFacObj) && sameTimeX) continue;
+        const rDays = Array.isArray(r.f2fDays) && r.f2fDays.length ? r.f2fDays : parseF2FDays(r.f2fSched || r.f2fsched || r.day);
+        if (!rDays || rDays.length === 0) continue;
+        const dayHit = rDays.some(d => candDays.includes(d));
+        if (!dayHit) continue;
+        const rTimeStr = String(r.scheduleKey || r.schedule || r.time || '').trim();
+        const rr = parseTimeBlockToMinutes(rTimeStr);
+        const rStart = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : rr.start;
+        const rEnd = Number.isFinite(r.timeEndMinutes) ? r.timeEndMinutes : rr.end;
+        const sameKey = timeStr && rTimeStr && timeStr === rTimeStr;
+        const timeHit = sameKey || (Number.isFinite(candStart) && Number.isFinite(candEnd) && Number.isFinite(rStart) && Number.isFinite(rEnd) && Math.max(candStart, rStart) < Math.min(candEnd, rEnd));
+        if (!timeHit) continue;
+        const idStr = String(r.id);
+        if (!seenIds.has(idStr)) { seenIds.add(idStr); extra.push(r); }
+      }
     }
-    }
-    if (extra.length) {
-      rel.push({ reason: 'Time overlap (any faculty)', items: extra });
-    }
+    if (extra.length) rel.push({ reason: 'Time overlap (any faculty)', items: extra });
 
-    // Additional explicit same-faculty double booking (robust, regardless of section/course code)
     const facExtra = [];
     const seen2 = new Set(rel.flatMap(g => g.items.map(it => String(it.id))));
     const candFacObj = { id: cand.facultyId || cand.faculty_id, name: cand.facultyName || cand.faculty };
     for (const r of allCourses || []) {
       if (!r || String(r.id) === String(schedule.id)) continue;
       const rFacObj = { id: r.facultyId || r.faculty_id, name: r.facultyName || r.faculty };
-      // Skip merged duplicates relative to candidate
       const rTerm0 = String(r.semester || r.term || '').trim().toLowerCase();
       const rTime0 = String(r.scheduleKey || r.schedule || r.time || '').trim();
       const rr0 = parseTimeBlockToMinutes(rTime0);
@@ -245,11 +237,10 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
       const rEnd0 = Number.isFinite(r.timeEndMinutes) ? r.timeEndMinutes : rr0.end;
       const sameTime0 = (Number.isFinite(candStart) && Number.isFinite(candEnd) && Number.isFinite(rStart0) && Number.isFinite(rEnd0) && candStart === rStart0 && candEnd === rEnd0) || (rTime0 && timeStr && rTime0 === timeStr);
       const sameSection0 = normalizeName(r.section || '') === candSecNorm2;
-      if (sameFaculty(candFacObj, rFacObj) && rTerm0 === term && sameTime0 && sameSection0) continue; // merged duplicate
+      if (sameFaculty(candFacObj, rFacObj) && rTerm0 === term && sameTime0 && sameSection0) continue;
       if (!sameFaculty(candFacObj, rFacObj)) continue;
       const rTerm = rTerm0;
       if (!rTerm || rTerm !== term) continue;
-      // New: flag double-booked regardless of F2F day when time collides and section differs
       if (sameTime0 && !sameSection0) {
         const idStr0 = String(r.id);
         if (!seen2.has(idStr0)) { seen2.add(idStr0); facExtra.push(r); }
@@ -269,22 +260,18 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
       const idStr = String(r.id);
       if (!seen2.has(idStr)) { seen2.add(idStr); facExtra.push(r); }
     }
-    if (facExtra.length) {
-      rel.push({ reason: 'Double-booked: same faculty at this time', items: facExtra });
-    }
+    if (facExtra.length) rel.push({ reason: 'Double-booked: same faculty at this time', items: facExtra });
+
     return rel;
   }, [isOpen, schedule, viewMode, form, facultyId, f2fDaysSel, allCourses]);
 
   const handleSave = async () => {
-    // no conflict gating
     setBusy(true);
     try {
       const payload = facultyId ? { ...form, facultyId } : { ...form };
-      // Include snake_case variants for backend compatibility if needed
       if (payload.courseName != null) payload.course_name = payload.courseName;
       if (payload.courseTitle != null) payload.course_title = payload.courseTitle;
       if (facultyId && payload.faculty) delete payload.faculty;
-      // If cleared via UI, explicitly null out faculty fields
       const isCleared = (facultyId == null) && (!payload.faculty || String(payload.faculty).trim() === '');
       if (isCleared) { payload.faculty = null; payload.facultyId = null; }
       await onSave?.(payload);
@@ -292,6 +279,285 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
       setBusy(false);
     }
   };
+
+  async function computeSuggestions({ schedule, form, allCourses, onStep }) {
+    const stepNote = (p, note) => { try { onStep && onStep(p, note); } catch {} };
+    try {
+      const MAX_DEPTH = 10;
+
+      const nname = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const facKey = (r) => (r.facultyId != null ? `id:${r.facultyId}` : `nm:${nname(r.facultyName || r.faculty || r.instructor)}`);
+      const termOf = (r) => String(r.semester || r.term || '').trim().toLowerCase();
+      const sectionOf = (r) => nname(r.section || r.block_code || '');
+      const rangeOf = (r) => {
+        if (Number.isFinite(r.timeStartMinutes) && Number.isFinite(r.timeEndMinutes)) return { start: r.timeStartMinutes, end: r.timeEndMinutes };
+        const src = String(r.time || r.schedule || r.scheduleKey || '').trim();
+        const rr = parseTimeBlockToMinutes(src);
+        return rr && Number.isFinite(rr.start) && Number.isFinite(rr.end) ? rr : null;
+      };
+      const keyOf = (rg) => `${rg.start}-${rg.end}`;
+      const pad = (n) => String(n).padStart(2, '0');
+      const toLabel = (rg) => `${pad(Math.floor(rg.start/60))}:${pad(rg.start%60)}-${pad(Math.floor(rg.end/60))}:${pad(rg.end%60)}`;
+      const sessionOfMinutes = (m) => (m < 12*60 ? 'morning' : (m < 17*60 ? 'afternoon' : 'evening'));
+
+      const timeOpts = (getTimeOptions() || []).map(s => String(s || '').trim()).filter(Boolean);
+      const optRanges = timeOpts.map(t => ({ src: t, rg: parseTimeBlockToMinutes(t) }))
+        .filter(x => x.rg && Number.isFinite(x.rg.start) && Number.isFinite(x.rg.end));
+      const keyToSrc = new Map(optRanges.map(x => [keyOf(x.rg), x.src]));
+      const keysBySession = optRanges.reduce((acc, x) => {
+        const sess = sessionOfMinutes(x.rg.start);
+        (acc[sess] = acc[sess] || []).push(keyOf(x.rg));
+        return acc;
+      }, {});
+      const srcByKey = (k) => keyToSrc.get(k) || (() => {
+        const [a,b] = k.split('-').map(Number);
+        return (Number.isFinite(a) && Number.isFinite(b)) ? toLabel({ start: a, end: b }) : k;
+      })();
+
+      const cand = { ...schedule };
+      if (form?.time) { cand.time = form.time; cand.schedule = form.time; cand.scheduleKey = form.time; }
+      if (form?.term) { cand.term = form.term; cand.semester = form.term; }
+      const myFac = facKey({ facultyId: cand.facultyId || cand.faculty_id, facultyName: cand.faculty || cand.facultyName });
+      const myTerm = termOf(cand);
+      const myRg = rangeOf(cand);
+      if (!myRg || !myTerm) return [];
+      const myKey = keyOf(myRg);
+      const mySec = sectionOf(cand);
+      const mySess = (String(cand.session || '').trim().toLowerCase()) || sessionOfMinutes(myRg.start);
+      const sessionKeys = keysBySession[mySess] || [];
+      const sameFacRows = (allCourses || []).filter(r => facKey(r) === myFac);
+      const allTerms = Array.from(new Set((allCourses || []).map(termOf).filter(Boolean)));
+      const prefTerms = [myTerm, ...allTerms.filter(t => t !== myTerm)];
+
+      const hasSameSectionOverlap = (rg) => {
+        for (const r of (allCourses || [])) {
+          if (String(r.id) === String(cand.id)) continue;
+          if (termOf(r) !== myTerm) continue;
+          if (sectionOf(r) !== mySec) continue;
+          const rr = rangeOf(r); if (!rr) continue;
+          if (Math.max(rg.start, rr.start) < Math.min(rg.end, rr.end)) return true;
+        }
+        return false;
+      };
+
+      const canPlaceRow = (row, termKey, timeKey) => {
+        const rowFac = facKey(row);
+        const rowSec = sectionOf(row);
+        for (const r of (allCourses || [])) {
+          if (facKey(r) !== rowFac) continue;
+          if (termOf(r) !== termKey) continue;
+          const rr = rangeOf(r); if (!rr) continue;
+          if (keyOf(rr) === timeKey) {
+            if (String(r.id) === String(row.id)) continue;
+            if (sectionOf(r) === rowSec) continue;
+            return false;
+          }
+        }
+        for (const r of (allCourses || [])) {
+          if (termOf(r) !== termKey) continue;
+          if (sectionOf(r) !== rowSec) continue;
+          const rr = rangeOf(r); if (!rr) continue;
+          if (keyOf(rr) === timeKey) return false;
+        }
+        return true;
+      };
+
+      const canPlaceCandidate = (termKey, timeKey) => {
+        for (const r of (allCourses || [])) {
+          if (facKey(r) !== myFac) continue;
+          if (termOf(r) !== termKey) continue;
+          const rr = rangeOf(r); if (!rr) continue;
+          if (keyOf(rr) === timeKey) {
+            if (String(r.id) === String(cand.id)) continue;
+            if (sectionOf(r) === mySec) continue;
+            return false;
+          }
+        }
+        for (const r of (allCourses || [])) {
+          if (termOf(r) !== termKey) continue;
+          if (sectionOf(r) !== mySec) continue;
+          const rr = rangeOf(r); if (!rr) continue;
+          if (keyOf(rr) === timeKey) return false;
+        }
+        return true;
+      };
+
+      stepNote(5, 'Scanning conflicts…');
+
+      const conflicts = (allCourses || [])
+        .filter(r => String(r.id) !== String(cand.id))
+        .filter(r => termOf(r) === myTerm && facKey(r) === myFac && sectionOf(r) !== mySec)
+        .filter(r => {
+          const rr = rangeOf(r); if (!rr) return false;
+          return Math.max(myRg.start, rr.start) < Math.min(myRg.end, rr.end);
+        });
+
+      const plans = [];
+
+      if (hasSameSectionOverlap(myRg)) {
+        stepNote(15, 'Proposing candidate moves within same session…');
+        for (const t of prefTerms) {
+          for (const tk of sessionKeys) {
+            if (t === myTerm && tk === myKey) continue;
+            if (canPlaceCandidate(t, tk)) {
+              plans.push({
+                label: 'Move this course to avoid same-section overlap',
+                candidateChange: { toTerm: t, toTime: srcByKey(tk) },
+                steps: [{
+                  node: 1,
+                  course: cand.code || cand.courseName || 'Course',
+                  section: cand.section || '',
+                  from: `${cand.term || ''} ${cand.schedule || cand.time || ''}`,
+                  to: `${t} ${srcByKey(tk)}`,
+                }],
+              });
+              if (plans.length >= 5) break;
+            }
+          }
+          if (plans.length >= 5) break;
+        }
+        if (plans.length) return plans;
+      }
+
+      if (conflicts.length === 0) {
+        stepNote(25, 'No same-faculty conflict; proposing free slots for this course…');
+        for (const t of prefTerms) {
+          for (const tk of sessionKeys) {
+            if (t === myTerm && tk === myKey) continue;
+            if (canPlaceCandidate(t, tk)) {
+              plans.push({
+                label: 'Move this course to a free slot',
+                candidateChange: { toTerm: t, toTime: srcByKey(tk) },
+                steps: [{
+                  node: 1,
+                  course: cand.code || cand.courseName || 'Course',
+                  section: cand.section || '',
+                  from: `${cand.term || ''} ${cand.schedule || cand.time || ''}`,
+                  to: `${t} ${srcByKey(tk)}`,
+                }],
+              });
+              if (plans.length >= 3) break;
+            }
+          }
+          if (plans.length >= 3) break;
+        }
+        return plans;
+      }
+
+      const target = conflicts[0];
+      stepNote(35, 'Trying to move blocking course to keep this course time…');
+
+      const tryMoveTargetDirect = () => {
+        for (const t of prefTerms) {
+          for (const tk of sessionKeys) {
+            if (t === myTerm && tk === myKey) continue;
+            if (canPlaceRow(target, t, tk)) {
+              return {
+                label: 'Move blocking course to free this slot',
+                candidateChange: null,
+                steps: [{
+                  node: 1,
+                  course: target.code || target.courseName || 'Course',
+                  section: target.section || '',
+                  from: `${myTerm} ${target.schedule || target.time || ''}`,
+                  to: `${t} ${srcByKey(tk)}`,
+                }],
+              };
+            }
+          }
+        }
+        return null;
+      };
+      const direct = tryMoveTargetDirect();
+      if (direct) plans.push(direct);
+
+      const occByTerm = new Map();
+      for (const r of sameFacRows) {
+        const t = termOf(r); if (!t) continue;
+        const rg = rangeOf(r); if (!rg) continue;
+        const tk = keyOf(rg);
+        const termMap = occByTerm.get(t) || new Map();
+        const list = termMap.get(tk) || [];
+        termMap.set(tk, list.concat([r]));
+        occByTerm.set(t, termMap);
+      }
+
+      stepNote(45, 'Searching multi-step reallocations (up to 10)…');
+
+      const searchChain = (depth, termKey, targetKey, occSnapshot, path) => {
+        if (depth > MAX_DEPTH) return null;
+        const termMap = occSnapshot.get(termKey) || new Map();
+        const occupants = (termMap.get(targetKey) || []).filter(x => String(x.id) !== String(target.id));
+        if (occupants.length === 0) {
+          return {
+            label: 'Reallocate multiple courses to free this slot',
+            candidateChange: null,
+            steps: path.concat([{
+              node: depth,
+              course: target.code || target.courseName || 'Course',
+              section: target.section || '',
+              from: `${myTerm} ${target.schedule || target.time || ''}`,
+              to: `${termKey} ${srcByKey(targetKey)}`,
+            }]),
+          };
+        }
+        if (depth === MAX_DEPTH) return null;
+
+        const blocker = occupants[0];
+        const blockerRg = rangeOf(blocker);
+        const blockerKey = blockerRg ? keyOf(blockerRg) : '';
+        for (const altKey of sessionKeys) {
+          if (altKey === targetKey || altKey === blockerKey) continue;
+          if (!canPlaceRow(blocker, termKey, altKey)) continue;
+
+          const nextOcc = new Map();
+          occSnapshot.forEach((m, k) => {
+            const m2 = new Map();
+            m.forEach((arr, kk) => m2.set(kk, arr.slice()));
+            nextOcc.set(k, m2);
+          });
+          const nextTermMap = nextOcc.get(termKey) || new Map();
+          nextOcc.set(termKey, nextTermMap);
+          nextTermMap.set(blockerKey, (nextTermMap.get(blockerKey) || []).filter(x => String(x.id) !== String(blocker.id)));
+          nextTermMap.set(altKey, (nextTermMap.get(altKey) || []).concat([blocker]));
+
+          const res = searchChain(
+            depth + 1,
+            termKey,
+            targetKey,
+            nextOcc,
+            path.concat([{
+              node: depth,
+              course: blocker.code || blocker.courseName || 'Course',
+              section: blocker.section || '',
+              from: `${termKey} ${blocker.schedule || blocker.time || ''}`,
+              to: `${termKey} ${srcByKey(altKey)}`,
+            }])
+          );
+          if (res) return res;
+        }
+        return null;
+      };
+
+      for (const tk of sessionKeys) {
+        if (tk === myKey) continue;
+        const snapshot = new Map();
+        occByTerm.forEach((m, k) => {
+          const m2 = new Map();
+          m.forEach((arr, kk) => m2.set(kk, arr.slice()));
+          snapshot.set(k, m2);
+        });
+        const chainPlan = searchChain(1, myTerm, tk, snapshot, []);
+        if (chainPlan) { plans.push(chainPlan); break; }
+      }
+
+      if (plans.length === 0) stepNote(95, 'No viable 10-node plan found.');
+      return plans;
+    } catch (e) {
+      console.error('[Suggestions] Error:', e);
+      return [];
+    }
+  }
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} isCentered motionPreset="scale">
@@ -302,19 +568,20 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
         <ModalBody>
           {schedule ? (
             <VStack align="stretch" spacing={4}>
-
               <HStack justify="space-between" align="center">
                 <Text fontSize="sm" color={subtleText}>
                   {isEditingCourse ? 'Editing course info' : `${form.courseName || schedule.code} - ${form.courseTitle || schedule.title}`}
                 </Text>
-                <IconButton
+                <Button
                   aria-label={isEditingCourse ? 'Stop editing course' : 'Edit course'}
-                  icon={<FiEdit />}
+                  leftIcon={<FiEdit />}
                   size="sm"
                   variant="ghost"
                   onClick={() => setIsEditingCourse(v => !v)}
                   title={isEditingCourse ? 'Done editing course fields' : 'Edit course name/title'}
-                />
+                >
+                  {isEditingCourse ? 'Done' : 'Edit'}
+                </Button>
               </HStack>
 
               {viewMode !== 'examination' && liveConflictGroups.length > 0 && (
@@ -323,14 +590,14 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                   <VStack align="start" spacing={1} w="full">
                     <AlertTitle>Potential conflicts detected</AlertTitle>
                     <AlertDescription w="full">
-                      {liveConflictGroups.slice(0,4).map((grp, idx) => (
+                      {liveConflictGroups.slice(0, 4).map((grp, idx) => (
                         <VStack key={idx} align="start" spacing={1} mb={2}>
                           <Text fontWeight="semibold" color="red.600">{grp.reason}</Text>
                           <UnorderedList ml={6} spacing={1}>
-                            {grp.items.slice(0,6).map(item => (
+                            {grp.items.slice(0, 6).map(item => (
                               <ListItem key={item.id}>
                                 <Text as="span" fontWeight="semibold">{item.code || item.courseName || 'Course'}</Text>
-                                <Text as="span"> / {item.section || ''} — {(item.f2fSched || item.f2fsched || item.day || '')} • {item.schedule || item.time || ''}</Text>
+                                <Text as="span"> / {item.section || ''} {(item.f2fSched || item.f2fsched || item.day || '')} {item.schedule || item.time || ''}</Text>
                               </ListItem>
                             ))}
                             {grp.items.length > 6 && (
@@ -342,6 +609,90 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                       {liveConflictGroups.length > 4 && (
                         <Text color="red.600">and {liveConflictGroups.length - 4} more conflict groups…</Text>
                       )}
+                      <VStack align="stretch" mt={3} spacing={2}>
+                        <HStack>
+                          <Button
+                            size="sm"
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={async () => {
+                              setSuggOpen(true);
+                              setSuggBusy(true);
+                              setSuggPlans([]);
+                              setSuggPercent(0);
+                              setSuggNote('Starting analysis…');
+                              setTimeout(async () => {
+                                try {
+                                  const plans = await computeSuggestions({
+                                    schedule,
+                                    form,
+                                    allCourses,
+                                    onStep: (p, note) => {
+                                      setSuggPercent(Math.min(100, Math.max(0, p || 0)));
+                                      if (note) setSuggNote(note);
+                                    }
+                                  });
+                                  setSuggPlans(plans || []);
+                                } finally {
+                                  setSuggBusy(false);
+                                  setSuggPercent(100);
+                                }
+                              }, 30);
+                            }}
+                          >
+                            Find Suggestions
+                          </Button>
+                          {suggBusy && (
+                            <HStack spacing={2}>
+                              <Progress size="sm" value={suggPercent} max={100} hasStripe w="240px" />
+                              <Text fontSize="xs" color="gray.600">{suggNote}</Text>
+                            </HStack>
+                          )}
+                          {!suggBusy && suggPlans.length > 0 && (
+                            <Badge colorScheme="green">
+                              {suggPlans.length} plan{(suggPlans.length > 1) ? 's' : ''} suggested
+                            </Badge>
+                          )}
+                        </HStack>
+                        <Collapse in={suggOpen} animateOpacity>
+                          {suggBusy ? (
+                            <Text fontSize="sm" color="gray.600">Analyzing up to 10 nodes…</Text>
+                          ) : (
+                            <VStack align="stretch" spacing={3}>
+                              {suggPlans.length === 0 ? (
+                                <Text fontSize="sm" color="gray.600">No suggestions up to ten nodes.</Text>
+                              ) : (
+                                suggPlans.map((plan, i) => {
+                                  const maxNode = Math.max(...plan.steps.map(s => s.node || 1));
+                                  return (
+                                    <Box key={i} p={3} borderWidth="1px" borderRadius="md">
+                                      <Text fontSize="sm" fontWeight="semibold" mb={2}>
+                                        Plan {i + 1}: {plan.label} • Steps: {plan.steps.length} • Max node: {Number.isFinite(maxNode) ? maxNode : 1}
+                                      </Text>
+                                      <UnorderedList ml={6} spacing={1}>
+                                        {plan.steps.map((s, j) => (
+                                          <ListItem key={j}>
+                                            Node {s.node || 1}: Move <b>{s.course}</b> ({s.section}) from <b>{s.from}</b> to <b>{s.to}</b>
+                                          </ListItem>
+                                        ))}
+                                      </UnorderedList>
+                                      {plan.candidateChange?.toTerm || plan.candidateChange?.toTime ? (
+                                        <Text mt={2} fontSize="xs" color="gray.600">
+                                          Outcome if applied: set this course to {plan.candidateChange?.toTerm || form.term} {plan.candidateChange?.toTime || form.time}
+                                        </Text>
+                                      ) : (
+                                        <Text mt={2} fontSize="xs" color="gray.600">
+                                          Outcome if applied: keep this course time; move other course(s) to free the slot
+                                        </Text>
+                                      )}
+                                    </Box>
+                                  );
+                                })
+                              )}
+                            </VStack>
+                          )}
+                        </Collapse>
+                      </VStack>
                     </AlertDescription>
                   </VStack>
                 </Alert>
@@ -359,15 +710,15 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                   </FormControl>
                 </HStack>
               )}
-              
+
               <Text fontSize="sm" color={subtleText} display="none">
-                {schedule.code} • {schedule.title}
+                {schedule.code} {schedule.title}
               </Text>
               <HStack>
                 <FormControl>
                   <FormLabel>Term</FormLabel>
                   <Select value={form.term} onChange={update('term')}>
-                    <option value="">—</option>
+                    <option value=""></option>
                     <option value="1st">1st</option>
                     <option value="2nd">2nd</option>
                     <option value="Sem">Sem</option>
@@ -425,7 +776,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                       <FormLabel>Time</FormLabel>
                       <Select value={form.time} onChange={update('time')}>
                         {getTimeOptions().map((t, i) => (
-                          <option key={`${t}-${i}`} value={t}>{t || '—'}</option>
+                          <option key={`${t}-${i}`} value={t}>{t || ''}</option>
                         ))}
                       </Select>
                     </FormControl>
@@ -462,18 +813,22 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
         </ModalBody>
         <ModalFooter gap={3} justifyContent="space-between">
           <HStack align="center" spacing={3}>
-            <Switch size="md" colorScheme="red" isChecked={preventSave} onChange={(e)=>setPreventSave(e.target.checked)} />
+            <Switch size="md" colorScheme="red" isChecked={preventSave} onChange={(e) => setPreventSave(e.target.checked)} />
             <Text fontSize="sm" color={subtleText}>Prevent save when conflicts exist</Text>
           </HStack>
           <HStack>
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button colorScheme="blue" onClick={handleSave} isDisabled={!canSave || (preventSave && (viewMode !== 'examination') && (liveConflictGroups.length > 0))} isLoading={busy}>Save changes</Button>
+            <Button
+              colorScheme="blue"
+              onClick={handleSave}
+              isDisabled={!canSave || (preventSave && (viewMode !== 'examination') && (liveConflictGroups.length > 0))}
+              isLoading={busy}
+            >
+              Save changes
+            </Button>
           </HStack>
         </ModalFooter>
       </ModalContent>
     </Modal>
   );
 }
-
-
-

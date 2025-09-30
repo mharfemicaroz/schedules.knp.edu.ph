@@ -133,6 +133,8 @@ export default function AdminFaculty() {
           }
           formDisc.onClose();
           setEditing(null);
+          // Optional: refresh listing from server after changes
+          dispatch(loadFacultiesThunk({}));
         }}
       />
 

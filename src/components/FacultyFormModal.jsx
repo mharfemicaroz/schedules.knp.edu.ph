@@ -2,14 +2,27 @@ import React from 'react';
 import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Button, VStack, HStack, FormControl, FormLabel, Input, Select, NumberInput, NumberInputField, useColorModeValue } from '@chakra-ui/react';
 
 export default function FacultyFormModal({ isOpen, onClose, onSubmit, initial }) {
-  const [form, setForm] = React.useState(() => ({
-    name: '', email: '', department: '', designation: '', employment: '', rank: '', load_release_units: '',
-    ...(initial || {}),
-  }));
+  const mapInitial = React.useCallback((src) => {
+    const it = src || {};
+    const name = it.name ?? it.faculty ?? '';
+    const department = it.department ?? it.dept ?? '';
+    const lru = it.load_release_units ?? it.loadReleaseUnits ?? '';
+    return {
+      name,
+      department,
+      email: it.email ?? '',
+      designation: it.designation ?? '',
+      employment: it.employment ?? '',
+      rank: it.rank ?? '',
+      load_release_units: lru,
+    };
+  }, []);
+
+  const [form, setForm] = React.useState(() => mapInitial(initial));
 
   React.useEffect(() => {
-    setForm(prev => ({ ...prev, ...(initial || {}) }));
-  }, [initial]);
+    setForm(mapInitial(initial));
+  }, [initial, mapInitial]);
 
   const border = useColorModeValue('gray.200','gray.700');
 
@@ -74,4 +87,3 @@ export default function FacultyFormModal({ isOpen, onClose, onSubmit, initial })
     </Modal>
   );
 }
-

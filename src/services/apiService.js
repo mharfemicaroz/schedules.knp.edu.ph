@@ -231,6 +231,9 @@ class ApiService {
   // Normalize frontend -> backend keys for faculty
   #normalizeFacultyPayload(obj = {}) {
     const p = { ...obj };
+    // Map display keys to backend keys
+    if (p.name != null && p.faculty == null) p.faculty = p.name;
+    if (p.department != null && p.dept == null) p.dept = p.department;
     if (p.loadReleaseUnits != null && p.load_release_units == null) p.load_release_units = p.loadReleaseUnits;
     if (p.load_release_units != null && p.loadReleaseUnits == null) p.loadReleaseUnits = p.load_release_units;
     return p;

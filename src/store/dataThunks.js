@@ -1,5 +1,6 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import apiService from "../services/apiService";
+import { normalizeTimeBlock } from "../utils/timeNormalize";
 
 function transformSchedulesToFacultyDataset(schedules) {
   if (!Array.isArray(schedules)) return { faculties: [], meta: {} };
@@ -41,39 +42,7 @@ function transformSchedulesToFacultyDataset(schedules) {
     }
     return Array.from(out);
   };
-  const parseTimeRange = (timeStr) => {
-    const s = String(timeStr || "")
-      .replace(/\s+/g, "")
-      .toUpperCase();
-    const m = s.match(
-      /^(\d{1,2})(?::(\d{2}))?(AM|PM)?-(\d{1,2})(?::(\d{2}))?(AM|PM)?$/i
-    );
-    if (!m) return { start: Infinity, end: Infinity, key: "NA" };
-    let sh = parseInt(m[1] || "0", 10),
-      sm = parseInt(m[2] || "0", 10);
-    let sMer = (m[3] || "").toUpperCase();
-    let eh = parseInt(m[4] || "0", 10),
-      em = parseInt(m[5] || "0", 10);
-    let eMer = (m[6] || "").toUpperCase();
-    if (!sMer && eMer) sMer = eMer;
-    if (!eMer && sMer) eMer = sMer;
-    const toMinutes = (h, m, mer) => {
-      let hh = h;
-      if (mer === "AM") {
-        if (hh === 12) hh = 0;
-      } else if (mer === "PM") {
-        if (hh !== 12) hh += 12;
-      }
-      return hh * 60 + m;
-    };
-    const start = toMinutes(sh, sm, sMer || "AM");
-    const end = toMinutes(eh, em, eMer || "AM");
-    const pad = (n) => String(n).padStart(2, "0");
-    const key = `${pad(Math.floor(start / 60))}:${pad(start % 60)}-${pad(
-      Math.floor(end / 60)
-    )}:${pad(end % 60)}`;
-    return { start, end, key };
-  };
+  // removed local parser; use normalizeTimeBlock
   const termOrder = (t) => {
     const v = String(t || "").toLowerCase();
     if (v.startsWith("1")) return 1;
@@ -106,7 +75,7 @@ function transformSchedulesToFacultyDataset(schedules) {
     if (!facultyData.loadReleaseUnits && (schedule.load_release_units != null || schedule.loadReleaseUnits != null || facProfile.load_release_units != null)) {
       facultyData.loadReleaseUnits = schedule.loadReleaseUnits ?? schedule.load_release_units ?? facProfile.load_release_units ?? facultyData.loadReleaseUnits;
     }
-    const t = parseTimeRange(schedule.time);
+    const tn = normalizeTimeBlock(schedule.time);
     const course = {
       id: schedule.id,
       facultyId: schedule.facultyId || schedule.faculty_id || null,
@@ -138,9 +107,9 @@ function transformSchedulesToFacultyDataset(schedules) {
           ...(toDayCodes(schedule.f2fSched) || []),
         ])
       ),
-      timeStartMinutes: t.start,
-      timeEndMinutes: t.end,
-      scheduleKey: t.key,
+      timeStartMinutes: tn?.start ?? Infinity,
+      timeEndMinutes: tn?.end ?? Infinity,
+      scheduleKey: tn?.key || '',
       roomKey: String(schedule.room || "N/A")
         .trim()
         .replace(/\s+/g, " ")
