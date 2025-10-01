@@ -410,7 +410,7 @@ export default function FacultyDetail() {
       return `<p class="prt-sub" style="margin-top:18px;font-weight:800">Term: ${esc(g.term || 'N/A')}</p>${table}`;
     }).join('');
 
-    printContent({ title: `Faculty: ${f.name}`, subtitle: f.department || '', bodyHtml: metaHtml + sectionsHtml });
+    printContent({ title: `Faculty: ${f.name}`, subtitle: f.department || '', bodyHtml: metaHtml + sectionsHtml }, { compact: true });
   }
   async function handleSaveEdit(payload) {
     if (!selected) return;
