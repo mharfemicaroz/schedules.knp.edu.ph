@@ -403,14 +403,65 @@ export default function FacultyDetail() {
       ? ['Term','Code','Title','Section','Units','Time','Exam Day','Exam Session','Exam Room']
       : ['Term','Code','Title','Section','Units','Day','Time','Room','Session','F2F Sched'];
 
+    const dropLabels = (viewMode === 'examination') ? new Set(['Term','Exam Session']) : new Set(['Term','Session']);
+    const useHeaders = headers.filter(h => !dropLabels.has(h));
+    const dropIdx = headers.map((h, i) => dropLabels.has(h) ? i : -1).filter(i => i >= 0);
+
+    // Build dynamic start-of-classes notice from academic calendar data
+    function parseDate(val) {
+      if (!val) return null;
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    function expandDateRangeToken(token) {
+      const m = String(token || '').match(/^(\w+)\s+(\d+)-(\d+),\s*(\d{4})$/);
+      if (!m) return [];
+      const month = m[1];
+      const startD = parseInt(m[2], 10);
+      const endD = parseInt(m[3], 10);
+      const year = parseInt(m[4], 10);
+      const out = [];
+      for (let d = startD; d <= endD; d++) {
+        const dt = new Date(`${month} ${d}, ${year}`);
+        if (!isNaN(dt.getTime())) out.push(dt);
+      }
+      return out;
+    }
+    const cal = (acadData && Array.isArray(acadData) ? (acadData[0]?.academic_calendar || {}) : (acadData?.academic_calendar || {})) || {};
+    const syStr = String(cal.school_year || '').trim();
+    const first = cal.first_semester || {};
+    const firstTerm = first.first_term || {};
+    const startActivity = Array.isArray(firstTerm.activities) ? firstTerm.activities.find(a => /start\s+of\s+classes/i.test(String(a?.event || ''))) : null;
+    let startDate = null;
+    if (startActivity) {
+      if (startActivity.date_range) {
+        const arr = expandDateRangeToken(startActivity.date_range);
+        if (arr.length) startDate = arr[0];
+      } else if (Array.isArray(startActivity.date)) {
+        const arr = startActivity.date.map(parseDate).filter(Boolean).sort((a,b)=>a-b);
+        if (arr.length) startDate = arr[0];
+      } else if (startActivity.date) {
+        startDate = parseDate(startActivity.date);
+      }
+    }
+    const startDateText = startDate ? startDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : 'per academic calendar';
+    const noticeHtml = `
+      <div class="prt-notice">
+        <div class="prt-notice-title">Notice of Teaching Load</div>
+        <p>Classes for 1st sem, SY ${syStr || 'TBD'} begin on ${startDateText}${startDate ? '' : ''}.</p>
+        <p>Admit only officially enrolled students; verify COR and class codes.</p>
+        <p>This load is tentative; we’ll notify you of any changes.</p>
+      </div>`;
+
     const sectionsHtml = orderedGroups.map(g => {
-      const rows = (g.items || []).map(buildRows);
+      const rawRows = (g.items || []).map(buildRows);
+      const rows = rawRows.map(r => r.filter((_, i) => dropIdx.indexOf(i) === -1));
       if (rows.length === 0) return '';
-      const table = buildTable(headers, rows);
-      return `<p class="prt-sub" style="margin-top:18px;font-weight:800">Term: ${esc(g.term || 'N/A')}</p>${table}`;
+      const table = buildTable(useHeaders, rows);
+      return `<p class=\"prt-sub\" style=\"margin-top:18px;font-weight:800\">Term: ${esc(g.term || 'N/A')}</p>${table}`;
     }).join('');
 
-    printContent({ title: `Faculty: ${f.name}`, subtitle: f.department || '', bodyHtml: metaHtml + sectionsHtml }, { compact: true });
+    printContent({ title: `Faculty: ${f.name}`, subtitle: f.department || '', bodyHtml: metaHtml + noticeHtml + sectionsHtml }, { compact: true });
   }
   async function handleSaveEdit(payload) {
     if (!selected) return;

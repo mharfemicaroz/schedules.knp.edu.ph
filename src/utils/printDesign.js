@@ -38,6 +38,9 @@ export function printContent({ title, subtitle = '', bodyHtml = '' }, opts = {})
     .prt-verify, .prt-approve { margin-top: ${compact ? '8px' : '24px'}; font-weight: 800; }
     .prt-sign { margin-top: ${compact ? '10px' : '18px'}; display: inline-block; border-top: 1px solid #333; padding-top: ${compact ? '4px' : '6px'}; font-weight: 700; }
     .prt-role { color: #444; font-size: ${compact ? '9px' : '12px'}; }
+    .prt-notice { margin: ${compact ? '6px 0 10px' : '12px 0 16px'}; padding: ${compact ? '6px 8px' : '10px 12px'}; background: #f8fafc; border-left: 3px solid #2563eb; border-radius: 6px; }
+    .prt-notice-title { font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; margin: 0 0 ${compact ? '4px' : '6px'} 0; font-size: ${compact ? '10px' : '12px'}; color: #0a0a0a; }
+    .prt-notice p { margin: ${compact ? '2px 0' : '4px 0'}; font-size: ${compact ? '9px' : '12px'}; color: #111; }
   `;
   const now = new Date().toLocaleString();
   const doc = `<!doctype html><html><head><meta charset='utf-8'><title>${escapeHtml(title)}</title><style>${styles}</style></head>
