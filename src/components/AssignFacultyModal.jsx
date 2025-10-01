@@ -51,12 +51,13 @@ function useFacultyStats(faculties, courses) {
         const sec = norm(r.section || '');
         const term = termOf(r);
         const tk = timeKeyOf(r);
-        if (!code || !sec || !term || !tk) continue;
-        const k = [code, sec, term, tk].join('|');
+        // Require code and section; include rows even if term or time are missing/invalid
+        if (!code || !sec) continue;
+        const k = [code, sec, term || 'n/a', tk || ''].join('|');
         if (seen.has(k)) continue; seen.add(k);
-        units += Number(r.unit || 0) || 0; coursesCnt += 1;
+        units += Number(r.unit ?? r.hours ?? 0) || 0; coursesCnt += 1;
       }
-      const release = Number(f.load_release_units ?? f.loadReleaseUnits ?? 0) || 0;
+      const release = Number(f.loadReleaseUnits ?? f.load_release_units ?? 0) || 0;
       const baseline = Math.max(0, 24 - release);
       const overload = Math.max(0, units - baseline);
       map.set(String(f.id), { load: units, release, overload, courses: coursesCnt });

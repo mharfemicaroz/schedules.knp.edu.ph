@@ -41,8 +41,23 @@ export function printContent({ title, subtitle = '', bodyHtml = '' }, opts = {})
     .prt-notice { margin: ${compact ? '6px 0 10px' : '12px 0 16px'}; padding: ${compact ? '6px 8px' : '10px 12px'}; background: #f8fafc; border-left: 3px solid #2563eb; border-radius: 6px; }
     .prt-notice-title { font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; margin: 0 0 ${compact ? '4px' : '6px'} 0; font-size: ${compact ? '10px' : '12px'}; color: #0a0a0a; }
     .prt-notice p { margin: ${compact ? '2px 0' : '4px 0'}; font-size: ${compact ? '9px' : '12px'}; color: #111; }
+    .prt-conforme { padding: 0 ${compact ? '12px' : '24px'}; margin: ${compact ? '8px 0 4px' : '12px 0 8px'}; font-size: ${compact ? '11px' : '13px'}; font-weight: 800; }
   `;
-  const now = new Date().toLocaleString();
+  const nowDate = new Date();
+  const now = nowDate.toLocaleString();
+  const isFacultyDetail = /^\s*faculty\s*:/i.test(String(title || ''));
+  let conforme = '';
+  if (isFacultyDetail) {
+    const m = String(title || '').match(/^\s*faculty\s*:\s*(.+)$/i);
+    const facName = m && m[1] ? m[1].trim() : '';
+    const when = nowDate.toLocaleDateString();
+    conforme = `
+      <div class='prt-conforme'>
+        <div class='prt-approve'>Conforme:</div>
+        <div class='prt-sign'>${escapeHtml(facName || 'Name')}</div>
+        <div class='prt-role'>Date: ${escapeHtml(when)}</div>
+      </div>`;
+  }
   const doc = `<!doctype html><html><head><meta charset='utf-8'><title>${escapeHtml(title)}</title><style>${styles}</style></head>
   <body>
     <div class='inst-hero'>
@@ -75,6 +90,7 @@ export function printContent({ title, subtitle = '', bodyHtml = '' }, opts = {})
         <div class='prt-role'>Acting College President</div>
       </div>
     </div>
+    ${conforme}
     <script>window.onload = () => { window.print(); setTimeout(()=>window.close(), 300); };</script>
   </body></html>`;
   w.document.open();

@@ -198,10 +198,10 @@ export default function Layout({ children }) {
             </DrawerBody>
           </DrawerContent>
         </Drawer>
-        <Box as="main" px={{ base: 4, md: 6 }} py={6} maxW="1400px" mx="auto">
+        <Box as="main" px={{ base: 2, md: 3 }} py={3} maxW="100%" mx="auto">
           {splash ? <SplashScreen /> : children}
         </Box>
-        <Box as="footer" borderTopWidth="1px" borderColor={useColorModeValue('gray.200','gray.700')} px={{ base: 4, md: 6 }} py={6} bg={useColorModeValue('white','gray.800')}>
+        <Box as="footer" borderTopWidth="1px" borderColor={useColorModeValue('gray.200','gray.700')} px={{ base: 2, md: 3 }} py={3} bg={useColorModeValue('white','gray.800')}>
           <VStack spacing={1} align="center">
             <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.200')}>Kolehiyo ng Pantukan</Text>
             <Text fontSize="xs" color={useColorModeValue('gray.600','gray.400')}>Office of the Vice President of Academic Affairs</Text>

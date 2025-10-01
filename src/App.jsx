@@ -8,6 +8,7 @@ import AcademicCalendar from './pages/AcademicCalendar';
 import FacultyDetail from './pages/FacultyDetail';
 import ViewsDepartments from './pages/ViewsDepartments';
 import ViewsRooms from './pages/ViewsRooms';
+import ViewsCourses from './pages/ViewsCourses';
 import RoomSchedule from './pages/RoomSchedule';
 import RoomScheduleAuto from './pages/RoomScheduleAuto';
 import DepartmentSchedule from './pages/DepartmentSchedule';
@@ -42,6 +43,7 @@ function App() {
               <Route path="/overview/calendar" element={<AcademicCalendar />} />
               <Route path="/faculty/:id" element={<FacultyDetail />} />
               <Route path="/views/faculty" element={<Dashboard />} />
+              <Route path="/views/courses" element={<ViewsCourses />} />
               <Route path="/views/departments" element={<ViewsDepartments />} />
               <Route path="/views/departments/:dept" element={<DepartmentSchedule />} />
               <Route path="/views/rooms" element={<ViewsRooms />} />
