@@ -59,7 +59,7 @@ function transformSchedulesToFacultyDataset(schedules) {
       facultyMap.set(instructor, {
         id: instructor,
         name: instructor,
-        email: `${instructor.toLowerCase().replace(/\s+/g, ".")}@knp.edu.ph`,
+        email: "",
         department: schedule.dept || facProfile.dept || "Unknown",
         designation: schedule.designation || facProfile.designation || "",
         employment: schedule.employment || facProfile.employment || "",
