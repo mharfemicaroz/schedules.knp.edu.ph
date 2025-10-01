@@ -4,10 +4,14 @@ export function buildTable(headers = [], rows = []) {
   return `<table class="prt-table">${thead}${tbody}</table>`;
 }
 
-export function printContent({ title, subtitle = '', bodyHtml = '' }) {
+export function printContent({ title, subtitle = '', bodyHtml = '' }, opts = {}) {
+  const pageSize = opts.pageSize || 'A4';
+  const orientation = opts.orientation || 'portrait'; // 'portrait' | 'landscape'
+  const margin = opts.margin || '16mm';
   const w = window.open('', '_blank');
   if (!w) return;
   const styles = `
+    @page { size: ${pageSize} ${orientation}; margin: ${margin}; }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
     body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 0; color: #0a0a0a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }

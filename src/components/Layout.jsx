@@ -149,6 +149,18 @@ export default function Layout({ children }) {
   }, [loading]);
 
   const splash = showSplash;
+  const isPublicRoomAuto = /^\/views\/rooms\/[^/]+\/auto$/.test(loc.pathname || '');
+
+  if (isPublicRoomAuto) {
+    // Public-facing view without app chrome (sidebar/topbar/footer)
+    return (
+      <Box bg={bg} minH="100vh">
+        <Box as="main" px={{ base: 0, md: 0 }} py={0} maxW="100%" mx="auto">
+          {splash ? <SplashScreen /> : children}
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Flex minH="100vh" align="stretch" bg={bg}>

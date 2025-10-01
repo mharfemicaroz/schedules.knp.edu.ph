@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, Text, HStack, Switch, FormControl, FormLabel, IconButton, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
-import { FiPrinter, FiArrowLeft, FiEdit, FiTrash } from 'react-icons/fi';
+import { FiPrinter, FiArrowLeft, FiEdit, FiTrash, FiShare } from 'react-icons/fi';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { buildTable, printContent } from '../utils/printDesign';
 import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
 import EditScheduleModal from '../components/EditScheduleModal';
+import RoomQrModal from '../components/RoomQrModal';
 import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
 
 const DAY_ORDER = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -26,6 +27,7 @@ export default function RoomSchedule() {
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
   const editDisc = useDisclosure();
   const delDisc = useDisclosure();
+  const qrDisc = useDisclosure();
   const [selected, setSelected] = useState(null);
   const cancelRef = React.useRef();
 
@@ -86,6 +88,13 @@ export default function RoomSchedule() {
     const subtitle = `Room: ${room}${filterDay ? ` • ${filterDay}` : ''} - ${scheduleType}`;
     printContent({ title: 'Room Schedule', subtitle, bodyHtml: table });
   }
+
+  function absoluteQrUrl() {
+    const roomPath = `/views/rooms/${encodeURIComponent(room)}/auto`;
+    const { origin, pathname } = window.location;
+    // HashRouter: include hash anchor
+    return `${origin}${pathname}#${roomPath}`;
+  }
   async function handleSaveEdit(payload) {
     if (!selected) return;
     try {
@@ -130,6 +139,9 @@ export default function RoomSchedule() {
             </FormLabel>
           </FormControl>
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
+          {isAdmin && (
+            <Button leftIcon={<FiShare />} onClick={qrDisc.onOpen} variant="outline" size="sm">Show QR</Button>
+          )}
           <Button as={RouterLink} to="/views/rooms" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />}>Back</Button>
         </HStack>
       </HStack>
@@ -212,6 +224,8 @@ export default function RoomSchedule() {
           </AlertDialogContent>
         </AlertDialogOverlay>
       </AlertDialog>
+
+      <RoomQrModal isOpen={qrDisc.isOpen} onClose={qrDisc.onClose} url={absoluteQrUrl()} room={room} />
     </Box>
   );
 }
