@@ -69,7 +69,7 @@ export default function ReportsFacultySummary() {
         return !!fnameNorm && fnameNorm === rname;
       };
 
-      // unique by code+section+term+time
+      // unique by code+section+term+time (time may be empty; still include)
       const seen = new Set();
       let units = 0;
       let courses = 0;
@@ -79,11 +79,13 @@ export default function ReportsFacultySummary() {
         const sec = normalizeName(r.section || '');
         const term = termOf(r);
         const tk = timeKeyOf(r);
-        if (!code || !sec || !term || !tk) continue;
-        const k = [code, sec, term, tk].join('|');
+        // Require code and section; do NOT drop rows with missing term or time
+        if (!code || !sec) continue;
+        const k = [code, sec, term || 'n/a', tk || ''].join('|');
         if (seen.has(k)) continue;
         seen.add(k);
-        units += Number(r.unit || 0) || 0;
+        // Count units; fall back to hours when unit is missing
+        units += Number(r.unit ?? r.hours ?? 0) || 0;
         courses += 1;
       }
       const baseline = Math.max(0, 24 - release);

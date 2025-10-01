@@ -137,6 +137,26 @@ class ApiService {
   async createSchedule(scheduleData) {
     const payload = { ...(scheduleData || {}) };
     if (payload.facultyId != null) { delete payload.faculty; }
+    // Normalize faculty fields similar to update
+    if (Object.prototype.hasOwnProperty.call(payload, 'facultyId')) {
+      payload.faculty_id = payload.facultyId;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'faculty')) {
+      payload.instructor = payload.faculty;
+    }
+    const isNonNumericString = (v) => typeof v === 'string' && v.trim() !== '' && !/^[-+]?\d+(?:\.\d+)?$/.test(v.trim());
+    if (isNonNumericString(payload.faculty_id)) {
+      if (!payload.faculty) payload.faculty = payload.faculty_id;
+      payload.instructor = payload.faculty;
+      delete payload.faculty_id;
+      delete payload.facultyId;
+    }
+    if (isNonNumericString(payload.facultyId)) {
+      if (!payload.faculty) payload.faculty = payload.facultyId;
+      payload.instructor = payload.faculty;
+      delete payload.faculty_id;
+      delete payload.facultyId;
+    }
     return this.request("/", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -163,6 +183,21 @@ class ApiService {
     if (Object.prototype.hasOwnProperty.call(payload, 'faculty')) {
       // Some backends use 'instructor' field
       payload.instructor = payload.faculty;
+    }
+    // Guard: if facultyId was mistakenly set to a name (non-numeric), treat it as faculty name
+    const isNonNumericString = (v) => typeof v === 'string' && v.trim() !== '' && !/^[-+]?\d+(?:\.\d+)?$/.test(v.trim());
+    if (isNonNumericString(payload.faculty_id)) {
+      // Move to name field and clear ID fields
+      if (!payload.faculty) payload.faculty = payload.faculty_id;
+      payload.instructor = payload.faculty;
+      delete payload.faculty_id;
+      delete payload.facultyId;
+    }
+    if (isNonNumericString(payload.facultyId)) {
+      if (!payload.faculty) payload.faculty = payload.facultyId;
+      payload.instructor = payload.faculty;
+      delete payload.faculty_id;
+      delete payload.facultyId;
     }
     return this.request(`/${id}`, {
       method: "PUT",
