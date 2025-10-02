@@ -6,6 +6,7 @@ import { getProgramColor } from '../utils/programColors';
 import { Link as RouterLink } from 'react-router-dom';
 import { FiChevronRight, FiShare2 } from 'react-icons/fi';
 import { usePublicView } from '../utils/uiFlags';
+import { encodeShareDepartment } from '../utils/share';
 
 function canonFacultyKey(id, name) {
   if (id != null) return String(id);
@@ -41,7 +42,7 @@ export default function ViewsDepartments() {
     return (
       <Box
         as={RouterLink}
-        to={isPublic ? `/share/departments/${encodeURIComponent(item.department)}` : `/views/departments/${encodeURIComponent(item.department)}`}
+        to={isPublic ? `/share/departments/${encodeURIComponent(encodeShareDepartment(item.department))}` : `/views/departments/${encodeURIComponent(item.department)}`}
         className="view-card"
         bg={cardBg}
         borderWidth="1px"

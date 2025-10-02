@@ -16,6 +16,7 @@ import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../s
 import { FiEdit, FiTrash } from 'react-icons/fi';
 import useFaculties from '../hooks/useFaculties';
 import { usePublicView } from '../utils/uiFlags';
+import { encodeShareDepartment, decodeShareDepartment } from '../utils/share';
 // conflict checking removed per request
 
 function yearOrder(y) {
@@ -30,7 +31,8 @@ function yearOrder(y) {
 
 export default function DepartmentSchedule() {
   const { dept: deptParam } = useParams();
-  const dept = decodeURIComponent(deptParam || '');
+  const isPublic = usePublicView();
+  const dept = isPublic ? decodeShareDepartment(String(deptParam || '')) : decodeURIComponent(deptParam || '');
   const dispatch = useDispatch();
   const allCourses = useSelector(selectAllCourses);
   const loading = useSelector(s => s.data.loading);
@@ -40,7 +42,7 @@ export default function DepartmentSchedule() {
   const tableBg = useColorModeValue('white','gray.800');
   const authUser = useSelector(s => s.auth.user);
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
-  const isPublic = usePublicView();
+  
 
   // Edit/Delete state
   const editDisc = useDisclosure();
@@ -363,7 +365,7 @@ export default function DepartmentSchedule() {
           )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
           {!isPublic && (
-            <Button as={RouterLink} to={`/share/departments/${encodeURIComponent(dept)}`} leftIcon={<FiShare2 />} colorScheme="blue" size="sm">Share</Button>
+            <Button as={RouterLink} to={`/share/departments/${encodeURIComponent(encodeShareDepartment(dept))}`} leftIcon={<FiShare2 />} colorScheme="blue" size="sm">Share</Button>
           )}
           {!isPublic && (
             <Button as={RouterLink} to="/views/departments" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />} w="fit-content">Back</Button>

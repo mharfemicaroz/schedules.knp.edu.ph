@@ -6,6 +6,7 @@ import { usePublicView } from '../utils/uiFlags';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { buildTable, printContent } from '../utils/printDesign';
+import { encodeShareRoom, decodeShareRoom } from '../utils/share';
 import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
 import EditScheduleModal from '../components/EditScheduleModal';
 import RoomQrModal from '../components/RoomQrModal';
@@ -15,7 +16,8 @@ const DAY_ORDER = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 export default function RoomSchedule() {
   const { room: roomParam } = useParams();
-  const room = decodeURIComponent(roomParam || '');
+  const isPublic = usePublicView();
+  const room = isPublic ? decodeShareRoom(String(roomParam || '')) : decodeURIComponent(roomParam || '');
   const dispatch = useDispatch();
   const allCourses = useSelector(selectAllCourses);
   const loading = useSelector(s => s.data.loading);
@@ -26,7 +28,6 @@ export default function RoomSchedule() {
   const border = useColorModeValue('gray.200','gray.700');
   const authUser = useSelector(s => s.auth.user);
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
-  const isPublic = usePublicView();
   const editDisc = useDisclosure();
   const delDisc = useDisclosure();
   const qrDisc = useDisclosure();
@@ -142,7 +143,7 @@ export default function RoomSchedule() {
           </FormControl>
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
           {!isPublic && (
-            <Button as={RouterLink} to={`/share/rooms/${encodeURIComponent(room)}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
+            <Button as={RouterLink} to={`/share/rooms/${encodeURIComponent(encodeShareRoom(room))}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
           )}
           {isAdmin && !isPublic && (
             <Button leftIcon={<FiShare />} onClick={qrDisc.onOpen} variant="outline" size="sm">Show QR</Button>

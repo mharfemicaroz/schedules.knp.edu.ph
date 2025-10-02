@@ -9,6 +9,7 @@ import { FiPrinter, FiAlertCircle } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 import { useLocalStorage, getInitialToggleState, getExamDateSet, findDayAnnotations } from '../utils/scheduleUtils';
+import { encodeShareBlock } from '../utils/share';
 import { usePublicView } from '../utils/uiFlags';
 
 const SESSIONS = ['Morning', 'Afternoon', 'Evening'];
@@ -251,7 +252,7 @@ export default function ViewsSession() {
           const prog = programByBlock?.get(b);
           const accent = getProgramColor(prog);
           return (
-            <Tag key={b} size="sm" variant="subtle" colorScheme={accent.scheme} as={RouterLink} to={`/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`}>
+            <Tag key={b} size="sm" variant="subtle" colorScheme={accent.scheme} as={RouterLink} to={isPublic ? `/share/session/block/${encodeURIComponent(encodeShareBlock(b))}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}` : `/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`}>
               <TagLabel>{b}</TagLabel>
             </Tag>
           );
@@ -271,7 +272,7 @@ export default function ViewsSession() {
                     const accent = getProgramColor(prog);
                     return (
                       <WrapItem key={b}>
-                        <Tag size="sm" variant="subtle" colorScheme={accent.scheme} as={RouterLink} to={`/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`}>
+                        <Tag size="sm" variant="subtle" colorScheme={accent.scheme} as={RouterLink} to={isPublic ? `/share/session/block/${encodeURIComponent(encodeShareBlock(b))}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}` : `/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`}>
                           <TagLabel>{b}</TagLabel>
                         </Tag>
                       </WrapItem>

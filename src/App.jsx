@@ -17,6 +17,8 @@ import BlockSchedule from './pages/BlockSchedule';
 import ConflictSchedules from './pages/ConflictSchedules';
 import UnassignedSchedules from './pages/UnassignedSchedules';
 import AdminFaculty from './pages/AdminFaculty';
+import AdminUsers from './pages/AdminUsers';
+import AdminGuestLogs from './pages/AdminGuestLogs';
 import ReportsFacultySummary from './pages/ReportsFacultySummary';
 // DataProvider removed; using Redux directly
 // VisitorProvider removed
@@ -54,6 +56,8 @@ function App() {
               <Route path="/admin/conflicts" element={<ConflictSchedules />} />
               <Route path="/admin/unassigned" element={<UnassignedSchedules />} />
               <Route path="/admin/faculty" element={<AdminFaculty />} />
+              <Route path="/admin/users" element={<AdminUsers />} />
+              <Route path="/admin/guest-logs" element={<AdminGuestLogs />} />
               <Route path="/reports/faculty-summary" element={<ReportsFacultySummary />} />
               {/* Share/public routes (chrome-less) */}
               <Route path="/share/faculty/:id" element={<FacultyDetail />} />

@@ -434,6 +434,26 @@ class ApiService {
   async deleteUser(id) {
     return this.requestAbs(`${this.usersPath}/${id}`, { method: "DELETE" });
   }
+
+  // GUEST API
+  async postGuestAccess({ name, role }) {
+    const path = `/guests/access`;
+    return this.requestAbs(path, { method: 'POST', body: JSON.stringify({ name, role }) });
+  }
+  async getGuestSelf() {
+    const path = `/guests/me`;
+    const url = `${this.baseURL}${path}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+  async listGuests(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.requestAbs(`/guests${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  }
+  async getGuestStats() {
+    return this.requestAbs('/guests/stats', { method: 'GET' });
+  }
 }
 
 // Create singleton instance

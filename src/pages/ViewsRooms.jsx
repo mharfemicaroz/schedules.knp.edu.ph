@@ -29,6 +29,7 @@ import { buildTable, printContent } from '../utils/printDesign';
 import MiniBarChart from '../components/MiniBarChart';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 import { useLocalStorage, getInitialToggleState, getExamDateSet, findDayAnnotations } from '../utils/scheduleUtils';
+import { encodeShareRoom } from '../utils/share';
 import { usePublicView } from '../utils/uiFlags';
 
 export default function ViewsRooms() {
@@ -320,7 +321,7 @@ export default function ViewsRooms() {
                     <Box
                       key={`${g.day}-${r.room}`}
                       as={RouterLink}
-                      to={isPublic ? `/share/rooms/${encodeURIComponent(r.room)}?day=${encodeURIComponent(g.day)}` : `/views/rooms/${encodeURIComponent(r.room)}?day=${encodeURIComponent(g.day)}`}
+                      to={isPublic ? `/share/rooms/${encodeURIComponent(encodeShareRoom(r.room))}?day=${encodeURIComponent(g.day)}` : `/views/rooms/${encodeURIComponent(r.room)}?day=${encodeURIComponent(g.day)}`}
                       className="view-card"
                       bg={cardBg}
                       borderWidth="1px"

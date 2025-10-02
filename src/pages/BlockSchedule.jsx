@@ -9,10 +9,12 @@ import { selectAllCourses } from '../store/dataSlice';
 import EditScheduleModal from '../components/EditScheduleModal';
 import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
 import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
+import { encodeShareBlock, decodeShareBlock } from '../utils/share';
 
 export default function BlockSchedule() {
   const { block: blockParam } = useParams();
-  const block = decodeURIComponent(blockParam || '');
+  const isPublic = usePublicView();
+  const block = isPublic ? decodeShareBlock(String(blockParam || '')) : decodeURIComponent(blockParam || '');
   const [search] = useSearchParams();
   const [viewMode, setViewMode] = useLocalStorage('blockScheduleViewMode', getInitialToggleState(useSelector(s => s.data.acadData), 'blockScheduleViewMode', 'regular'));
   const dayFilter = search.get('day');
@@ -23,7 +25,6 @@ export default function BlockSchedule() {
   const acadData = useSelector(s => s.data.acadData);
   const border = useColorModeValue('gray.200','gray.700');
   const tableBg = useColorModeValue('white','gray.800');
-  const isPublic = usePublicView();
   const authUser = useSelector(s => s.auth.user);
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
   const editDisc = useDisclosure();
@@ -146,7 +147,7 @@ export default function BlockSchedule() {
           )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
           {!isPublic && (
-            <Button as={RouterLink} to={`/share/session/block/${encodeURIComponent(block)}${dayFilter?`?day=${encodeURIComponent(dayFilter)}&session=${encodeURIComponent(sessionFilter||'')}`:''}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
+            <Button as={RouterLink} to={`/share/session/block/${encodeURIComponent(encodeShareBlock(block))}${dayFilter?`?day=${encodeURIComponent(dayFilter)}&session=${encodeURIComponent(sessionFilter||'')}`:''}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
           )}
           {!isPublic && (
             <Button as={RouterLink} to="/views/session" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />}>Back</Button>

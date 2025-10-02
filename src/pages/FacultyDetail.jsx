@@ -16,6 +16,7 @@ import AssignSchedulesModal from '../components/AssignSchedulesModal';
 import { buildConflicts, buildCrossFacultyOverlaps, parseTimeBlockToMinutes } from '../utils/conflicts';
 import Pagination from '../components/Pagination';
 import { Tag, TagLabel, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Wrap, WrapItem } from '@chakra-ui/react';
+import { encodeShareFacultyName, decodeShareFacultyName } from '../utils/share';
 import { usePublicView } from '../utils/uiFlags';
 
 
@@ -42,7 +43,16 @@ export default function FacultyDetail() {
   const _cancelRef = React.useRef();
 
   const [, set] = useState('');
-  const f = faculties.find(x => String(x.id) === String(id));
+  const isPublic = usePublicView();
+  let f = null;
+  if (isPublic) {
+    const decodedName = decodeShareFacultyName(String(id || ''));
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const target = norm(decodedName);
+    f = faculties.find(x => norm(x.name) === target || norm(x.faculty) === target) || null;
+  } else {
+    f = faculties.find(x => String(x.id) === String(id));
+  }
   const border = _border;
   const panelBg = _panelBg;
   const authUser = _authUser;
@@ -53,7 +63,6 @@ export default function FacultyDetail() {
   const confDisc = _confDisc;
   const [selected, setSelected] = [_selected, _setSelected];
   const cancelRef = _cancelRef;
-  const isPublic = usePublicView();
 
     // Merge helper: combine same section + code + term + time; merge rooms and F2F days
   const sortedCourses = React.useMemo(() => {
@@ -580,7 +589,7 @@ export default function FacultyDetail() {
           )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
           {!isPublic && (
-            <Button as={RouterLink} to={`/share/faculty/${encodeURIComponent(String(id))}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
+            <Button as={RouterLink} to={`/share/faculty/${encodeURIComponent(encodeShareFacultyName(f?.name || ''))}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
           )}
           {isAdmin && !isPublic && (
             <Button onClick={assignDisc.onOpen} variant="solid" size="sm" colorScheme="blue">Assign Schedules</Button>

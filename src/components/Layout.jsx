@@ -41,7 +41,12 @@ import ChangePasswordModal from './ChangePasswordModal';
 import ProfileModal from './ProfileModal';
 import { Badge } from '@chakra-ui/react';
 import { loginThunk, changePasswordThunk, updateProfileThunk } from '../store/authThunks';
+import apiService from '../services/apiService';
 import { logout as logoutAction } from '../store/authSlice';
+import { useDispatch as useRDispatch, useSelector as useRSelector } from 'react-redux';
+import FirstVisitGuestModal from './FirstVisitGuestModal';
+import { openModal as openGuestModal, closeModal as closeGuestModal, setGuest as setGuestAction } from '../store/guestSlice';
+import { touchGuestThunk } from '../store/guestSlice';
 
 function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, onOpenChangePwd, onOpenProfile }) {
   const { colorMode, toggleColorMode } = useColorMode();
@@ -127,6 +132,8 @@ export default function Layout({ children }) {
   const changePwdDisc = useDisclosure();
   const profileDisc = useDisclosure();
   const dispatch = useDispatch();
+  const rdispatch = useRDispatch();
+  const guest = useRSelector(s => s.guest);
   const user = useSelector(s => s.auth.user);
   const [sidebarVisible, setSidebarVisible] = React.useState(true);
   const [showSplash, setShowSplash] = React.useState(true);
@@ -137,6 +144,40 @@ export default function Layout({ children }) {
     setRouteBusy(true);
     const t = setTimeout(() => setRouteBusy(false), 350);
     return () => clearTimeout(t);
+  }, [loc.pathname]);
+
+  // Guest tracking: on route change, if no stored guest, show modal; else touch
+  React.useEffect(() => {
+    (async () => {
+      try {
+        // Ask server if there's a guest record for this IP
+        const resp = await apiService.getGuestSelf();
+        const haveLocal = !!(localStorage.getItem('guest:name') || '');
+        if (resp && resp.exists === false) {
+          try { localStorage.removeItem('guest:name'); localStorage.removeItem('guest:role'); } catch {}
+          rdispatch(openGuestModal());
+        } else if (resp && resp.exists === true && resp.data) {
+          const me = resp.data;
+          // Sync local cache and touch
+          if (!haveLocal) {
+            localStorage.setItem('guest:name', me.name);
+            localStorage.setItem('guest:role', me.role || '');
+            rdispatch(setGuestAction({ name: me.name, role: me.role || '' }));
+          }
+          const name = localStorage.getItem('guest:name') || me.name;
+          const role = localStorage.getItem('guest:role') || me.role || '';
+          rdispatch(touchGuestThunk({ name, role }));
+        }
+      } catch (e) {
+        // If endpoint fails, fallback to local-only behavior
+        try {
+          const name = localStorage.getItem('guest:name') || '';
+          const role = localStorage.getItem('guest:role') || '';
+          if (!name) rdispatch(openGuestModal()); else rdispatch(touchGuestThunk({ name, role }));
+        } catch {}
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loc.pathname]);
 
   React.useEffect(() => {
@@ -159,53 +200,83 @@ export default function Layout({ children }) {
       const paperBg = useColorModeValue('white', 'gray.800');
       const frameBg = useColorModeValue('gray.100', 'gray.900');
       return (
-        <Box bg={frameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>
-          <Box
-            as="main"
-            maxW="1100px"
-            mx="auto"
-            bg={paperBg}
-            borderWidth="1px"
-            borderColor={useColorModeValue('gray.200','gray.700')}
-            rounded={{ base: 'lg', md: 'xl' }}
-            boxShadow={{ base: 'md', md: 'xl' }}
-            px={{ base: 0, md: 0 }}
-            py={{ base: 0, md: 0 }}
-          >
-            {/* Header band with logo for shared pages */}
+        <>
+          <Box bg={frameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>
             <Box
-              bg={useColorModeValue('gray.50','gray.700')}
-              borderBottomWidth="1px"
-              borderColor={useColorModeValue('gray.200','gray.600')}
-              px={{ base: 4, md: 6 }}
-              py={{ base: 3, md: 4 }}
-              roundedTop={{ base: 'lg', md: 'xl' }}
+              as="main"
+              maxW="1100px"
+              mx="auto"
+              bg={paperBg}
+              borderWidth="1px"
+              borderColor={useColorModeValue('gray.200','gray.700')}
+              rounded={{ base: 'lg', md: 'xl' }}
+              boxShadow={{ base: 'md', md: 'xl' }}
+              px={{ base: 0, md: 0 }}
+              py={{ base: 0, md: 0 }}
             >
-              <HStack spacing={3} align="center" justify="space-between">
-                <HStack spacing={3} align="center">
-                  <Image src="/logo.png" alt="Logo" boxSize={{ base: '28px', md: '36px' }} rounded="md" />
-                  <VStack align="start" spacing={0}>
-                    <Text fontWeight="800" fontSize={{ base: 'sm', md: 'md' }}>Kolehiyo ng Pantukan</Text>
-                    <Text fontSize={{ base: 'xs', md: 'sm' }} color={useColorModeValue('gray.700','gray.200')}>Office of the Vice President of Academic Affairs</Text>
-                    <Text fontSize={{ base: 'xs', md: 'xs' }} color={useColorModeValue('gray.600','gray.300')}>Shared View</Text>
-                  </VStack>
+              {/* Header band with logo for shared pages */}
+              <Box
+                bg={useColorModeValue('gray.50','gray.700')}
+                borderBottomWidth="1px"
+                borderColor={useColorModeValue('gray.200','gray.600')}
+                px={{ base: 4, md: 6 }}
+                py={{ base: 3, md: 4 }}
+                roundedTop={{ base: 'lg', md: 'xl' }}
+              >
+                <HStack spacing={3} align="center" justify="space-between">
+                  <HStack spacing={3} align="center">
+                    <Image src="/logo.png" alt="Logo" boxSize={{ base: '28px', md: '36px' }} rounded="md" />
+                    <VStack align="start" spacing={0}>
+                      <Text fontWeight="800" fontSize={{ base: 'sm', md: 'md' }}>Kolehiyo ng Pantukan</Text>
+                      <Text fontSize={{ base: 'xs', md: 'sm' }} color={useColorModeValue('gray.700','gray.200')}>Office of the Vice President of Academic Affairs</Text>
+                      <Text fontSize={{ base: 'xs', md: 'xs' }} color={useColorModeValue('gray.600','gray.300')}>Shared View</Text>
+                    </VStack>
+                  </HStack>
                 </HStack>
-              </HStack>
-            </Box>
-            {/* Body */}
-            <Box px={{ base: 4, md: 6 }} py={{ base: 5, md: 8 }}>
-              {splash ? <SplashScreen /> : children}
+              </Box>
+              {/* Body */}
+              <Box px={{ base: 4, md: 6 }} py={{ base: 5, md: 8 }}>
+                {splash ? <SplashScreen /> : children}
+              </Box>
             </Box>
           </Box>
-        </Box>
+          <FirstVisitGuestModal
+            isOpen={guest.modalOpen}
+            onSubmit={async ({ name, role }) => {
+              try {
+                localStorage.setItem('guest:name', name);
+                localStorage.setItem('guest:role', role);
+                rdispatch(setGuestAction({ name, role }));
+                await rdispatch(touchGuestThunk({ name, role }));
+              } finally {
+                rdispatch(closeGuestModal());
+              }
+            }}
+          />
+        </>
       );
     }
     return (
-      <Box bg={bg} minH="100vh">
-        <Box as="main" px={{ base: 0, md: 0 }} py={0} maxW="100%" mx="auto">
-          {splash ? <SplashScreen /> : children}
+      <>
+        <Box bg={bg} minH="100vh">
+          <Box as="main" px={{ base: 0, md: 0 }} py={0} maxW="100%" mx="auto">
+            {splash ? <SplashScreen /> : children}
+          </Box>
         </Box>
-      </Box>
+        <FirstVisitGuestModal
+          isOpen={guest.modalOpen}
+          onSubmit={async ({ name, role }) => {
+            try {
+              localStorage.setItem('guest:name', name);
+              localStorage.setItem('guest:role', role);
+              rdispatch(setGuestAction({ name, role }));
+              await rdispatch(touchGuestThunk({ name, role }));
+            } finally {
+              rdispatch(closeGuestModal());
+            }
+          }}
+        />
+      </>
     );
   }
 
@@ -295,6 +366,19 @@ export default function Layout({ children }) {
             profileDisc.onClose();
           } catch (e) {
             // Global toaster handles errors
+          }
+        }}
+      />
+      <FirstVisitGuestModal
+        isOpen={guest.modalOpen}
+        onSubmit={async ({ name, role }) => {
+          try {
+            localStorage.setItem('guest:name', name);
+            localStorage.setItem('guest:role', role);
+            rdispatch(setGuestAction({ name, role }));
+            await rdispatch(touchGuestThunk({ name, role }));
+          } finally {
+            rdispatch(closeGuestModal());
           }
         }}
       />
