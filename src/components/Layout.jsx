@@ -221,6 +221,16 @@ export default function Layout({ children }) {
     }
   }, [loading]);
 
+  // Force light mode for all public share routes and clear persisted dark-mode preferences
+  React.useEffect(() => {
+    if (isSharePublic) {
+      try { localStorage.removeItem('chakra-ui-color-mode'); } catch {}
+      try { localStorage.removeItem('color-mode'); } catch {}
+      try { localStorage.removeItem('theme'); } catch {}
+      try { document.cookie = 'chakra-ui-color-mode=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT'; } catch {}
+    }
+  }, [isSharePublic]);
+
   const splash = showSplash;
   const isPublicRoomAuto = /^\/views\/rooms\/[^/]+\/auto$/.test(loc.pathname || '');
   const isSharePublic = /^\/share\//.test(loc.pathname || '');
