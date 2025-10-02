@@ -15,8 +15,14 @@ export const loginThunk = createAsyncThunk('auth/login', async ({ identifier, pa
     if (refreshToken) localStorage.setItem('auth:refreshToken', refreshToken); else localStorage.removeItem('auth:refreshToken');
     if (userdata) localStorage.setItem('auth:user', JSON.stringify(userdata)); else localStorage.removeItem('auth:user');
     apiService.setAuthToken(accessToken);
-    // Optionally refine user via role check
-    try { await dispatch(checkRoleThunk()).unwrap(); } catch {}
+    // Only check role for admins/managers; skip for non-admin users
+    try {
+      const role = String(userdata?.role || '').toLowerCase();
+      const isAdmin = role === 'admin' || role === 'manager';
+      if (isAdmin) {
+        await dispatch(checkRoleThunk()).unwrap();
+      }
+    } catch {}
     return res;
   } finally {
     dispatch(setBusy(false));

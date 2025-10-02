@@ -24,20 +24,21 @@ import Unauthorized from './pages/Unauthorized';
 import RequireAdmin from './components/RequireAdmin';
 // DataProvider removed; using Redux directly
 // VisitorProvider removed
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { loadAllSchedules, loadAcademicCalendar, loadHolidaysThunk } from './store/dataThunks';
-import { checkRoleThunk } from './store/authThunks';
+// import { checkRoleThunk } from './store/authThunks';
 import GlobalToaster from './components/GlobalToaster';
 
 function App() {
   const bg = useColorModeValue('gray.50', 'gray.900');
   const dispatch = useDispatch();
+  // const user = useSelector(s => s.auth.user);
 
   useEffect(() => {
     dispatch(loadAllSchedules());
     dispatch(loadAcademicCalendar());
     dispatch(loadHolidaysThunk(2025));
-    dispatch(checkRoleThunk());
+    // Per requirement: check role only on login (handled in loginThunk)
   }, [dispatch]);
   return (
         <Box bg={bg} minH="100vh">
