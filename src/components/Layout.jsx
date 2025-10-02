@@ -27,6 +27,8 @@ import {
   TagLabel,
   Wrap,
   WrapItem,
+  ChakraProvider,
+  extendTheme,
 } from '@chakra-ui/react';
 import Sidebar from './Sidebar';
 import { FiMoon, FiSun, FiMenu, FiSidebar, FiLogIn, FiUser, FiKey, FiLogOut } from 'react-icons/fi';
@@ -46,6 +48,11 @@ import { useDispatch as useRDispatch, useSelector as useRSelector } from 'react-
 import FirstVisitGuestModal from './FirstVisitGuestModal';
 import { openModal as openGuestModal, closeModal as closeGuestModal, setGuest as setGuestAction } from '../store/guestSlice';
 import { touchGuestThunk } from '../store/guestSlice';
+
+// Force-light theme for shared/public views to ensure readability
+const sharedLightTheme = extendTheme({
+  config: { initialColorMode: 'light', useSystemColorMode: false },
+});
 
 function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, onOpenChangePwd, onOpenProfile }) {
   const { colorMode, toggleColorMode } = useColorMode();
@@ -223,8 +230,8 @@ export default function Layout({ children }) {
     if (isSharePublic) {
       // Document-style wrapper for shared pages (PDF-like preview)
       return (
-        <>
-          <Box bg={sharedFrameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>
+        <ChakraProvider theme={sharedLightTheme} cssVarsRoot="#shared-root">
+          <Box id="shared-root" bg={sharedFrameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>
             <Box
               as="main"
               maxW="1100px"
@@ -276,7 +283,7 @@ export default function Layout({ children }) {
               }
             }}
           />
-        </>
+        </ChakraProvider>
       );
     }
     return (
