@@ -136,6 +136,13 @@ export default function Layout({ children }) {
     }
   }, [loc.pathname, loc.search]);
   const [routeBusy, setRouteBusy] = React.useState(false);
+  // Hoist color values used by shared/public branch to keep hook order stable
+  const sharedPaperBg = useColorModeValue('white', 'gray.800');
+  const sharedFrameBg = useColorModeValue('gray.100', 'gray.900');
+  const sharedHeaderBg = useColorModeValue('gray.50','gray.700');
+  const sharedHeaderBorder = useColorModeValue('gray.200','gray.600');
+  const sharedHeaderTextPrimary = useColorModeValue('gray.700','gray.200');
+  const sharedHeaderTextSecondary = useColorModeValue('gray.600','gray.300');
   const menuDisc = useDisclosure();
   const loginDisc = useDisclosure();
   const changePwdDisc = useDisclosure();
@@ -215,18 +222,16 @@ export default function Layout({ children }) {
     // Public-facing view without app chrome (sidebar/topbar/footer)
     if (isSharePublic) {
       // Document-style wrapper for shared pages (PDF-like preview)
-      const paperBg = useColorModeValue('white', 'gray.800');
-      const frameBg = useColorModeValue('gray.100', 'gray.900');
       return (
         <>
-          <Box bg={frameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>
+          <Box bg={sharedFrameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>
             <Box
               as="main"
               maxW="1100px"
               mx="auto"
-              bg={paperBg}
+              bg={sharedPaperBg}
               borderWidth="1px"
-              borderColor={useColorModeValue('gray.200','gray.700')}
+              borderColor={sharedHeaderBorder}
               rounded={{ base: 'lg', md: 'xl' }}
               boxShadow={{ base: 'md', md: 'xl' }}
               px={{ base: 0, md: 0 }}
@@ -234,9 +239,9 @@ export default function Layout({ children }) {
             >
               {/* Header band with logo for shared pages */}
               <Box
-                bg={useColorModeValue('gray.50','gray.700')}
+                bg={sharedHeaderBg}
                 borderBottomWidth="1px"
-                borderColor={useColorModeValue('gray.200','gray.600')}
+                borderColor={sharedHeaderBorder}
                 px={{ base: 4, md: 6 }}
                 py={{ base: 3, md: 4 }}
                 roundedTop={{ base: 'lg', md: 'xl' }}
@@ -246,8 +251,8 @@ export default function Layout({ children }) {
                     <Image src="/logo.png" alt="Logo" boxSize={{ base: '28px', md: '36px' }} rounded="md" />
                     <VStack align="start" spacing={0}>
                       <Text fontWeight="800" fontSize={{ base: 'sm', md: 'md' }}>Kolehiyo ng Pantukan</Text>
-                      <Text fontSize={{ base: 'xs', md: 'sm' }} color={useColorModeValue('gray.700','gray.200')}>Office of the Vice President of Academic Affairs</Text>
-                      <Text fontSize={{ base: 'xs', md: 'xs' }} color={useColorModeValue('gray.600','gray.300')}>Shared View</Text>
+                      <Text fontSize={{ base: 'xs', md: 'sm' }} color={sharedHeaderTextPrimary}>Office of the Vice President of Academic Affairs</Text>
+                      <Text fontSize={{ base: 'xs', md: 'xs' }} color={sharedHeaderTextSecondary}>Shared View</Text>
                     </VStack>
                   </HStack>
                 </HStack>

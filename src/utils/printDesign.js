@@ -26,14 +26,22 @@ export function printContent({ title, subtitle = '', bodyHtml = '' }, opts = {})
     .inst-office { margin: ${compact ? '2px 0 0 0' : '6px 0 0 0'}; font-size: ${compact ? '11px' : '16px'}; color: #111; font-weight: 800; }
     .inst-app { margin: ${compact ? '2px 0 0 0' : '8px 0 0 0'}; font-size: ${compact ? '10px' : '14px'}; color: #333; font-weight: 700; }
     .prt-header { padding: 0 ${compact ? '14px' : '32px'}; margin-top: ${compact ? '8px' : '16px'}; }
+    .prt-two { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: ${compact ? '10px' : '18px'}; margin: ${compact ? '6px 14px' : '10px 32px'}; }
+    .prt-col-left { min-width: 0; }
+    .prt-col-right { }
     .prt-title { font-weight: 900; font-size: ${compact ? '14px' : '22px'}; margin: 0; }
     .prt-sub { color: #333; margin: ${compact ? '2px 0 0 0' : '6px 0 0 0'}; font-size: ${compact ? '10px' : '14px'}; font-weight: 600; }
     .prt-meta { color: #666; font-size: ${compact ? '9px' : '12px'}; margin: ${compact ? '4px 0 0 0' : '8px 0 0 0'}; }
+    .prt-qr-card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: ${compact ? '6px' : '10px'}; box-shadow: 0 4px 12px rgba(0,0,0,0.08); display: inline-flex; flex-direction: column; align-items: center; gap: ${compact ? '6px' : '8px'}; }
+    .prt-qr-img { width: ${compact ? '120px' : '160px'}; height: ${compact ? '120px' : '160px'}; display: block; }
+    .prt-qr-cap { font-size: ${compact ? '9px' : '11px'}; color: #374151; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; text-align: center; max-width: ${compact ? '160px' : '200px'}; }
+    .prt-fac-name { font-weight: 900; font-size: ${compact ? '16px' : '20px'}; margin: 0 0 ${compact ? '4px' : '6px'} 0; }
+    .prt-fac-sub { color: #333; font-size: ${compact ? '10px' : '12px'}; font-weight: 700; margin: 0 0 ${compact ? '4px' : '6px'} 0; }
     .prt-body { padding: ${compact ? '8px 12px 12px' : '16px 24px 24px'}; }
     .prt-table { width: 100%; border-collapse: collapse; margin-top: ${compact ? '4px' : '8px'}; table-layout: fixed; }
     .prt-table th, .prt-table td { border: 1px solid #ddd; padding: ${compact ? '3px 5px' : '8px 10px'}; font-size: ${compact ? '10px' : '12px'}; line-height: ${compact ? '1.15' : '1.3'}; vertical-align: top; }
     .prt-table th { background: #f6f9fc; text-align: left; font-weight: 700; }
-    .prt-footer { padding: 0 ${compact ? '12px' : '24px'} ${compact ? '12px' : '24px'}; margin-top: ${compact ? '8px' : '12px'}; font-size: ${compact ? '10px' : '13px'}; display: ${compact ? 'grid' : 'flex'}; grid-template-columns: ${compact ? '1fr 1fr' : 'none'}; gap: ${compact ? '12px' : '32px'}; justify-content: space-between; flex-wrap: wrap; }
+    .prt-footer { padding: 0 ${compact ? '12px' : '24px'} ${compact ? '8px' : '16px'}; margin-top: ${compact ? '8px' : '12px'}; font-size: ${compact ? '10px' : '13px'}; display: ${compact ? 'grid' : 'flex'}; grid-template-columns: ${compact ? '1fr 1fr' : 'none'}; gap: ${compact ? '12px' : '32px'}; justify-content: space-between; flex-wrap: wrap; }
     .prt-block { min-width: ${compact ? '180px' : '260px'}; }
     .prt-verify, .prt-approve { margin-top: ${compact ? '8px' : '24px'}; font-weight: 800; }
     .prt-sign { margin-top: ${compact ? '10px' : '18px'}; display: inline-block; border-top: 1px solid #333; padding-top: ${compact ? '4px' : '6px'}; font-weight: 700; }
@@ -42,6 +50,7 @@ export function printContent({ title, subtitle = '', bodyHtml = '' }, opts = {})
     .prt-notice-title { font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; margin: 0 0 ${compact ? '4px' : '6px'} 0; font-size: ${compact ? '10px' : '12px'}; color: #0a0a0a; }
     .prt-notice p { margin: ${compact ? '2px 0' : '4px 0'}; font-size: ${compact ? '9px' : '12px'}; color: #111; }
     .prt-conforme { padding: 0 ${compact ? '12px' : '24px'}; margin: ${compact ? '8px 0 4px' : '12px 0 8px'}; font-size: ${compact ? '11px' : '13px'}; font-weight: 800; }
+    .prt-printed { padding: 0 ${compact ? '12px' : '24px'} ${compact ? '12px' : '18px'}; text-align: right; color: #666; font-size: ${compact ? '9px' : '12px'}; }
   `;
   const nowDate = new Date();
   const now = nowDate.toLocaleString();
@@ -58,6 +67,16 @@ export function printContent({ title, subtitle = '', bodyHtml = '' }, opts = {})
         <div class='prt-role'>Date: ${escapeHtml(when)}</div>
       </div>`;
   }
+  const headerHtml = isFacultyDetail
+    ? ''
+    : `
+    <div class='prt-header'>
+      <p class='prt-title'>${escapeHtml(title)}</p>
+      ${subtitle ? `<p class='prt-sub'>${escapeHtml(subtitle)}</p>` : ''}
+      <p class='prt-meta'>Printed: ${escapeHtml(now)}</p>
+    </div>`;
+  const printedBlock = isFacultyDetail ? `<div class='prt-printed'>Printed: ${escapeHtml(now)}</div>` : '';
+
   const doc = `<!doctype html><html><head><meta charset='utf-8'><title>${escapeHtml(title)}</title><style>${styles}</style></head>
   <body>
     <div class='inst-hero'>
@@ -70,11 +89,7 @@ export function printContent({ title, subtitle = '', bodyHtml = '' }, opts = {})
         </div>
       </div>
     </div>
-    <div class='prt-header'>
-      <p class='prt-title'>${escapeHtml(title)}</p>
-      ${subtitle ? `<p class='prt-sub'>${escapeHtml(subtitle)}</p>` : ''}
-      <p class='prt-meta'>Printed: ${escapeHtml(now)}</p>
-    </div>
+    ${headerHtml}
     <div class='prt-body'>
       ${bodyHtml}
     </div>
@@ -91,6 +106,7 @@ export function printContent({ title, subtitle = '', bodyHtml = '' }, opts = {})
       </div>
     </div>
     ${conforme}
+    ${printedBlock}
     <script>window.onload = () => { window.print(); setTimeout(()=>window.close(), 300); };</script>
   </body></html>`;
   w.document.open();

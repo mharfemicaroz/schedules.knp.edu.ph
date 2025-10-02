@@ -472,7 +472,32 @@ export default function FacultyDetail() {
       return `<p class=\"prt-sub\" style=\"margin-top:18px;font-weight:800\">Term: ${esc(g.term || 'N/A')}</p>${table}`;
     }).join('');
 
-    printContent({ title: `Faculty: ${f.name}`, subtitle: f.department || '', bodyHtml: metaHtml + noticeHtml + sectionsHtml }, { compact: true });
+    // Build QR (share link) and two-column intro (name + details | QR)
+    try {
+      const token = encodeShareFacultyName(f?.name || '');
+      const origin = (window && window.location) ? `${window.location.origin}${window.location.pathname}` : '';
+      const shareUrl = `${origin}#/share/faculty/${encodeURIComponent(token)}`;
+      const qrData = encodeURIComponent(shareUrl);
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${qrData}`;
+      const intro = `
+        <div class='prt-two'>
+          <div class='prt-col-left'>
+            <p class='prt-fac-name'>${esc(f?.name || 'Faculty')}</p>
+            ${f?.department ? `<p class='prt-fac-sub'>${esc(f.department)}</p>` : ''}
+            ${metaHtml}
+          </div>
+          <div class='prt-col-right'>
+            <div class='prt-qr-card'>
+              <img class='prt-qr-img' src='${qrUrl}' alt='QR: ${esc(shareUrl)}' />
+              <div class='prt-qr-cap'>Scan me to verify or see updates</div>
+            </div>
+          </div>
+        </div>`;
+      printContent({ title: `Faculty: ${f.name}`, subtitle: '', bodyHtml: intro + noticeHtml + sectionsHtml }, { compact: true });
+    } catch {
+      // Fallback without QR
+      printContent({ title: `Faculty: ${f.name}`, subtitle: f.department || '', bodyHtml: metaHtml + noticeHtml + sectionsHtml }, { compact: true });
+    }
   }
   async function handleSaveEdit(payload) {
     if (!selected) return;
