@@ -407,7 +407,7 @@ export default function DepartmentSchedule() {
                 <Table size="sm">
                   <Thead>
                     <Tr>
-                      {isAdmin && (
+                      {isAdmin && !isPublic && (
                         <Th width="1%">
                           <Checkbox
                             isChecked={areAllInBlockSelected(b)}
@@ -444,7 +444,7 @@ export default function DepartmentSchedule() {
                   <Tbody>
                     {b.items.map((c, idx) => (
                       <Tr key={`${c.facultyId}-${c.id}-${idx}`}>
-                        {isAdmin && (
+                        {isAdmin && !isPublic && (
                           <Td>
                             <Checkbox
                               isChecked={selectedIds.has(c.id)}

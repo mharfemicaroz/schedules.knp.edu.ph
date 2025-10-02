@@ -634,7 +634,7 @@ export default function FacultyDetail() {
             <Table size={{ base: 'sm', md: 'md' }}>
               <Thead>
                 <Tr>
-                  {(() => { const h = getTableHeaders(); if (isAdmin) h.push('Actions'); return h; })().map((header, index) => (
+                  {(() => { const h = getTableHeaders(); if (isAdmin && !isPublic) h.push('Actions'); return h; })().map((header, index) => (
                     <Th key={index}>{header}</Th>
                   ))}
                 </Tr>
