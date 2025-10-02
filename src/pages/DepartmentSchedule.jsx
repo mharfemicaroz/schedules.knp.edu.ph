@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useParams, Link as RouterLink } from 'react-router-dom';
 import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, VStack, Text, HStack, Switch, FormControl, FormLabel, IconButton, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Checkbox, Collapse, Spacer, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton, Input, Select, InputGroup, InputRightElement } from '@chakra-ui/react';
 import { FiX } from 'react-icons/fi';
+import { FiShare2 } from 'react-icons/fi';
 import FacultySelect from '../components/FacultySelect';
 import { getTimeOptions } from '../utils/timeOptions';
 import DayMultiSelect from '../components/DayMultiSelect';
@@ -14,6 +15,7 @@ import EditScheduleModal from '../components/EditScheduleModal';
 import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
 import { FiEdit, FiTrash } from 'react-icons/fi';
 import useFaculties from '../hooks/useFaculties';
+import { usePublicView } from '../utils/uiFlags';
 // conflict checking removed per request
 
 function yearOrder(y) {
@@ -38,6 +40,7 @@ export default function DepartmentSchedule() {
   const tableBg = useColorModeValue('white','gray.800');
   const authUser = useSelector(s => s.auth.user);
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
+  const isPublic = usePublicView();
 
   // Edit/Delete state
   const editDisc = useDisclosure();
@@ -341,6 +344,7 @@ export default function DepartmentSchedule() {
       <HStack justify="space-between" align="center" flexWrap="wrap" gap={3}>
         <Heading size="md">Program: {dept}</Heading>
         <HStack spacing={4}>
+          {!isPublic && (
           <FormControl display="flex" alignItems="center" w="auto">
             <FormLabel htmlFor="schedule-mode" mb="0" fontSize="sm" fontWeight="medium">
               Regular F2F
@@ -356,12 +360,18 @@ export default function DepartmentSchedule() {
               Examination
             </FormLabel>
           </FormControl>
+          )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
-          <Button as={RouterLink} to="/views/departments" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />} w="fit-content">Back</Button>
+          {!isPublic && (
+            <Button as={RouterLink} to={`/share/departments/${encodeURIComponent(dept)}`} leftIcon={<FiShare2 />} colorScheme="blue" size="sm">Share</Button>
+          )}
+          {!isPublic && (
+            <Button as={RouterLink} to="/views/departments" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />} w="fit-content">Back</Button>
+          )}
         </HStack>
       </HStack>
       {loading && <Text color="gray.500">Loading…</Text>}
-      {isAdmin && (
+      {isAdmin && !isPublic && (
         <Collapse in={selectedIds.size > 0} animateOpacity>
           <HStack
             p={3}
@@ -419,7 +429,7 @@ export default function DepartmentSchedule() {
                         </>
                       )}
                       <Th>Faculty</Th>
-                      {isAdmin && <Th textAlign="right">Actions</Th>}
+                      {isAdmin && !isPublic && <Th textAlign="right">Actions</Th>}
                       {viewMode === 'examination' && (
                         <>
                           <Th>Exam Day</Th>
@@ -455,8 +465,8 @@ export default function DepartmentSchedule() {
                           </>
                         )}
                         <Td>{c.facultyName}</Td>
-                        {isAdmin && (
-                          <Td textAlign="right">
+                      {isAdmin && !isPublic && (
+                        <Td textAlign="right">
                             <HStack justify="end" spacing={1}>
                               <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} />
                               <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />

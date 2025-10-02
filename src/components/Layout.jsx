@@ -150,9 +150,56 @@ export default function Layout({ children }) {
 
   const splash = showSplash;
   const isPublicRoomAuto = /^\/views\/rooms\/[^/]+\/auto$/.test(loc.pathname || '');
+  const isSharePublic = /^\/share\//.test(loc.pathname || '');
 
-  if (isPublicRoomAuto) {
+  if (isPublicRoomAuto || isSharePublic) {
     // Public-facing view without app chrome (sidebar/topbar/footer)
+    if (isSharePublic) {
+      // Document-style wrapper for shared pages (PDF-like preview)
+      const paperBg = useColorModeValue('white', 'gray.800');
+      const frameBg = useColorModeValue('gray.100', 'gray.900');
+      return (
+        <Box bg={frameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>
+          <Box
+            as="main"
+            maxW="1100px"
+            mx="auto"
+            bg={paperBg}
+            borderWidth="1px"
+            borderColor={useColorModeValue('gray.200','gray.700')}
+            rounded={{ base: 'lg', md: 'xl' }}
+            boxShadow={{ base: 'md', md: 'xl' }}
+            px={{ base: 0, md: 0 }}
+            py={{ base: 0, md: 0 }}
+          >
+            {/* Header band with logo for shared pages */}
+            <Box
+              bg={useColorModeValue('gray.50','gray.700')}
+              borderBottomWidth="1px"
+              borderColor={useColorModeValue('gray.200','gray.600')}
+              px={{ base: 4, md: 6 }}
+              py={{ base: 3, md: 4 }}
+              roundedTop={{ base: 'lg', md: 'xl' }}
+            >
+              <HStack spacing={3} align="center" justify="space-between">
+                <HStack spacing={3} align="center">
+                  <Image src="/logo.png" alt="Logo" boxSize={{ base: '28px', md: '36px' }} rounded="md" />
+                  <VStack align="start" spacing={0}>
+                    <Text fontWeight="800" fontSize={{ base: 'sm', md: 'md' }}>Kolehiyo ng Pantukan</Text>
+                    <Text fontSize={{ base: 'xs', md: 'sm' }} color={useColorModeValue('gray.700','gray.200')}>Office of the Vice President of Academic Affairs</Text>
+                    <Text fontSize={{ base: 'xs', md: 'xs' }} color={useColorModeValue('gray.600','gray.300')}>Shared View</Text>
+                  </VStack>
+                </HStack>
+              </HStack>
+            </Box>
+            {/* Body */}
+            <Box px={{ base: 4, md: 6 }} py={{ base: 5, md: 8 }}>
+              {splash ? <SplashScreen /> : children}
+            </Box>
+          </Box>
+        </Box>
+      );
+    }
     return (
       <Box bg={bg} minH="100vh">
         <Box as="main" px={{ base: 0, md: 0 }} py={0} maxW="100%" mx="auto">

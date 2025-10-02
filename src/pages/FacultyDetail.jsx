@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Box, Heading, HStack, Avatar, Text, Badge, VStack, Divider, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, Switch, FormControl, FormLabel, IconButton, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
-import { FiPrinter, FiArrowLeft } from 'react-icons/fi';
+import { FiPrinter, FiArrowLeft, FiShare2 } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectFilteredFaculties, selectAllCourses } from '../store/dataSlice';
@@ -16,6 +16,7 @@ import AssignSchedulesModal from '../components/AssignSchedulesModal';
 import { buildConflicts, buildCrossFacultyOverlaps, parseTimeBlockToMinutes } from '../utils/conflicts';
 import Pagination from '../components/Pagination';
 import { Tag, TagLabel, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Wrap, WrapItem } from '@chakra-ui/react';
+import { usePublicView } from '../utils/uiFlags';
 
 
 export default function FacultyDetail() {
@@ -52,6 +53,7 @@ export default function FacultyDetail() {
   const confDisc = _confDisc;
   const [selected, setSelected] = [_selected, _setSelected];
   const cancelRef = _cancelRef;
+  const isPublic = usePublicView();
 
     // Merge helper: combine same section + code + term + time; merge rooms and F2F days
   const sortedCourses = React.useMemo(() => {
@@ -527,14 +529,14 @@ export default function FacultyDetail() {
         <HStack spacing={4}>
           <Avatar size="lg" name={f.name} />
           <Box>
-            {editingName ? (
+            {(!isPublic && editingName) ? (
               <HStack>
                 <Box minW={{ base: '260px', md: '420px', lg: '640px' }} w={{ base: 'full', md: 'auto' }}>
                   <FacultySelect
-                  value={f.name}
-                  onChange={(v) => { if (v) { navigate(`/faculty/${encodeURIComponent(v)}`); } setEditingName(false); }}
-                  onChangeId={() => {}}
-                  autoFocus
+                    value={f.name}
+                    onChange={(v) => { if (v) { navigate(`/faculty/${encodeURIComponent(v)}`); } setEditingName(false); }}
+                    onChangeId={() => {}}
+                    autoFocus
                   />
                 </Box>
                 <Button size="xs" variant="ghost" onClick={() => setEditingName(false)}>Cancel</Button>
@@ -542,7 +544,9 @@ export default function FacultyDetail() {
             ) : (
               <HStack>
                 <Heading size="md">{f.name}</Heading>
-                <IconButton aria-label="Change faculty" icon={<FiEdit />} size="sm" variant="ghost" onClick={() => setEditingName(true)} />
+                {!isPublic && (
+                  <IconButton aria-label="Change faculty" icon={<FiEdit />} size="sm" variant="ghost" onClick={() => setEditingName(true)} />
+                )}
               </HStack>
             )}
             <VStack align="start" spacing={1} mt={2}>
@@ -557,7 +561,8 @@ export default function FacultyDetail() {
           </Box>
         </HStack>
       <HStack spacing={4}>
-        <FormControl display="flex" alignItems="center" w="auto">
+          {!isPublic && (
+          <FormControl display="flex" alignItems="center" w="auto">
             <FormLabel htmlFor="schedule-mode" mb="0" fontSize="sm" fontWeight="medium">
               Regular F2F
             </FormLabel>
@@ -572,16 +577,22 @@ export default function FacultyDetail() {
               Examination
             </FormLabel>
           </FormControl>
+          )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
-          {isAdmin && (
+          {!isPublic && (
+            <Button as={RouterLink} to={`/share/faculty/${encodeURIComponent(String(id))}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
+          )}
+          {isAdmin && !isPublic && (
             <Button onClick={assignDisc.onOpen} variant="solid" size="sm" colorScheme="blue">Assign Schedules</Button>
           )}
-          {facultyConflictGroups.length > 0 && (
+          {facultyConflictGroups.length > 0 && !isPublic && (
             <Button variant="outline" size="sm" colorScheme="red" onClick={() => { setConfPage(1); confDisc.onOpen(); }}>
               Conflicts <Tag colorScheme="red" ml={2}><TagLabel>{facultyConflictGroups.length}</TagLabel></Tag>
             </Button>
           )}
-          <Button as={RouterLink} to="/" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />} w="fit-content">Back</Button>
+          {!isPublic && (
+            <Button as={RouterLink} to="/" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />} w="fit-content">Back</Button>
+          )}
         </HStack>
       </HStack>
       
@@ -634,7 +645,7 @@ export default function FacultyDetail() {
                           )}
                         </Td>
                       ))}
-                      {isAdmin && (
+                      {isAdmin && !isPublic && (
                         <Td textAlign="right">
                           <HStack justify="end" spacing={1}>
                             <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} />

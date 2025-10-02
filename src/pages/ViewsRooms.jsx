@@ -24,11 +24,12 @@ import {
 import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import { FiChevronRight, FiPrinter } from 'react-icons/fi';
+import { FiChevronRight, FiPrinter, FiShare2 } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import MiniBarChart from '../components/MiniBarChart';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 import { useLocalStorage, getInitialToggleState, getExamDateSet, findDayAnnotations } from '../utils/scheduleUtils';
+import { usePublicView } from '../utils/uiFlags';
 
 export default function ViewsRooms() {
   const navigate = useNavigate();
@@ -39,6 +40,7 @@ export default function ViewsRooms() {
   const cardBg = useColorModeValue('white', 'gray.800');
   const subtle = useColorModeValue('gray.600', 'gray.400');
   const [q, setQ] = useState('');
+  const isPublic = usePublicView();
 
   const weekDays = useMemo(() => getCurrentWeekDays(), []);
   const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
@@ -209,6 +211,7 @@ export default function ViewsRooms() {
           )}
         </HStack>
         <HStack spacing={4}>
+          {!isPublic && (
           <FormControl display="flex" alignItems="center" w="auto">
             <FormLabel htmlFor="rooms-schedule-mode" mb="0" fontSize="sm" fontWeight="medium">
               Regular F2F
@@ -224,7 +227,11 @@ export default function ViewsRooms() {
               Examination
             </FormLabel>
           </FormControl>
-          <Input placeholder="Filter rooms." value={q} onChange={e=>setQ(e.target.value)} maxW="280px" />
+          )}
+          {!isPublic && <Input placeholder="Filter rooms." value={q} onChange={e=>setQ(e.target.value)} maxW="280px" />}
+          {!isPublic && (
+            <Button as={RouterLink} to="/share/rooms" leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
+          )}
         </HStack>
       </HStack>
 
@@ -313,7 +320,7 @@ export default function ViewsRooms() {
                     <Box
                       key={`${g.day}-${r.room}`}
                       as={RouterLink}
-                      to={`/views/rooms/${encodeURIComponent(r.room)}?day=${encodeURIComponent(g.day)}`}
+                      to={isPublic ? `/share/rooms/${encodeURIComponent(r.room)}?day=${encodeURIComponent(g.day)}` : `/views/rooms/${encodeURIComponent(r.room)}?day=${encodeURIComponent(g.day)}`}
                       className="view-card"
                       bg={cardBg}
                       borderWidth="1px"

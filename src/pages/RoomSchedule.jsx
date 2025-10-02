@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, Text, HStack, Switch, FormControl, FormLabel, IconButton, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
-import { FiPrinter, FiArrowLeft, FiEdit, FiTrash, FiShare } from 'react-icons/fi';
+import { FiPrinter, FiArrowLeft, FiEdit, FiTrash, FiShare, FiShare2 } from 'react-icons/fi';
+import { usePublicView } from '../utils/uiFlags';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { buildTable, printContent } from '../utils/printDesign';
@@ -25,6 +26,7 @@ export default function RoomSchedule() {
   const border = useColorModeValue('gray.200','gray.700');
   const authUser = useSelector(s => s.auth.user);
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
+  const isPublic = usePublicView();
   const editDisc = useDisclosure();
   const delDisc = useDisclosure();
   const qrDisc = useDisclosure();
@@ -139,10 +141,15 @@ export default function RoomSchedule() {
             </FormLabel>
           </FormControl>
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
-          {isAdmin && (
+          {!isPublic && (
+            <Button as={RouterLink} to={`/share/rooms/${encodeURIComponent(room)}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
+          )}
+          {isAdmin && !isPublic && (
             <Button leftIcon={<FiShare />} onClick={qrDisc.onOpen} variant="outline" size="sm">Show QR</Button>
           )}
-          <Button as={RouterLink} to="/views/rooms" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />}>Back</Button>
+          {!isPublic && (
+            <Button as={RouterLink} to="/views/rooms" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />}>Back</Button>
+          )}
         </HStack>
       </HStack>
       {loading && (
@@ -161,7 +168,7 @@ export default function RoomSchedule() {
               <Th>Section</Th>
               <Th>Units</Th>
               <Th>Faculty</Th>
-              {isAdmin && <Th textAlign="right">Actions</Th>}
+              {isAdmin && !isPublic && <Th textAlign="right">Actions</Th>}
               {viewMode === 'examination' && (
                 <>
                   <Th>Exam Day</Th>
@@ -183,7 +190,7 @@ export default function RoomSchedule() {
                 <Td>{c.section}</Td>
                 <Td>{c.unit ?? c.hours ?? '—'}</Td>
                 <Td>{c.facultyName}</Td>
-                {isAdmin && (
+                {isAdmin && !isPublic && (
                   <Td textAlign="right">
                     <HStack justify="end" spacing={1}>
                       <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} />

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Box, Heading, HStack, VStack, Button, Grid, GridItem, Input, Select, Text, Table, Thead, Tr, Th, Tbody, Td, useColorModeValue, IconButton } from '@chakra-ui/react';
-import { FiBookOpen, FiClock, FiTrendingUp, FiUsers, FiPrinter, FiEdit, FiTrash } from 'react-icons/fi';
+import { FiBookOpen, FiClock, FiTrendingUp, FiUsers, FiPrinter, FiEdit, FiTrash, FiShare2 } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import StatCard from '../components/StatCard';
@@ -11,6 +11,8 @@ import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../s
 import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
 import { buildTable, printContent } from '../utils/printDesign';
+import { Link as RouterLink } from 'react-router-dom';
+import { usePublicView } from '../utils/uiFlags';
 
 export default function ViewsCourses() {
   const dispatch = useDispatch();
@@ -21,6 +23,7 @@ export default function ViewsCourses() {
   const allCourses = useSelector(selectAllCourses);
   const authUser = useSelector(s => s.auth.user);
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
+  const isPublic = usePublicView();
 
   const [q, setQ] = useState('');
   const [program, setProgram] = useState('');
@@ -132,20 +135,27 @@ export default function ViewsCourses() {
 
   return (
     <VStack align="stretch" spacing={6}>
-      <HStack justify="space-between" align="center" flexWrap="wrap" gap={3}>
+      <HStack justify="space-between" align="center" flexWrap="wrap" gap={4}>
         <Heading size="md">View: Courses</Heading>
-        <HStack gap={2}>
-          <Input placeholder="Search code, title, faculty, program" value={q} onChange={(e)=>{ setQ(e.target.value); setPage(1); }} maxW="320px" />
-          <Select placeholder="Program" value={program} onChange={(e)=>{ setProgram(e.target.value); setPage(1); }} maxW="200px">
-            {opts.programs.map(p => <option key={p} value={p}>{p}</option>)}
-          </Select>
-          <Select placeholder="Term" value={term} onChange={(e)=>{ setTerm(e.target.value); setPage(1); }} maxW="140px">
-            {opts.terms.map(t => <option key={t} value={t}>{t}</option>)}
-          </Select>
-          <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)||15); setPage(1); }} maxW="110px">
-            {[10,15,20,30,50].map(n => <option key={n} value={n}>{n}/page</option>)}
-          </Select>
-          <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
+        <HStack spacing={3} align="center" flexWrap="wrap">
+          {!isPublic && (
+            <>
+              <Input placeholder="Search code, title, faculty, program" value={q} onChange={(e)=>{ setQ(e.target.value); setPage(1); }} maxW="320px" />
+              <Select placeholder="Program" value={program} onChange={(e)=>{ setProgram(e.target.value); setPage(1); }} maxW="200px">
+                {opts.programs.map(p => <option key={p} value={p}>{p}</option>)}
+              </Select>
+              <Select placeholder="Term" value={term} onChange={(e)=>{ setTerm(e.target.value); setPage(1); }} maxW="140px">
+                {opts.terms.map(t => <option key={t} value={t}>{t}</option>)}
+              </Select>
+              <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)||15); setPage(1); }} maxW="110px">
+                {[10,15,20,30,50].map(n => <option key={n} value={n}>{n}/page</option>)}
+              </Select>
+            </>
+          )}
+          <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="md" px={4}>Print</Button>
+          {!isPublic && (
+            <Button as={RouterLink} to="/share/courses" leftIcon={<FiShare2 />} size="md" px={4} colorScheme="blue" variant="solid">Share</Button>
+          )}
         </HStack>
       </HStack>
 
@@ -184,7 +194,7 @@ export default function ViewsCourses() {
                 <Td>{c.semester || c.term || '-'}</Td>
                 <Td>{c.schedule || c.time || '-'}</Td>
                 <Td>{c.room || '-'}</Td>
-                {isAdmin && (
+                {isAdmin && !isPublic && (
                   <Td textAlign="right">
                     <HStack justify="end" spacing={1}>
                       <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="ghost" onClick={() => { setSelected(c); setEditOpen(true); }} />
@@ -198,7 +208,9 @@ export default function ViewsCourses() {
         </Table>
       </Box>
 
-      <Pagination page={page} pageCount={pageCount} onPage={setPage} pageSize={pageSize} onPageSize={(n)=>{ setPageSize(n); setPage(1); }} />
+      {!isPublic && (
+        <Pagination page={page} pageCount={pageCount} onPage={setPage} pageSize={pageSize} onPageSize={(n)=>{ setPageSize(n); setPage(1); }} />
+      )}
 
       <ChartsCourses courses={filtered} />
 

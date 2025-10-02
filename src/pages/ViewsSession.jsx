@@ -9,6 +9,7 @@ import { FiPrinter, FiAlertCircle } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 import { useLocalStorage, getInitialToggleState, getExamDateSet, findDayAnnotations } from '../utils/scheduleUtils';
+import { usePublicView } from '../utils/uiFlags';
 
 const SESSIONS = ['Morning', 'Afternoon', 'Evening'];
 
@@ -33,6 +34,7 @@ export default function ViewsSession() {
   const cellBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.400');
   const [q, setQ] = useState('');
+  const isPublic = usePublicView();
   const [mode, setMode] = useState('day'); // 'day' | 'room'
   const [viewMode, setViewMode] = useLocalStorage('viewsSessionViewMode', getInitialToggleState(acadData, 'viewsSessionViewMode', 'regular'));
   const weekDays = useMemo(() => getCurrentWeekDays(), []);
@@ -317,7 +319,7 @@ export default function ViewsSession() {
               Examination
             </FormLabel>
           </FormControl>
-          <RadioGroup onChange={setMode} value={mode}>
+          <RadioGroup onChange={setMode} value={mode} style={{ display: isPublic ? 'none' : undefined }}>
             <HStack spacing={4}>
               <Radio value="day">By Day</Radio>
               <Radio value="room">By Room</Radio>

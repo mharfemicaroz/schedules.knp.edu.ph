@@ -1,7 +1,8 @@
 ﻿import React, { useMemo, useState } from 'react';
 import { useParams, useSearchParams, Link as RouterLink } from 'react-router-dom';
 import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, Text, HStack, Switch, FormControl, FormLabel, IconButton, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
-import { FiPrinter, FiArrowLeft, FiEdit, FiTrash } from 'react-icons/fi';
+import { FiPrinter, FiArrowLeft, FiEdit, FiTrash, FiShare2 } from 'react-icons/fi';
+import { usePublicView } from '../utils/uiFlags';
 import { buildTable, printContent } from '../utils/printDesign';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
@@ -22,6 +23,7 @@ export default function BlockSchedule() {
   const acadData = useSelector(s => s.data.acadData);
   const border = useColorModeValue('gray.200','gray.700');
   const tableBg = useColorModeValue('white','gray.800');
+  const isPublic = usePublicView();
   const authUser = useSelector(s => s.auth.user);
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
   const editDisc = useDisclosure();
@@ -125,6 +127,7 @@ export default function BlockSchedule() {
       <HStack justify="space-between" mb={2} flexWrap="wrap" gap={3}>
         <Heading size="md">Block: {block}{dayFilter ? ` — ${dayFilter}` : ''}{sessionFilter ? ` — ${sessionFilter}` : ''}</Heading>
         <HStack spacing={4}>
+          {!isPublic && (
           <FormControl display="flex" alignItems="center" w="auto">
             <FormLabel htmlFor="schedule-mode" mb="0" fontSize="sm" fontWeight="medium">
               Regular F2F
@@ -140,8 +143,14 @@ export default function BlockSchedule() {
               Examination
             </FormLabel>
           </FormControl>
+          )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
-          <Button as={RouterLink} to="/views/session" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />}>Back</Button>
+          {!isPublic && (
+            <Button as={RouterLink} to={`/share/session/block/${encodeURIComponent(block)}${dayFilter?`?day=${encodeURIComponent(dayFilter)}&session=${encodeURIComponent(sessionFilter||'')}`:''}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
+          )}
+          {!isPublic && (
+            <Button as={RouterLink} to="/views/session" variant="ghost" colorScheme="brand" leftIcon={<FiArrowLeft />}>Back</Button>
+          )}
         </HStack>
       </HStack>
       {loading && <Text color="gray.500" mt={2}>Loading…</Text>}
@@ -157,7 +166,7 @@ export default function BlockSchedule() {
               <Th>Units</Th>
               <Th>Room</Th>
               <Th>Faculty</Th>
-              {isAdmin && <Th textAlign="right">Actions</Th>}
+              {isAdmin && !isPublic && <Th textAlign="right">Actions</Th>}
               {viewMode === 'examination' && (
                 <>
                   <Th>Exam Day</Th>
@@ -178,7 +187,7 @@ export default function BlockSchedule() {
                 <Td>{c.unit ?? c.hours ?? '—'}</Td>
                 <Td>{c.room || '—'}</Td>
                 <Td>{c.facultyName}</Td>
-                {isAdmin && (
+                {isAdmin && !isPublic && (
                   <Td textAlign="right">
                     <HStack justify="end" spacing={1}>
                       <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} />

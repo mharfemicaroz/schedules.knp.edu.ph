@@ -55,6 +55,15 @@ function App() {
               <Route path="/admin/unassigned" element={<UnassignedSchedules />} />
               <Route path="/admin/faculty" element={<AdminFaculty />} />
               <Route path="/reports/faculty-summary" element={<ReportsFacultySummary />} />
+              {/* Share/public routes (chrome-less) */}
+              <Route path="/share/faculty/:id" element={<FacultyDetail />} />
+              <Route path="/share/courses" element={<ViewsCourses />} />
+              <Route path="/share/departments" element={<ViewsDepartments />} />
+              <Route path="/share/departments/:dept" element={<DepartmentSchedule />} />
+              <Route path="/share/rooms" element={<ViewsRooms />} />
+              <Route path="/share/rooms/:room" element={<RoomSchedule />} />
+              <Route path="/share/session" element={<ViewsSession />} />
+              <Route path="/share/session/block/:block" element={<BlockSchedule />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>

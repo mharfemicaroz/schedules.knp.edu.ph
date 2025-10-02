@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
-import { Box, Heading, SimpleGrid, useColorModeValue, IconButton, Tooltip, HStack, Text, Badge, VStack } from '@chakra-ui/react';
+import { Box, Heading, SimpleGrid, useColorModeValue, IconButton, Tooltip, HStack, Text, Badge, VStack, Button } from '@chakra-ui/react';
 import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { getProgramColor } from '../utils/programColors';
 import { Link as RouterLink } from 'react-router-dom';
-import { FiChevronRight } from 'react-icons/fi';
+import { FiChevronRight, FiShare2 } from 'react-icons/fi';
+import { usePublicView } from '../utils/uiFlags';
 
 function canonFacultyKey(id, name) {
   if (id != null) return String(id);
@@ -15,6 +16,7 @@ function canonFacultyKey(id, name) {
 
 export default function ViewsDepartments() {
   const allCourses = useSelector(selectAllCourses);
+  const isPublic = usePublicView();
   const border = useColorModeValue('gray.200','gray.700');
   const cardBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.400');
@@ -39,7 +41,7 @@ export default function ViewsDepartments() {
     return (
       <Box
         as={RouterLink}
-        to={`/views/departments/${encodeURIComponent(item.department)}`}
+        to={isPublic ? `/share/departments/${encodeURIComponent(item.department)}` : `/views/departments/${encodeURIComponent(item.department)}`}
         className="view-card"
         bg={cardBg}
         borderWidth="1px"
@@ -84,7 +86,12 @@ export default function ViewsDepartments() {
 
   return (
     <Box>
-      <Heading size="md" mb={4}>Faculty Load by Program</Heading>
+      <HStack justify="space-between" mb={4}>
+        <Heading size="md">Faculty Load by Program</Heading>
+        {!isPublic && (
+          <Button as={RouterLink} to="/share/departments" leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
+        )}
+      </HStack>
       <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={4}>
         <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
           <Text fontSize="xs" color={subtle}>Programs</Text>
