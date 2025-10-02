@@ -42,6 +42,8 @@ export default function ViewsRooms() {
   const subtle = useColorModeValue('gray.600', 'gray.400');
   const [q, setQ] = useState('');
   const isPublic = usePublicView();
+  const authUser = useSelector(s => s.auth.user);
+  const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
 
   const weekDays = useMemo(() => getCurrentWeekDays(), []);
   const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
@@ -230,7 +232,7 @@ export default function ViewsRooms() {
           </FormControl>
           )}
           {!isPublic && <Input placeholder="Filter rooms." value={q} onChange={e=>setQ(e.target.value)} maxW="280px" />}
-          {!isPublic && (
+          {isAdmin && !isPublic && (
             <Button as={RouterLink} to="/share/rooms" leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
           )}
         </HStack>

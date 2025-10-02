@@ -40,9 +40,8 @@ import LoginModal from './LoginModal';
 import ChangePasswordModal from './ChangePasswordModal';
 import ProfileModal from './ProfileModal';
 import { Badge } from '@chakra-ui/react';
-import { loginThunk, changePasswordThunk, updateProfileThunk } from '../store/authThunks';
+import { loginThunk, changePasswordThunk, updateProfileThunk, logoutThunk } from '../store/authThunks';
 import apiService from '../services/apiService';
-import { logout as logoutAction } from '../store/authSlice';
 import { useDispatch as useRDispatch, useSelector as useRSelector } from 'react-redux';
 import FirstVisitGuestModal from './FirstVisitGuestModal';
 import { openModal as openGuestModal, closeModal as closeGuestModal, setGuest as setGuestAction } from '../store/guestSlice';
@@ -126,6 +125,16 @@ export default function Layout({ children }) {
   const bg = useColorModeValue('gray.50', 'gray.900');
   const loading = useSelector(s => s.data.loading);
   const loc = useLocation();
+  // Build current route string consistently
+  const getCurrentRoute = React.useCallback(() => {
+    try {
+      const path = String(loc?.pathname || '');
+      const qs = String(loc?.search || '');
+      return `${path}${qs}`;
+    } catch {
+      try { return String(window?.location?.hash || '').replace(/^#/, '') || '/'; } catch { return '/'; }
+    }
+  }, [loc.pathname, loc.search]);
   const [routeBusy, setRouteBusy] = React.useState(false);
   const menuDisc = useDisclosure();
   const loginDisc = useDisclosure();
@@ -146,15 +155,24 @@ export default function Layout({ children }) {
     return () => clearTimeout(t);
   }, [loc.pathname]);
 
-  // Guest tracking: on route change, if no stored guest, show modal; else touch
+  // Guest tracking: on route change, always touch with current route; prompt if no record
   React.useEffect(() => {
     (async () => {
       try {
+        // Touch with the current route first
+        try {
+          const n0 = localStorage.getItem('guest:name') || 'Guest';
+          const r0 = localStorage.getItem('guest:role') || '';
+          rdispatch(touchGuestThunk({ name: n0, role: r0, route: getCurrentRoute() }));
+        } catch {}
         // Ask server if there's a guest record for this IP
         const resp = await apiService.getGuestSelf();
         const haveLocal = !!(localStorage.getItem('guest:name') || '');
         if (resp && resp.exists === false) {
           try { localStorage.removeItem('guest:name'); localStorage.removeItem('guest:role'); } catch {}
+          const anonName = localStorage.getItem('guest:name') || 'Guest';
+          const anonRole = localStorage.getItem('guest:role') || '';
+          rdispatch(touchGuestThunk({ name: anonName, role: anonRole, route: getCurrentRoute() }));
           rdispatch(openGuestModal());
         } else if (resp && resp.exists === true && resp.data) {
           const me = resp.data;
@@ -166,19 +184,19 @@ export default function Layout({ children }) {
           }
           const name = localStorage.getItem('guest:name') || me.name;
           const role = localStorage.getItem('guest:role') || me.role || '';
-          rdispatch(touchGuestThunk({ name, role }));
+          rdispatch(touchGuestThunk({ name, role, route: getCurrentRoute() }));
         }
       } catch (e) {
         // If endpoint fails, fallback to local-only behavior
         try {
           const name = localStorage.getItem('guest:name') || '';
           const role = localStorage.getItem('guest:role') || '';
-          if (!name) rdispatch(openGuestModal()); else rdispatch(touchGuestThunk({ name, role }));
+          if (!name) rdispatch(openGuestModal()); else rdispatch(touchGuestThunk({ name, role, route: getCurrentRoute() }));
         } catch {}
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loc.pathname]);
+  }, [loc.pathname, loc.search]);
 
   React.useEffect(() => {
     if (!loading) {
@@ -247,7 +265,7 @@ export default function Layout({ children }) {
                 localStorage.setItem('guest:name', name);
                 localStorage.setItem('guest:role', role);
                 rdispatch(setGuestAction({ name, role }));
-                await rdispatch(touchGuestThunk({ name, role }));
+                await rdispatch(touchGuestThunk({ name, role, route: getCurrentRoute() }));
               } finally {
                 rdispatch(closeGuestModal());
               }
@@ -302,7 +320,7 @@ export default function Layout({ children }) {
           onOpenMenu={menuDisc.onOpen}
           onToggleSidebar={() => setSidebarVisible(v => !v)}
           onOpenLogin={loginDisc.onOpen}
-          onLogout={() => dispatch(logoutAction())}
+          onLogout={() => dispatch(logoutThunk())}
           authUser={user}
           onOpenChangePwd={changePwdDisc.onOpen}
           onOpenProfile={profileDisc.onOpen}
@@ -376,7 +394,7 @@ export default function Layout({ children }) {
             localStorage.setItem('guest:name', name);
             localStorage.setItem('guest:role', role);
             rdispatch(setGuestAction({ name, role }));
-            await rdispatch(touchGuestThunk({ name, role }));
+            await rdispatch(touchGuestThunk({ name, role, route: loc.pathname }));
           } finally {
             rdispatch(closeGuestModal());
           }

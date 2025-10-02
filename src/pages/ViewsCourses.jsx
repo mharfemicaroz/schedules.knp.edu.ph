@@ -153,7 +153,7 @@ export default function ViewsCourses() {
             </>
           )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="md" px={4}>Print</Button>
-          {!isPublic && (
+          {isAdmin && !isPublic && (
             <Button as={RouterLink} to="/share/courses" leftIcon={<FiShare2 />} size="md" px={4} colorScheme="blue" variant="solid">Share</Button>
           )}
         </HStack>

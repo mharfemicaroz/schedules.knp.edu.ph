@@ -18,6 +18,8 @@ function canonFacultyKey(id, name) {
 export default function ViewsDepartments() {
   const allCourses = useSelector(selectAllCourses);
   const isPublic = usePublicView();
+  const authUser = useSelector(s => s.auth.user);
+  const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
   const border = useColorModeValue('gray.200','gray.700');
   const cardBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.400');
@@ -89,7 +91,7 @@ export default function ViewsDepartments() {
     <Box>
       <HStack justify="space-between" mb={4}>
         <Heading size="md">Faculty Load by Program</Heading>
-        {!isPublic && (
+        {isAdmin && !isPublic && (
           <Button as={RouterLink} to="/share/departments" leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
         )}
       </HStack>

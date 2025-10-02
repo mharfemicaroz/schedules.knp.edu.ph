@@ -46,3 +46,16 @@ export const checkRoleThunk = createAsyncThunk('auth/checkRole', async (_, { dis
   }
   return u;
 });
+
+export const logoutThunk = createAsyncThunk('auth/logout', async (_, { dispatch }) => {
+  try {
+    // Best-effort clear of all local storage for this app
+    try { localStorage.clear(); } catch {}
+    // Clear in-memory auth
+    dispatch(setTokens({ accessToken: null, refreshToken: null }));
+    dispatch(setUser(null));
+    dispatch(logoutAction());
+    apiService.setAuthToken(null);
+  } catch {}
+  return true;
+});

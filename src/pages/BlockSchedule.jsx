@@ -146,7 +146,7 @@ export default function BlockSchedule() {
           </FormControl>
           )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
-          {!isPublic && (
+          {isAdmin && !isPublic && (
             <Button as={RouterLink} to={`/share/session/block/${encodeURIComponent(encodeShareBlock(block))}${dayFilter?`?day=${encodeURIComponent(dayFilter)}&session=${encodeURIComponent(sessionFilter||'')}`:''}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
           )}
           {!isPublic && (

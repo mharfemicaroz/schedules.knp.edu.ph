@@ -125,11 +125,11 @@ export default function Sidebar({ mobile = false, onNavigate }) {
 
         {/* Views */}
         <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Views</Text>
-        <NavItem to="/views/faculty" icon={FiUsers} onClick={onNavigate}>By Faculty</NavItem>
-        <NavItem to="/views/courses" icon={FiBook} onClick={onNavigate}>By Courses</NavItem>
+        {isAdmin && <NavItem to="/views/faculty" icon={FiUsers} onClick={onNavigate}>By Faculty</NavItem>}
+        {isAdmin && <NavItem to="/views/courses" icon={FiBook} onClick={onNavigate}>By Courses</NavItem>}
         <NavItem to="/views/departments" icon={FiLayers} onClick={onNavigate}>By Department</NavItem>
         <NavItem to="/views/rooms" icon={FiMapPin} onClick={onNavigate}>By Rooms</NavItem>
-        <NavItem to="/views/session" icon={FiSun} onClick={onNavigate}>By Session</NavItem>
+        {isAdmin && <NavItem to="/views/session" icon={FiSun} onClick={onNavigate}>By Session</NavItem>}
         {isAdmin && (
           <>
             <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Reports</Text>

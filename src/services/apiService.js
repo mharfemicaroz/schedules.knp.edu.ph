@@ -436,9 +436,9 @@ class ApiService {
   }
 
   // GUEST API
-  async postGuestAccess({ name, role }) {
+  async postGuestAccess({ name, role, route }) {
     const path = `/guests/access`;
-    return this.requestAbs(path, { method: 'POST', body: JSON.stringify({ name, role }) });
+    return this.requestAbs(path, { method: 'POST', body: JSON.stringify({ name, role, route }) });
   }
   async getGuestSelf() {
     const path = `/guests/me`;

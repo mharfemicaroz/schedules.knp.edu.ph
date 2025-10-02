@@ -20,6 +20,8 @@ import AdminFaculty from './pages/AdminFaculty';
 import AdminUsers from './pages/AdminUsers';
 import AdminGuestLogs from './pages/AdminGuestLogs';
 import ReportsFacultySummary from './pages/ReportsFacultySummary';
+import Unauthorized from './pages/Unauthorized';
+import RequireAdmin from './components/RequireAdmin';
 // DataProvider removed; using Redux directly
 // VisitorProvider removed
 import { useDispatch } from 'react-redux';
@@ -43,22 +45,22 @@ function App() {
             <Routes>
               <Route path="/" element={<VisualMap />} />
               <Route path="/overview/calendar" element={<AcademicCalendar />} />
-              <Route path="/faculty/:id" element={<FacultyDetail />} />
-              <Route path="/views/faculty" element={<Dashboard />} />
-              <Route path="/views/courses" element={<ViewsCourses />} />
+              <Route path="/faculty/:id" element={<RequireAdmin><FacultyDetail /></RequireAdmin>} />
+              <Route path="/views/faculty" element={<RequireAdmin><Dashboard /></RequireAdmin>} />
+              <Route path="/views/courses" element={<RequireAdmin><ViewsCourses /></RequireAdmin>} />
               <Route path="/views/departments" element={<ViewsDepartments />} />
               <Route path="/views/departments/:dept" element={<DepartmentSchedule />} />
               <Route path="/views/rooms" element={<ViewsRooms />} />
               <Route path="/views/rooms/:room" element={<RoomSchedule />} />
               <Route path="/views/rooms/:room/auto" element={<RoomScheduleAuto />} />
-              <Route path="/views/session" element={<ViewsSession />} />
-              <Route path="/views/session/block/:block" element={<BlockSchedule />} />
-              <Route path="/admin/conflicts" element={<ConflictSchedules />} />
-              <Route path="/admin/unassigned" element={<UnassignedSchedules />} />
-              <Route path="/admin/faculty" element={<AdminFaculty />} />
-              <Route path="/admin/users" element={<AdminUsers />} />
-              <Route path="/admin/guest-logs" element={<AdminGuestLogs />} />
-              <Route path="/reports/faculty-summary" element={<ReportsFacultySummary />} />
+              <Route path="/views/session" element={<RequireAdmin><ViewsSession /></RequireAdmin>} />
+              <Route path="/views/session/block/:block" element={<RequireAdmin><BlockSchedule /></RequireAdmin>} />
+              <Route path="/admin/conflicts" element={<RequireAdmin><ConflictSchedules /></RequireAdmin>} />
+              <Route path="/admin/unassigned" element={<RequireAdmin><UnassignedSchedules /></RequireAdmin>} />
+              <Route path="/admin/faculty" element={<RequireAdmin><AdminFaculty /></RequireAdmin>} />
+              <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
+              <Route path="/admin/guest-logs" element={<RequireAdmin><AdminGuestLogs /></RequireAdmin>} />
+              <Route path="/reports/faculty-summary" element={<RequireAdmin><ReportsFacultySummary /></RequireAdmin>} />
               {/* Share/public routes (chrome-less) */}
               <Route path="/share/faculty/:id" element={<FacultyDetail />} />
               <Route path="/share/courses" element={<ViewsCourses />} />
@@ -68,6 +70,7 @@ function App() {
               <Route path="/share/rooms/:room" element={<RoomSchedule />} />
               <Route path="/share/session" element={<ViewsSession />} />
               <Route path="/share/session/block/:block" element={<BlockSchedule />} />
+              <Route path="/unauthorized" element={<Unauthorized />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>

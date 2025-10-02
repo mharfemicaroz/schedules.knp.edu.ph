@@ -142,7 +142,7 @@ export default function RoomSchedule() {
             </FormLabel>
           </FormControl>
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
-          {!isPublic && (
+          {isAdmin && !isPublic && (
             <Button as={RouterLink} to={`/share/rooms/${encodeURIComponent(encodeShareRoom(room))}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
           )}
           {isAdmin && !isPublic && (

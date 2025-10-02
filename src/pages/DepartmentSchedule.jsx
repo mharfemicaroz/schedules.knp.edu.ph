@@ -364,7 +364,7 @@ export default function DepartmentSchedule() {
           </FormControl>
           )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
-          {!isPublic && (
+          {isAdmin && !isPublic && (
             <Button as={RouterLink} to={`/share/departments/${encodeURIComponent(encodeShareDepartment(dept))}`} leftIcon={<FiShare2 />} colorScheme="blue" size="sm">Share</Button>
           )}
           {!isPublic && (

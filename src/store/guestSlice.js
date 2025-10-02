@@ -7,8 +7,8 @@ const local = {
   set(name, role){ try { localStorage.setItem('guest:name', name||''); localStorage.setItem('guest:role', role||''); } catch {} },
 };
 
-export const touchGuestThunk = createAsyncThunk('guest/touch', async ({ name, role }) => {
-  const res = await apiService.postGuestAccess({ name, role });
+export const touchGuestThunk = createAsyncThunk('guest/touch', async ({ name, role, route }) => {
+  const res = await apiService.postGuestAccess({ name, role, route });
   return res;
 });
 
@@ -27,4 +27,3 @@ const guestSlice = createSlice({
 
 export const { setGuest, openModal, closeModal } = guestSlice.actions;
 export default guestSlice.reducer;
-

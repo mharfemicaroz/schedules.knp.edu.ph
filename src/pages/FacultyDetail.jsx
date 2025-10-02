@@ -588,7 +588,7 @@ export default function FacultyDetail() {
           </FormControl>
           )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
-          {!isPublic && (
+          {isAdmin && !isPublic && (
             <Button as={RouterLink} to={`/share/faculty/${encodeURIComponent(encodeShareFacultyName(f?.name || ''))}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
           )}
           {isAdmin && !isPublic && (

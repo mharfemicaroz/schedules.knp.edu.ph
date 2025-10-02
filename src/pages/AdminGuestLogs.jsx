@@ -93,10 +93,9 @@ export default function AdminGuestLogs(){
               <Th>Name</Th>
               <Th>Role</Th>
               <Th>IP</Th>
+              <Th>Route</Th>
               <Th>First Access</Th>
               <Th>Last Access</Th>
-              <Th>Created</Th>
-              <Th>Updated</Th>
             </Tr>
           </Thead>
           <Tbody>
@@ -105,10 +104,9 @@ export default function AdminGuestLogs(){
                 <Td>{g.name}</Td>
                 <Td><Tag size="sm" colorScheme="purple"><TagLabel>{g.role || '-'}</TagLabel></Tag></Td>
                 <Td>{g.ip}</Td>
+                <Td>{g.lastVisitedPage || g.last_visited_page || '-'}</Td>
                 <Td>{g.dateFirstAccessed ? new Date(g.dateFirstAccessed).toLocaleString() : (g.date_first_accessed ? new Date(g.date_first_accessed).toLocaleString() : '-')}</Td>
                 <Td>{g.dateLastAccessed ? new Date(g.dateLastAccessed).toLocaleString() : (g.date_last_accessed ? new Date(g.date_last_accessed).toLocaleString() : '-')}</Td>
-                <Td>{g.createdAt ? new Date(g.createdAt).toLocaleString() : '-'}</Td>
-                <Td>{g.updatedAt ? new Date(g.updatedAt).toLocaleString() : '-'}</Td>
               </Tr>
             ))}
           </Tbody>
@@ -125,4 +123,3 @@ export default function AdminGuestLogs(){
     </VStack>
   );
 }
-
