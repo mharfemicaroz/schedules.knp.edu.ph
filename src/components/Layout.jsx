@@ -27,8 +27,6 @@ import {
   TagLabel,
   Wrap,
   WrapItem,
-  ChakraProvider,
-  extendTheme,
 } from '@chakra-ui/react';
 import Sidebar from './Sidebar';
 import { FiMoon, FiSun, FiMenu, FiSidebar, FiLogIn, FiUser, FiKey, FiLogOut } from 'react-icons/fi';
@@ -48,11 +46,6 @@ import { useDispatch as useRDispatch, useSelector as useRSelector } from 'react-
 import FirstVisitGuestModal from './FirstVisitGuestModal';
 import { openModal as openGuestModal, closeModal as closeGuestModal, setGuest as setGuestAction } from '../store/guestSlice';
 import { touchGuestThunk } from '../store/guestSlice';
-
-// Force-light theme for shared/public views to ensure readability
-const sharedLightTheme = extendTheme({
-  config: { initialColorMode: 'light', useSystemColorMode: false },
-});
 
 function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, onOpenChangePwd, onOpenProfile }) {
   const { colorMode, toggleColorMode } = useColorMode();
@@ -143,6 +136,8 @@ export default function Layout({ children }) {
     }
   }, [loc.pathname, loc.search]);
   const [routeBusy, setRouteBusy] = React.useState(false);
+  const isPublicRoomAuto = /^\/views\/rooms\/[^/]+\/auto$/.test(loc.pathname || '');
+  const isSharePublic = /^\/share\//.test(loc.pathname || '');
   // Hoist color values used by shared/public branch to keep hook order stable
   const sharedPaperBg = useColorModeValue('white', 'gray.800');
   const sharedFrameBg = useColorModeValue('gray.100', 'gray.900');
@@ -228,20 +223,21 @@ export default function Layout({ children }) {
       try { localStorage.removeItem('color-mode'); } catch {}
       try { localStorage.removeItem('theme'); } catch {}
       try { document.cookie = 'chakra-ui-color-mode=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT'; } catch {}
+      try { document.documentElement.setAttribute('data-theme', 'light'); document.documentElement.style.colorScheme = 'light'; } catch {}
+    } else {
+      try { document.documentElement.style.colorScheme = ''; } catch {}
     }
   }, [isSharePublic]);
 
   const splash = showSplash;
-  const isPublicRoomAuto = /^\/views\/rooms\/[^/]+\/auto$/.test(loc.pathname || '');
-  const isSharePublic = /^\/share\//.test(loc.pathname || '');
 
   if (isPublicRoomAuto || isSharePublic) {
     // Public-facing view without app chrome (sidebar/topbar/footer)
     if (isSharePublic) {
       // Document-style wrapper for shared pages (PDF-like preview)
       return (
-        <ChakraProvider theme={sharedLightTheme} cssVarsRoot="#shared-root">
-          <Box id="shared-root" bg={sharedFrameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>
+        <>
+          <Box bg={sharedFrameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>
             <Box
               as="main"
               maxW="1100px"
@@ -293,7 +289,7 @@ export default function Layout({ children }) {
               }
             }}
           />
-        </ChakraProvider>
+        </>
       );
     }
     return (
