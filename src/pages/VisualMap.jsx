@@ -1,18 +1,27 @@
 import React, { useMemo, useState } from 'react';
 import { Box, Heading, HStack, Text, Input, VStack, Tag, TagLabel, Wrap, WrapItem, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, Tabs, TabList, TabPanels, Tab, TabPanel, SimpleGrid, Button, useColorModeValue, Switch, FormControl, FormLabel, Badge , Divider, Icon } from '@chakra-ui/react';
 import { Link as RouterLink } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { selectAllCourses } from '../store/dataSlice';
-import { getProgramColor } from '../utils/programColors';
+import { useDispatch, useSelector } from 'react-redux';
+import { selectBlocks } from '../store/blockSlice';
+import { loadBlocksThunk } from '../store/blockThunks';
 import { buildTable, printContent } from '../utils/printDesign';
-import MiniBarChart from '../components/MiniBarChart';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
-import { parseF2FDays } from '../utils/conflicts';
 import { FiPrinter, FiInfo, FiAlertCircle } from 'react-icons/fi';
 import { findDayAnnotations } from '../utils/scheduleUtils';
 import { useLocalStorage, getInitialToggleState, getExamDateSet } from '../utils/scheduleUtils';
 
 const SESSIONS = ['Morning','Afternoon','Evening'];
+
+function schemeForBlockCode(code) {
+  const s = String(code || '').toUpperCase();
+  if (s.includes('BSAB')) return 'green';
+  if (s.includes('BSBA')) return 'yellow';
+  if (s.includes('BSCRIM')) return 'red';
+  if (s.includes('BSED') || s.includes('BTLED')) return 'blue';
+  if (s.includes('BSTM')) return 'purple';
+  if (s.includes('BSENTREP')) return 'orange';
+  return 'blue';
+}
 
 function deriveSession(timeStartMinutes, explicit) {
   const s = String(explicit || '').toLowerCase();
@@ -26,7 +35,7 @@ function deriveSession(timeStartMinutes, explicit) {
   return 'Evening';
 }
 
-function BlockChips({ blocks, day, session, programByBlock }) {
+function BlockChips({ blocks, day, session }) {
   const subtle = useColorModeValue('gray.600','gray.400');
   const maxInline = 3;
   const shown = blocks.slice(0, maxInline);
@@ -34,10 +43,9 @@ function BlockChips({ blocks, day, session, programByBlock }) {
   return (
     <HStack align="start" spacing={2} wrap="wrap">
       {shown.map(b => {
-        const prog = programByBlock?.get(b);
-        const accent = getProgramColor(prog);
+        const scheme = schemeForBlockCode(b);
         return (
-          <Tag key={b} size="sm" variant="subtle" colorScheme={accent.scheme} as={RouterLink} to={`/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`}>
+          <Tag key={b} size="sm" variant="subtle" colorScheme={scheme} as={RouterLink} to={`/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`}>
             <TagLabel>{b}</TagLabel>
           </Tag>
         );
@@ -53,11 +61,10 @@ function BlockChips({ blocks, day, session, programByBlock }) {
             <PopoverBody>
               <Wrap spacing={2}>
                 {more.map(b => {
-                  const prog = programByBlock?.get(b);
-                  const accent = getProgramColor(prog);
+                  const scheme = schemeForBlockCode(b);
                   return (
                     <WrapItem key={b}>
-                      <Tag size="sm" variant="subtle" colorScheme={accent.scheme} as={RouterLink} to={`/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`}>
+                      <Tag size="sm" variant="subtle" colorScheme={scheme} as={RouterLink} to={`/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`}>
                         <TagLabel>{b}</TagLabel>
                       </Tag>
                     </WrapItem>
@@ -84,7 +91,8 @@ function roomAccent(room) {
 }
 
 export default function VisualMap() {
-  const allCourses = useSelector(selectAllCourses);
+  const dispatch = useDispatch();
+  const blocks = useSelector(selectBlocks);
   const acadData = useSelector(s => s.data.acadData);
   const holidays = useSelector(s => s.data.holidays);
   const [q, setQ] = useState('');
@@ -95,6 +103,11 @@ export default function VisualMap() {
 
   const weekDays = useMemo(() => getCurrentWeekDays(), []);
   const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
+
+  React.useEffect(() => {
+    // Ensure blocks are loaded for mapping
+    dispatch(loadBlocksThunk({}));
+  }, [dispatch]);
 
   // Compute which specific days in this week are exam dates
   const autoExamDays = useMemo(() => {
@@ -121,80 +134,75 @@ export default function VisualMap() {
 
   const daysWithExams = useMemo(() => {
     const examDays = new Set();
-    (allCourses || []).forEach(c => {
-      if (c.examDay) examDays.add(c.examDay);
-    });
+    (blocks || []).forEach(b => { const d = String(b.examDay || '').trim(); if (d) examDays.add(d); });
     return examDays;
-  }, [allCourses]);
+  }, [blocks]);
 
   const tabs = useMemo(() => {
     const norm = (v) => String(v || 'N/A').trim().replace(/\s+/g, ' ').toUpperCase();
-    const resolveRoomForDay = (c, day) => {
-      const rawRooms = String(c.room || '').split(',').map(s => s.trim()).filter(Boolean);
-      const days = (Array.isArray(c.f2fDays) && c.f2fDays.length)
-        ? c.f2fDays
-        : parseF2FDays(c.f2fSched || c.f2fsched || c.day);
-      if (rawRooms.length > 1 && Array.isArray(days) && days.length === rawRooms.length) {
-        const idx = days.findIndex(d => String(d) === String(day));
-        if (idx >= 0) return rawRooms[idx] || (c.room || 'N/A');
-      }
-      return c.room || 'N/A';
-    };
+    const tokens = (s) => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+    // No schedule dependency: program coloring removed
+
     return DAY_CODES.map(day => {
       const hasExamData = daysWithExams.has(day);
       const useExamMode = (autoExamDays.has(day) && hasExamData) || (viewMode === 'examination' && hasExamData);
 
       if (useExamMode) {
-        // Examination mode with normalized rooms
         const displayByKey = new Map();
-        (allCourses || []).forEach(c => {
-          if (c.examDay !== day) return;
-          const key = norm(c.examRoom);
-          if (!displayByKey.has(key)) displayByKey.set(key, c.examRoom || 'N/A');
+        (blocks || []).forEach(b => {
+          if (String(b.examDay || '') !== String(day)) return;
+          tokens(b.examRoom).forEach(r => {
+            const key = norm(r);
+            if (!displayByKey.has(key)) displayByKey.set(key, r || 'N/A');
+          });
         });
         const rooms = Array.from(displayByKey.values()).sort((a,b)=>String(a).localeCompare(String(b)));
         const matrix = {};
         SESSIONS.forEach(s => { matrix[s] = new Map(rooms.map(r => [r, new Map()])); });
-        (allCourses || []).forEach(c => {
-          if (c.examDay !== day) return;
-          const session = deriveSession(c.timeStartMinutes, c.examSession);
-          const room = displayByKey.get(norm(c.examRoom)) || 'N/A';
-          const block = c.section || 'N/A';
-          const prog = c.program || '';
-          if (!matrix[session]) matrix[session] = new Map(rooms.map(r => [r, new Map()]));
-          if (!matrix[session].has(room)) matrix[session].set(room, new Map());
-          const m = matrix[session].get(room);
-          if (!m.has(block)) m.set(block, prog);
+        (blocks || []).forEach(b => {
+          if (String(b.examDay || '') !== String(day)) return;
+          const session = String(b.examSession || '').trim() || 'Morning';
+          tokens(b.examRoom).forEach(r => {
+            const room = displayByKey.get(norm(r)) || 'N/A';
+            const block = b.blockCode || b.block_code || 'N/A';
+            if (!matrix[session]) matrix[session] = new Map(rooms.map(r => [r, new Map()]));
+            if (!matrix[session].has(room)) matrix[session].set(room, new Map());
+            const m = matrix[session].get(room);
+            if (!m.has(block)) m.set(block, '');
+          });
         });
         return { day, rooms, matrix, hasExamData: true, mode: 'exam' };
       }
 
-      // Regular mode with normalized rooms and per-day room resolution
+      // Regular F2F mapping via blocks
       const displayByKey = new Map();
-      (allCourses || []).forEach(c => {
-        if (!(Array.isArray(c.f2fDays) && c.f2fDays.includes(day))) return;
-        const roomForDay = resolveRoomForDay(c, day);
-        const key = norm(roomForDay);
-        if (!displayByKey.has(key)) displayByKey.set(key, roomForDay || 'N/A');
+      (blocks || []).forEach(b => {
+        const days = tokens(b.f2fSched);
+        if (!days.includes(day)) return;
+        tokens(b.room).forEach(r => {
+          const key = norm(r);
+          if (!displayByKey.has(key)) displayByKey.set(key, r || 'N/A');
+        });
       });
       const rooms = Array.from(displayByKey.values()).sort((a,b)=>String(a).localeCompare(String(b)));
       const matrix = {};
       SESSIONS.forEach(s => { matrix[s] = new Map(rooms.map(r => [r, new Map()])); });
-      (allCourses || []).forEach(c => {
-        if (!(Array.isArray(c.f2fDays) && c.f2fDays.includes(day))) return;
-        const session = deriveSession(c.timeStartMinutes, c.session);
-        const roomForDay = resolveRoomForDay(c, day);
-        const room = displayByKey.get(norm(roomForDay)) || 'N/A';
-        const block = c.section || 'N/A';
-        const prog = c.program || '';
-        if (!matrix[session]) matrix[session] = new Map(rooms.map(r => [r, new Map()]));
-        if (!matrix[session].has(room)) matrix[session].set(room, new Map());
-        const m = matrix[session].get(room);
-        if (!m.has(block)) m.set(block, prog);
+      (blocks || []).forEach(b => {
+        const days = tokens(b.f2fSched);
+        if (!days.includes(day)) return;
+        const session = String(b.session || '').trim() || 'Morning';
+        tokens(b.room).forEach(r => {
+          const room = displayByKey.get(norm(r)) || 'N/A';
+          const block = b.blockCode || b.block_code || 'N/A';
+          if (!matrix[session]) matrix[session] = new Map(rooms.map(r => [r, new Map()]));
+          if (!matrix[session].has(room)) matrix[session].set(room, new Map());
+          const m = matrix[session].get(room);
+          if (!m.has(block)) m.set(block, '');
+        });
       });
       return { day, rooms, matrix, hasExamData, mode: 'regular' };
     });
-  }, [allCourses, viewMode, daysWithExams, autoExamDays]);
+  }, [blocks, viewMode, daysWithExams, autoExamDays]);
 
   const filteredTabs = useMemo(() => {
     const ql = q.trim().toLowerCase();
@@ -344,7 +352,7 @@ export default function VisualMap() {
                       <Text fontSize="xs" color={subtle}>Blocks Present / Total</Text>
                       <Text fontWeight="800" fontSize="xl">{(() => {
                         const present = (() => { const set = new Set(); SESSIONS.forEach(ses => { t.rooms.forEach(r => { (t.matrix[ses]?.get(r) || new Map()).forEach((_, b) => set.add(b)); }); }); return set.size; })();
-                        const total = (() => { const all = new Set(); (allCourses||[]).forEach(c => all.add(c.section)); return all.size; })();
+                        const total = (() => { const all = new Set(); (blocks||[]).forEach(b => all.add(b.blockCode || b.block_code)); return all.size; })();
                         return `${present}/${total}`;
                       })()}</Text>
                     </Box>
@@ -392,47 +400,7 @@ export default function VisualMap() {
                     </table>
                   </Box>
 
-                  <Box mt={6} bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
-                    <Text fontWeight="700" mb={2}>Blocks by Program (present/total)</Text>
-                    <MiniBarChart
-                      labelKey="label"
-                      valueKey="value"
-                      colorKey="color"
-                      unit="%"
-                      maxItems={999}
-                      data={(() => {
-                        const presentByProg = new Map();
-                        const totalByProg = new Map();
-                        (allCourses || []).forEach(c => {
-                          const prog = c.program || 'N/A';
-                          const s = totalByProg.get(prog) || new Set();
-                          s.add(c.section);
-                          totalByProg.set(prog, s);
-                        });
-                        SESSIONS.forEach(ses => {
-                          t.rooms.forEach(r => {
-                            const m = t.matrix[ses]?.get(r) || new Map();
-                            m.forEach((prog, block) => {
-                              const s = presentByProg.get(prog || 'N/A') || new Set();
-                              s.add(block);
-                              presentByProg.set(prog || 'N/A', s);
-                            });
-                          });
-                        });
-                        const keys = Array.from(new Set([...totalByProg.keys(), ...presentByProg.keys()]));
-                        const rows = keys.map(k => {
-                          const total = (totalByProg.get(k) || new Set()).size;
-                          const present = (presentByProg.get(k) || new Set()).size;
-                          const pct = Math.round((present / Math.max(1, total)) * 100);
-                          const color = getProgramColor(k).bar;
-                          return { label: `${k} ${present}/${total}`, value: pct, color, _present: present };
-                        })
-                        .filter(r => r._present > 0)
-                        .sort((a,b)=> b.value - a.value || String(a.label).localeCompare(String(b.label)));
-                        return rows;
-                      })()}
-                    />
-                  </Box>
+                  {/* Program-based chart removed (no schedule dependency) */}
                 </>
               )}
             </TabPanel>
@@ -442,3 +410,4 @@ export default function VisualMap() {
     </Box>
   );
 }
+

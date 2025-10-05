@@ -4,6 +4,7 @@ import dataReducer from './dataSlice';
 import facultyReducer from './facultySlice';
 import uiReducer, { setError, setToast } from './uiSlice';
 import guestReducer from './guestSlice';
+import blocksReducer from './blockSlice';
 
 const toastMiddleware = storeAPI => next => action => {
   const result = next(action);
@@ -30,6 +31,12 @@ const toastMiddleware = storeAPI => next => action => {
       storeAPI.dispatch(setToast({ status: 'success', title: 'Faculty updated' }));
     } else if (t.startsWith('faculty/delete/')) {
       storeAPI.dispatch(setToast({ status: 'success', title: 'Faculty deleted' }));
+    } else if (t.startsWith('blocks/create/')) {
+      storeAPI.dispatch(setToast({ status: 'success', title: 'Block created' }));
+    } else if (t.startsWith('blocks/update/')) {
+      storeAPI.dispatch(setToast({ status: 'success', title: 'Block updated' }));
+    } else if (t.startsWith('blocks/delete/')) {
+      storeAPI.dispatch(setToast({ status: 'success', title: 'Block deleted' }));
     }
   }
   return result;
@@ -42,6 +49,7 @@ const store = configureStore({
     faculty: facultyReducer,
     ui: uiReducer,
     guest: guestReducer,
+    blocks: blocksReducer,
   },
   middleware: (getDefault) => getDefault().concat(toastMiddleware),
 });

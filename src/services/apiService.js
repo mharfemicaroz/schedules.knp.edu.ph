@@ -5,6 +5,7 @@ class ApiService {
   constructor() {
     this.baseURL = API_CONFIG.BASE_URL;
     this.schedulesPath = "/schedules";
+    this.blocksPath = "/blocks";
     this.authPath = "/auth";
     this.usersPath = "/users";
     this.token = null;
@@ -35,6 +36,75 @@ class ApiService {
       console.error(`API request failed: ${fullEndpoint}`, error);
       throw error;
     }
+  }
+
+  // BLOCKS API
+  async getBlocks(params = {}) {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && v !== "") qs.append(k, v);
+    });
+    const url = `${this.baseURL}${this.blocksPath}${qs.toString() ? `/?${qs.toString()}` : '/'}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async getBlockStats() {
+    const url = `${this.baseURL}${this.blocksPath}/stats`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async getBlockById(id) {
+    const url = `${this.baseURL}${this.blocksPath}/${id}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async getBlockByCode(code) {
+    const url = `${this.baseURL}${this.blocksPath}/code/${encodeURIComponent(code)}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async getBlockSchedules(id) {
+    const url = `${this.baseURL}${this.blocksPath}/${id}/schedules`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async createBlock(payload) {
+    const url = `${this.baseURL}${this.blocksPath}/`;
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async bulkCreateBlocks(items) {
+    const url = `${this.baseURL}${this.blocksPath}/bulk`;
+    const body = Array.isArray(items) ? items : { items };
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async updateBlock(id, payload) {
+    const url = `${this.baseURL}${this.blocksPath}/${id}`;
+    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async deleteBlock(id) {
+    const url = `${this.baseURL}${this.blocksPath}/${id}`;
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
   }
 
   // Helper for absolute paths (e.g., /auth, /users)
@@ -354,6 +424,39 @@ class ApiService {
       console.error(`API request failed: ${fullEndpoint}`, error);
       throw error;
     }
+  }
+
+  // ADMIN: Upsert academic calendar
+  async saveAcademicCalendar({ school_year, content }) {
+    const url = `${this.baseURL}/acadcalendar`;
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify({ school_year, content }) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  // ADMIN: Replace holidays for a year
+  async replaceHolidays(year, items) {
+    const url = `${this.baseURL}/holidays/${encodeURIComponent(year)}`;
+    const body = Array.isArray(items) ? items : (items?.items || []);
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  // ADMIN: Add single holiday
+  async addHoliday(item) {
+    const url = `${this.baseURL}/holidays`;
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  // ADMIN: Delete all holidays for a year
+  async deleteHolidayYear(year) {
+    const url = `${this.baseURL}/holidays/${encodeURIComponent(year)}`;
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
   }
 
   // AUTH API
