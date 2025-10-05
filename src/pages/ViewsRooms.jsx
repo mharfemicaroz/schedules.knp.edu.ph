@@ -77,12 +77,29 @@ export default function ViewsRooms() {
     return s;
   }, [allCourses]);
 
-  // Build day groups; per-day exam mode if date is in exam set or user switched globally
+  // Build day groups; per-day exam mode only if day is within exam dates AND has exam data
   const groups = useMemo(() => {
     const DAYS = DAY_CODES;
     const res = [];
+    const tokens = (s) => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+    const normRoom = (v) => String(v || 'N/A').trim().replace(/\s+/g, ' ').toUpperCase();
+    const dayCode = (v) => String(v || '').trim().slice(0,3).toUpperCase();
+    const getRoomsForDay = (c, d) => {
+      const roomsArr = tokens(c.room);
+      const daysArr = tokens(c.f2fSched);
+      if (roomsArr.length > 1 && daysArr.length > 1) {
+        const out = [];
+        const len = Math.min(roomsArr.length, daysArr.length);
+        for (let i = 0; i < len; i++) {
+          if (dayCode(daysArr[i]) === dayCode(d)) out.push(roomsArr[i]);
+        }
+        return out;
+      }
+      return (Array.isArray(c.f2fDays) ? c.f2fDays : daysArr).some(x => dayCode(x) === dayCode(d)) ? roomsArr : [];
+    };
     for (const day of DAYS) {
-      const useExam = autoExamDays.has(day) || viewMode === 'examination';
+      const hasExamData = daysWithExams.has(day);
+      const useExam = (autoExamDays.has(day) && hasExamData) || (viewMode === 'examination' && hasExamData);
       if (useExam) {
         // Exam aggregation by examRoom/section
         const m = new Map();
@@ -105,20 +122,22 @@ export default function ViewsRooms() {
       }
       const m = new Map();
       allCourses.forEach(c => {
-        const hasDay = Array.isArray(c.f2fDays) ? c.f2fDays.includes(day) : false;
-        if (!hasDay) return;
-        const roomKey = c.roomKey || String(c.room || 'N/A').trim().replace(/\s+/g,' ').toUpperCase();
-        const displayRoom = c.room || 'N/A';
-        const e = m.get(roomKey) || { room: displayRoom, timeSet: new Map(), minTerm: 9, minStart: Infinity };
-        const key = c.scheduleKey || '';
-        if (key) {
-          const start = Number.isFinite(c.timeStartMinutes) ? c.timeStartMinutes : 1e9;
-          const prev = e.timeSet.get(key);
-          if (prev == null || start < prev) e.timeSet.set(key, start);
-          if ((c.termOrder ?? 9) < e.minTerm) e.minTerm = c.termOrder ?? 9;
-          if (start < e.minStart) e.minStart = start;
-        }
-        m.set(roomKey, e);
+        const roomsForThisDay = getRoomsForDay(c, day);
+        if (roomsForThisDay.length === 0) return;
+        roomsForThisDay.forEach(r => {
+          const roomKey = normRoom(r);
+          const displayRoom = r || 'N/A';
+          const e = m.get(roomKey) || { room: displayRoom, timeSet: new Map(), minTerm: 9, minStart: Infinity };
+          const key = c.scheduleKey || '';
+          if (key) {
+            const start = Number.isFinite(c.timeStartMinutes) ? c.timeStartMinutes : 1e9;
+            const prev = e.timeSet.get(key);
+            if (prev == null || start < prev) e.timeSet.set(key, start);
+            if ((c.termOrder ?? 9) < e.minTerm) e.minTerm = c.termOrder ?? 9;
+            if (start < e.minStart) e.minStart = start;
+          }
+          m.set(roomKey, e);
+        });
       });
       const rows = Array.from(m.values()).map(e => {
         const times = Array.from(e.timeSet.entries()).sort((a,b)=> a[1]-b[1]).map(x => x[0]);
@@ -161,7 +180,7 @@ export default function ViewsRooms() {
     const unschedCount = unschedRows.reduce((s, r) => s + (r.uniqueCount || 0), 0);
     res.push({ day: 'Unscheduled', rows: unschedRows, count: unschedCount, mode: 'regular' });
     return res;
-  }, [allCourses, autoExamDays, viewMode]);
+  }, [allCourses, autoExamDays, viewMode, daysWithExams]);
 
   const filteredGroups = useMemo(() => {
     const ql = q.trim().toLowerCase();
@@ -244,7 +263,7 @@ export default function ViewsRooms() {
             <Tab key={g.day} isDisabled={g.rows.length === 0}>
               <HStack spacing={2}>
                 <Text>{labelByCode[g.day] || g.day}</Text>
-                {(autoExamDays.has(g.day) || (viewMode === 'examination' && daysWithExams.has(g.day))) && (
+                {(((autoExamDays.has(g.day) && daysWithExams.has(g.day)) || (viewMode === 'examination' && daysWithExams.has(g.day)))) && (
                   <Badge size="sm" colorScheme="green" variant="subtle">Exam</Badge>
                 )}
                 {dayAnnotations[g.day]?.holiday && (
@@ -278,19 +297,20 @@ export default function ViewsRooms() {
                   <Text fontSize="sm" color="red.600">{dayAnnotations[g.day].holiday.type}</Text>
                 </Box>
               )}
-              {dayAnnotations[g.day]?.events?.length > 0 && (
-                <Box p={4} mb={4} bg="purple.50" borderWidth="1px" borderColor="purple.200" rounded="md">
-                  {dayAnnotations[g.day].events
-                    .filter(evt => ['external','internal'].includes(String(evt.type||'').toLowerCase()) || String(evt.mode||'').toLowerCase() !== 'default')
-                    .map((evt, idx) => (
-                      <Box key={idx} mb={idx < dayAnnotations[g.day].events.length - 1 ? 2 : 0}>
+              {(() => {
+                const filteredEvents = dayAnnotations[g.day]?.events?.filter(evt => (['external','internal'].includes(String(evt.type||'').toLowerCase()) || String(evt.mode||'').toLowerCase() !== 'default') && !String(evt.event || '').toLowerCase().includes('exam')) || [];
+                return filteredEvents.length > 0 && (
+                  <Box p={4} mb={4} bg="purple.50" borderWidth="1px" borderColor="purple.200" rounded="md">
+                    {filteredEvents.map((evt, idx) => (
+                      <Box key={idx} mb={idx < filteredEvents.length - 1 ? 2 : 0}>
                         <Text fontWeight="700" color="purple.600">{evt.event}</Text>
                         {evt.type && <Text fontSize="sm" color="purple.600">Type: {evt.type}</Text>}
                         {evt.mode && <Text fontSize="sm" color="purple.600">Mode: {evt.mode}</Text>}
                       </Box>
-                  ))}
-                </Box>
-              )}
+                    ))}
+                  </Box>
+                );
+              })()}
               {dayAnnotations[g.day]?.mode === 'no_class' ? (
                 <Box p={8} bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" mb={4} textAlign="center" color={subtle}>
                   <Text fontWeight="700" fontSize="lg" mb={2}>No Classes Today</Text>

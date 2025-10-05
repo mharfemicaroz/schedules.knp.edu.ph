@@ -35,12 +35,44 @@ export default function RoomSchedule() {
   const cancelRef = React.useRef();
 
   const rows = useMemo(() => {
-    const targetKey = String(room || '').trim().replace(/\s+/g,' ').toUpperCase();
-    let list = allCourses.filter(c => (c.roomKey || String(c.room || '').trim().replace(/\s+/g,' ').toUpperCase()) === targetKey);
+    const tokens = (s) => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+    const normRoom = (v) => String(v || 'N/A').trim().replace(/\s+/g, ' ').toUpperCase();
+    const dayCode = (v) => String(v || '').trim().slice(0,3).toUpperCase();
+    const getRoomsForDay = (c, d) => {
+      const roomsArr = tokens(c.room);
+      const daysArr = tokens(c.f2fSched);
+      if (roomsArr.length > 1 && daysArr.length > 1) {
+        const out = [];
+        const len = Math.min(roomsArr.length, daysArr.length);
+        for (let i = 0; i < len; i++) {
+          if (dayCode(daysArr[i]) === dayCode(d)) out.push(roomsArr[i]);
+        }
+        return out;
+      }
+      const days = Array.isArray(c.f2fDays) ? c.f2fDays : daysArr;
+      return days.some(x => dayCode(x) === dayCode(d)) ? roomsArr : [];
+    };
+    const targetKey = normRoom(room);
+    let list = allCourses.filter(c => {
+      // Include course if assigned to this room for any day
+      return ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].some(d => getRoomsForDay(c, d).some(r => normRoom(r) === targetKey));
+    });
     if (filterDay) {
-      list = list.filter(c => Array.isArray(c.f2fDays) && c.f2fDays.includes(filterDay));
+      list = list.filter(c => getRoomsForDay(c, filterDay).some(r => normRoom(r) === targetKey));
     }
-    return list.sort((a,b) => {
+    // Deduplicate: same block + faculty + time + term (+day)
+    const seen = new Map();
+    const uniq = [];
+    for (const c of list) {
+      const dayKey = filterDay || c.day || '';
+      const timeKey = c.scheduleKey || `${c.timeStartMinutes}-${c.timeEndMinutes}`;
+      const termKey = c.semester || c.term || '';
+      const blockKey = c.section || '';
+      const facultyKey = c.facultyName || c.faculty || '';
+      const key = `${dayKey}|${timeKey}|${termKey}|${blockKey}|${facultyKey}`;
+      if (!seen.has(key)) { seen.set(key, true); uniq.push(c); }
+    }
+    return uniq.sort((a,b) => {
       const oa = a.termOrder ?? 9, ob = b.termOrder ?? 9;
       if (oa !== ob) return oa - ob;
       const ta = a.timeStartMinutes ?? Infinity;

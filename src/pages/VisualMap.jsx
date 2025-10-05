@@ -184,11 +184,28 @@ export default function VisualMap() {
       }
 
       // Regular F2F mapping via blocks
+      // If both `room` and `f2fSched` contain multiple comma-separated values,
+      // interpret them as index-aligned pairs: Room1->Day1, Room2->Day2, etc.
+      const getRoomsForDay = (b, d) => {
+        const roomsArr = tokens(b.room);
+        const daysArr = tokens(b.f2fSched);
+        // Pairwise mapping when both are multiple values
+        if (roomsArr.length > 1 && daysArr.length > 1) {
+          const out = [];
+          const len = Math.min(roomsArr.length, daysArr.length);
+          for (let i = 0; i < len; i++) {
+            if (String(daysArr[i]) === String(d)) out.push(roomsArr[i]);
+          }
+          return out;
+        }
+        // Fallback to legacy behavior
+        return daysArr.includes(d) ? roomsArr : [];
+      };
+
       const displayByKey = new Map();
       (blocks || []).forEach(b => {
-        const days = tokens(b.f2fSched);
-        if (!days.includes(day)) return;
-        tokens(b.room).forEach(r => {
+        const roomsForThisDay = getRoomsForDay(b, day);
+        roomsForThisDay.forEach(r => {
           const key = norm(r);
           if (!displayByKey.has(key)) displayByKey.set(key, r || 'N/A');
         });
@@ -197,10 +214,9 @@ export default function VisualMap() {
       const matrix = {};
       SESSIONS.forEach(s => { matrix[s] = new Map(rooms.map(r => [r, new Map()])); });
       (blocks || []).forEach(b => {
-        const days = tokens(b.f2fSched);
-        if (!days.includes(day)) return;
         const session = canonSession(b.session || 'Morning');
-        tokens(b.room).forEach(r => {
+        const roomsForThisDay = getRoomsForDay(b, day);
+        roomsForThisDay.forEach(r => {
           const room = displayByKey.get(norm(r)) || 'N/A';
           const block = b.blockCode || b.block_code || 'N/A';
           if (!matrix[session]) matrix[session] = new Map(rooms.map(r => [r, new Map()]));
@@ -290,6 +306,9 @@ export default function VisualMap() {
             </HStack>
             <HStack>
               <Badge colorScheme="purple" variant="subtle" rounded="full">Rooms: {t.rooms.length}</Badge>
+              <Badge colorScheme="teal" variant="subtle" rounded="full">
+                Blocks: {(() => { const set = new Set(); SESSIONS.forEach(ses => { t.rooms.forEach(r => { (t.matrix[ses]?.get(r) || new Map()).forEach((_, b) => set.add(b)); }); }); return set.size; })()}
+              </Badge>
               <Button leftIcon={<FiPrinter />} onClick={() => onPrint(t)} variant="outline" size="sm">Print</Button>
             </HStack>
           </HStack>

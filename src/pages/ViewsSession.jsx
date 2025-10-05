@@ -1,11 +1,11 @@
 ﻿import React, { useMemo, useState } from 'react';
-import { Box, Heading, Tabs, TabList, TabPanels, Tab, TabPanel, useColorModeValue, HStack, Text, Button, Input, VStack, Wrap, WrapItem, Tag, TagLabel, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody, PopoverCloseButton, SimpleGrid, RadioGroup, Radio, Switch, FormControl, FormLabel, Badge, Icon } from '@chakra-ui/react';
+import { Box, Heading, Tabs, TabList, TabPanels, Tooltip, Tab, TabPanel, useColorModeValue, HStack, Text, Button, Input, VStack, Wrap, WrapItem, Tag, TagLabel, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody, PopoverCloseButton, SimpleGrid, RadioGroup, Radio, Switch, FormControl, FormLabel, Badge, Icon } from '@chakra-ui/react';
 import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { getProgramColor } from '../utils/programColors';
 import MiniBarChart from '../components/MiniBarChart';
-import { FiPrinter, FiAlertCircle } from 'react-icons/fi';
+import { FiPrinter, FiAlertCircle, FiEye } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 import { useLocalStorage, getInitialToggleState, getExamDateSet, findDayAnnotations } from '../utils/scheduleUtils';
@@ -100,24 +100,48 @@ export default function ViewsSession() {
         });
         return { day, rooms, matrix, hasExamData: true, mode: 'exam' };
       } else {
-        // Regular F2F mode or days without exam data
-        const roomSet = new Set();
+        // Regular F2F mode with index-aligned room/day pairing
+        const tokens = (s) => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+        const norm = (v) => String(v || 'N/A').trim().replace(/\s+/g, ' ').toUpperCase();
+        const dayCode = (v) => String(v || '').trim().slice(0,3).toUpperCase();
+        const getRoomsForDay = (c, d) => {
+          const roomsArr = tokens(c.room);
+          const daysArr = tokens(c.f2fSched);
+          if (roomsArr.length > 1 && daysArr.length > 1) {
+            const out = [];
+            const len = Math.min(roomsArr.length, daysArr.length);
+            for (let i = 0; i < len; i++) {
+              if (dayCode(daysArr[i]) === dayCode(d)) out.push(roomsArr[i]);
+            }
+            return out;
+          }
+          const days = Array.isArray(c.f2fDays) ? c.f2fDays : daysArr;
+          return days.some(x => dayCode(x) === dayCode(d)) ? roomsArr : [];
+        };
+
+        const displayByKey = new Map();
         allCourses.forEach(c => {
-          if (Array.isArray(c.f2fDays) && c.f2fDays.includes(day)) roomSet.add(c.room || '');
+          const roomsForThisDay = getRoomsForDay(c, day);
+          roomsForThisDay.forEach(r => {
+            const key = norm(r);
+            if (!displayByKey.has(key)) displayByKey.set(key, r || 'N/A');
+          });
         });
-        const rooms = Array.from(roomSet).sort((a,b)=>String(a).localeCompare(String(b)));
+        const rooms = Array.from(displayByKey.values()).sort((a,b)=>String(a).localeCompare(String(b)));
         const matrix = {};
         SESSIONS.forEach(s => { matrix[s] = new Map(rooms.map(r => [r, new Map()])); });
         allCourses.forEach(c => {
-          if (!(Array.isArray(c.f2fDays) && c.f2fDays.includes(day))) return;
           const session = deriveSession(c.timeStartMinutes, c.session);
-          const room = c.room || '';
-          const block = c.section || '';
-          const prog = c.program || '';
-          if (!matrix[session]) matrix[session] = new Map(rooms.map(r => [r, new Map()]));
-          if (!matrix[session].has(room)) matrix[session].set(room, new Map());
-          const m = matrix[session].get(room);
-          if (!m.has(block)) m.set(block, prog);
+          const roomsForThisDay = getRoomsForDay(c, day);
+          roomsForThisDay.forEach(r => {
+            const room = displayByKey.get(norm(r)) || 'N/A';
+            const block = c.section || '';
+            const prog = c.program || '';
+            if (!matrix[session]) matrix[session] = new Map(rooms.map(rr => [rr, new Map()]));
+            if (!matrix[session].has(room)) matrix[session].set(room, new Map());
+            const m = matrix[session].get(room);
+            if (!m.has(block)) m.set(block, prog);
+          });
         });
         return { day, rooms, matrix, hasExamData, mode: 'regular' };
       }
@@ -154,24 +178,44 @@ export default function ViewsSession() {
         return { room, sessions, mode: 'exam' };
       });
     } else {
-      // Regular F2F mode - existing logic
+      // Regular F2F mode - index-aligned room/day pairing
+      const tokens = (s) => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+      const norm = (v) => String(v || 'N/A').trim().replace(/\s+/g, ' ').toUpperCase();
+      const dayCode = (v) => String(v || '').trim().slice(0,3).toUpperCase();
+      const getRoomsForDay = (c, d) => {
+        const roomsArr = tokens(c.room);
+        const daysArr = tokens(c.f2fSched);
+        if (roomsArr.length > 1 && daysArr.length > 1) {
+          const out = [];
+          const len = Math.min(roomsArr.length, daysArr.length);
+          for (let i = 0; i < len; i++) {
+            if (dayCode(daysArr[i]) === dayCode(d)) out.push(roomsArr[i]);
+          }
+          return out;
+        }
+        const days = Array.isArray(c.f2fDays) ? c.f2fDays : daysArr;
+        return days.some(x => dayCode(x) === dayCode(d)) ? roomsArr : [];
+      };
+
       const roomSet = new Set();
-      allCourses.forEach(c => { if (c.room) roomSet.add(c.room); });
+      allCourses.forEach(c => { tokens(c.room).forEach(r => { if (r) roomSet.add(r); }); });
       const rooms = Array.from(roomSet).sort((a,b)=>String(a).localeCompare(String(b)));
       return rooms.map(room => {
+        const targetKey = norm(room);
         const sessions = {};
         SESSIONS.forEach(s => { sessions[s] = new Map(DAY_CODES.map(d => [d, new Map()])); });
         allCourses.forEach(c => {
-          const r = c.room || '';
-          if (String(r) !== String(room)) return;
-          (Array.isArray(c.f2fDays) ? c.f2fDays : []).forEach(day => {
-            const ses = deriveSession(c.timeStartMinutes, c.session);
-            if (!sessions[ses]) sessions[ses] = new Map(DAY_CODES.map(d => [d, new Map()]));
-            if (!sessions[ses].has(day)) sessions[ses].set(day, new Map());
-            const m = sessions[ses].get(day);
-            const block = c.section || '';
-            const prog = c.program || '';
-            if (!m.has(block)) m.set(block, prog);
+          DAY_CODES.forEach(day => {
+            const roomsForThisDay = getRoomsForDay(c, day);
+            if (roomsForThisDay.some(r => norm(r) === targetKey)) {
+              const ses = deriveSession(c.timeStartMinutes, c.session);
+              if (!sessions[ses]) sessions[ses] = new Map(DAY_CODES.map(d => [d, new Map()]));
+              if (!sessions[ses].has(day)) sessions[ses].set(day, new Map());
+              const m = sessions[ses].get(day);
+              const block = c.section || '';
+              const prog = c.program || '';
+              if (!m.has(block)) m.set(block, prog);
+            }
           });
         });
         return { room, sessions, mode: 'regular' };
@@ -366,13 +410,6 @@ export default function ViewsSession() {
                   <Button leftIcon={<FiPrinter />} onClick={() => onPrint(t)} variant="outline" size="sm">Print</Button>
                 </HStack>
 
-                {!t.hasExamData && viewMode === 'examination' ? (
-                  <Box p={4} bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" mb={4}>
-                    <Text color={subtle} fontSize="sm">
-                      No examination schedule available for {labelByCode[t.day] || t.day}. Showing regular F2F schedule instead.
-                    </Text>
-                  </Box>
-                ) : null}
                 {dayAnnotations[t.day]?.holiday && (
                   <Box p={4} mb={4} bg="red.50" borderWidth="1px" borderColor="red.200" rounded="md" display="flex" alignItems="center" gap={3}>
                     <Icon as={FiAlertCircle} color="red.500" boxSize={5} />
@@ -383,19 +420,20 @@ export default function ViewsSession() {
                   </Box>
                 )}
 
-                {dayAnnotations[t.day]?.events?.length > 0 && (
-                  <Box p={4} mb={4} bg="purple.50" borderWidth="1px" borderColor="purple.200" rounded="md">
-                    {dayAnnotations[t.day].events
-                      .filter(evt => ['external','internal'].includes(String(evt.type||'').toLowerCase()) || String(evt.mode||'').toLowerCase() !== 'default')
-                      .map((evt, idx) => (
-                        <Box key={idx} mb={idx < dayAnnotations[t.day].events.length - 1 ? 2 : 0}>
+                {(() => {
+                  const filteredEvents = dayAnnotations[t.day]?.events?.filter(evt => (['external','internal'].includes(String(evt.type||'').toLowerCase()) || String(evt.mode||'').toLowerCase() !== 'default') && !String(evt.event || '').toLowerCase().includes('exam')) || [];
+                  return filteredEvents.length > 0 && (
+                    <Box p={4} mb={4} bg="purple.50" borderWidth="1px" borderColor="purple.200" rounded="md">
+                      {filteredEvents.map((evt, idx) => (
+                        <Box key={idx} mb={idx < filteredEvents.length - 1 ? 2 : 0}>
                           <Text fontWeight="700" color="purple.600">{evt.event}</Text>
                           {evt.type && <Text fontSize="sm" color="purple.600">Type: {evt.type}</Text>}
                           {evt.mode && <Text fontSize="sm" color="purple.600">Mode: {evt.mode}</Text>}
                         </Box>
-                    ))}
-                  </Box>
-                )}
+                      ))}
+                    </Box>
+                  );
+                })()}
 
                 {dayAnnotations[t.day]?.mode === 'no_class' ? (
                   <Box p={8} bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" mb={4} textAlign="center" color={subtle}>
@@ -443,15 +481,24 @@ export default function ViewsSession() {
                           rounded="xl"
                           p={4}
                           position="relative"
-                          transition="transform 0.18s ease, box-shadow 0.18s ease"
-                          cursor="pointer"
-                          _hover={{ textDecoration: 'none' }}
-                          onClick={() => navigate(`/views/rooms/${encodeURIComponent(r)}?day=${encodeURIComponent(t.day)}`)}
+                        transition="transform 0.18s ease, box-shadow 0.18s ease"
+                        _hover={{ textDecoration: 'none' }}
                         >
                           <Box position="absolute" top={0} left={0} right={0} h="4px" bg={roomAccent(r)} roundedTop="xl" />
                           <VStack align="stretch" spacing={3}>
                             <HStack justify="space-between">
                               <Text fontWeight="800">{r}</Text>
+                              <Tooltip label={`View schedule (${labelByCode[t.day] || t.day})`}>
+                                <Button
+                                  aria-label="View room schedule"
+                                  leftIcon={<FiEye />}
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => navigate(`/views/rooms/${encodeURIComponent(r)}?day=${encodeURIComponent(t.day)}`)}
+                                >
+                                  View
+                                </Button>
+                              </Tooltip>
                             </HStack>
                             <VStack align="stretch" spacing={2}>
                               <VStack align="stretch" spacing={1}>

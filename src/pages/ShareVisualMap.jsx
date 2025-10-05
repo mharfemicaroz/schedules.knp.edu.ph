@@ -13,7 +13,10 @@ import {
   Badge,
   Skeleton,
   Divider,
+  Button,
 } from '@chakra-ui/react';
+import { FiPrinter } from 'react-icons/fi';
+// PDF download removed as requested
 import { useDispatch, useSelector } from 'react-redux';
 import { selectBlocks } from '../store/blockSlice';
 import { loadBlocksThunk } from '../store/blockThunks';
@@ -156,20 +159,33 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
         return { day, label: wd.label, rooms, matrix, mode: 'exam' };
       }
 
+      // Regular F2F mapping with index-aligned room/day pairing when both are multiple
+      const getRoomsForDay = (b, d) => {
+        const roomsArr = tokens(b.room);
+        const daysArr = tokens(b.f2fSched);
+        if (roomsArr.length > 1 && daysArr.length > 1) {
+          const out = [];
+          const len = Math.min(roomsArr.length, daysArr.length);
+          for (let i = 0; i < len; i++) {
+            if (String(daysArr[i]) === String(d)) out.push(roomsArr[i]);
+          }
+          return out;
+        }
+        return daysArr.includes(d) ? roomsArr : [];
+      };
+
       const displayByKey = new Map();
       (blocks || []).forEach(b => {
-        const days = tokens(b.f2fSched);
-        if (!days.includes(day)) return;
-        tokens(b.room).forEach(r => { const key = norm(r); if (!displayByKey.has(key)) displayByKey.set(key, r || 'N/A'); });
+        const roomsForThisDay = getRoomsForDay(b, day);
+        roomsForThisDay.forEach(r => { const key = norm(r); if (!displayByKey.has(key)) displayByKey.set(key, r || 'N/A'); });
       });
       const rooms = Array.from(displayByKey.values()).sort((a,b)=>String(a).localeCompare(String(b)));
       const matrix = { Morning: new Map(), Afternoon: new Map(), Evening: new Map() };
       rooms.forEach(r => { matrix.Morning.set(r, new Map()); matrix.Afternoon.set(r, new Map()); matrix.Evening.set(r, new Map()); });
       (blocks || []).forEach(b => {
-        const days = tokens(b.f2fSched);
-        if (!days.includes(day)) return;
         const session = canonSession(b.session || 'Morning');
-        tokens(b.room).forEach(r => {
+        const roomsForThisDay = getRoomsForDay(b, day);
+        roomsForThisDay.forEach(r => {
           const room = displayByKey.get(norm(r)) || 'N/A';
           const block = b.blockCode || b.block_code || 'N/A';
           if (!matrix[session]) matrix[session] = new Map(rooms.map(rr => [rr, new Map()]));
@@ -271,11 +287,15 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
     </Box>
   );
 
+  const handlePrint = React.useCallback(() => { window.print(); }, []);
+
   return (
     <Box p={{ base: 2, md: 4 }}>
       <HStack justify="space-between" align="center" mb={2} className="no-print">
-        <Heading size="md">Session × Room Map (Existing Schedule)</Heading>
-        {/* zoom controls removed (auto-fit) */}
+        <Heading size="md">Classroom Assignment</Heading>
+        <HStack>
+          <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={handlePrint}>Print</Button>
+        </HStack>
       </HStack>
 
       <Divider mb={3} />
@@ -295,8 +315,11 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
                         <Badge size="sm" colorScheme="green" variant="subtle" rounded="full">Exam</Badge>
                       )}
                     </HStack>
-                    <HStack color={subtle} fontSize="sm">
+                  <HStack color={subtle} fontSize="sm">
                       <Badge colorScheme="purple" variant="subtle" rounded="full">Rooms: {t.rooms.length}</Badge>
+                      <Badge colorScheme="teal" variant="subtle" rounded="full">
+                        Blocks: {(() => { const set = new Set(); ['Morning','Afternoon','Evening'].forEach(ses => { t.rooms.forEach(r => { (t.matrix[ses]?.get(r) || new Map()).forEach((_, b) => set.add(b)); }); }); return set.size; })()}
+                      </Badge>
                       {roomParts.length > 1 && <Badge colorScheme="blue" variant="subtle" rounded="full">Split view</Badge>}
                     </HStack>
                   </HStack>
@@ -324,10 +347,20 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
       <style>{`
         .doc-viewer { background: transparent; }
         @media print {
-          @page { size: A4 landscape; }
+          @page { size: 8.5in 13in landscape; margin: 8mm; }
           .no-print { display: none !important; }
           .print-break { page-break-after: always; }
           html, body { background: white !important; }
+          .doc-viewer { padding: 0 !important; }
+          .doc-viewer > div { width: 100% !important; }
+          .doc-viewer table { table-layout: fixed !important; width: 100% !important; border-spacing: 0 !important; }
+          .doc-viewer th, .doc-viewer td { padding: 4px 6px !important; font-size: 11px !important; word-wrap: break-word; white-space: normal; overflow-wrap: anywhere; position: static !important; }
+          .doc-viewer th { min-width: 100px !important; }
+          .doc-viewer h1, .doc-viewer h2, .doc-viewer h3, .doc-viewer h4 { font-size: 14px !important; margin: 0 0 4px !important; }
+          /* Fit the content to printable width */
+          .doc-viewer > div { width: 100% !important; }
+          /* Avoid truncation of long labels */
+          th, td { word-wrap: break-word; white-space: normal; }
         }
       `}</style>
     </Box>

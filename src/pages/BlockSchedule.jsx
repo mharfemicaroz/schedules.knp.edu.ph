@@ -50,7 +50,19 @@ export default function BlockSchedule() {
         return true;
       });
     }
-    return list.sort((a,b)=>{
+    // Deduplicate: same block + faculty + time + term (+day, +room)
+    const seen = new Map();
+    const uniq = [];
+    for (const c of list) {
+      const dayKey = dayFilter || c.day || '';
+      const timeKey = c.scheduleKey || `${c.timeStartMinutes}-${c.timeEndMinutes}`;
+      const termKey = c.semester || c.term || '';
+      const roomKey = c.room || '';
+      const facultyKey = c.facultyName || c.faculty || '';
+      const key = `${dayKey}|${timeKey}|${termKey}|${roomKey}|${facultyKey}`;
+      if (!seen.has(key)) { seen.set(key, true); uniq.push(c); }
+    }
+    return uniq.sort((a,b)=>{
       const oa = a.termOrder ?? 9, ob = b.termOrder ?? 9;
       if (oa !== ob) return oa - ob;
       const ta = a.timeStartMinutes ?? Infinity;
