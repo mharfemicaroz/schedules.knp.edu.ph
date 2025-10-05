@@ -138,6 +138,7 @@ export default function Layout({ children }) {
   const [routeBusy, setRouteBusy] = React.useState(false);
   const isPublicRoomAuto = /^\/views\/rooms\/[^/]+\/auto$/.test(loc.pathname || '');
   const isSharePublic = /^\/share\//.test(loc.pathname || '');
+  const isShareVisualMap = isSharePublic && /^\/share\/visual-map/.test(loc.pathname || '');
   // Hoist color values used by shared/public branch to keep hook order stable
   const sharedPaperBg = useColorModeValue('white', 'gray.800');
   const sharedFrameBg = useColorModeValue('gray.100', 'gray.900');
@@ -234,7 +235,30 @@ export default function Layout({ children }) {
   if (isPublicRoomAuto || isSharePublic) {
     // Public-facing view without app chrome (sidebar/topbar/footer)
     if (isSharePublic) {
-      // Document-style wrapper for shared pages (PDF-like preview)
+      // Special-case: full-bleed canvas for Share Visual Map (landscape doc preview)
+      if (isShareVisualMap) {
+        return (
+          <>
+            <Box bg={sharedFrameBg} minH="100vh" px={{ base: 2, md: 6 }} py={{ base: 2, md: 6 }}>
+              {splash ? <SplashScreen /> : children}
+            </Box>
+            <FirstVisitGuestModal
+              isOpen={guest.modalOpen}
+              onSubmit={async ({ name, role }) => {
+                try {
+                  localStorage.setItem('guest:name', name);
+                  localStorage.setItem('guest:role', role);
+                  rdispatch(setGuestAction({ name, role }));
+                  await rdispatch(touchGuestThunk({ name, role, route: getCurrentRoute() }));
+                } finally {
+                  rdispatch(closeGuestModal());
+                }
+              }}
+            />
+          </>
+        );
+      }
+      // Default shared view: framed, fixed max width (portrait-style paper)
       return (
         <>
           <Box bg={sharedFrameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>

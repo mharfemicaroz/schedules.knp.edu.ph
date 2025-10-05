@@ -21,6 +21,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminGuestLogs from './pages/AdminGuestLogs';
 import AdminBlockSettings from './pages/AdminBlockSettings';
 import AdminAcademicCalendar from './pages/AdminAcademicCalendar';
+import ShareVisualMap from './pages/ShareVisualMap';
 import ReportsFacultySummary from './pages/ReportsFacultySummary';
 import Unauthorized from './pages/Unauthorized';
 import RequireAdmin from './components/RequireAdmin';
@@ -75,6 +76,7 @@ function App() {
               <Route path="/share/rooms/:room" element={<RoomSchedule />} />
               <Route path="/share/session" element={<ViewsSession />} />
               <Route path="/share/session/block/:block" element={<BlockSchedule />} />
+              <Route path="/share/visual-map" element={<ShareVisualMap />} />
               <Route path="/unauthorized" element={<Unauthorized />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
