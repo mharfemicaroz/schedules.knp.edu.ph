@@ -462,8 +462,8 @@ export default function DepartmentSchedule() {
                         <Td>{c.room || '—'}</Td>
                         {viewMode !== 'examination' && (
                           <>
-                            <Td>{c.day || '�?"'}</Td>
-                            <Td>{c.f2fSched || c.f2fsched || (Array.isArray(c.f2fDays) ? c.f2fDays.join(',') : '�?"')}</Td>
+                            <Td>{c.day || ''}</Td>
+                            <Td>{c.f2fSched || c.f2fsched || (Array.isArray(c.f2fDays) ? c.f2fDays.join(',') : '')}</Td>
                           </>
                         )}
                         <Td>{c.facultyName}</Td>
