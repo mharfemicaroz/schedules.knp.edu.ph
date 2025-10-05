@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Box, Heading, HStack, Text, Input, VStack, Tag, TagLabel, Wrap, WrapItem, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, SimpleGrid, Button, useColorModeValue, Badge , Divider, Icon } from '@chakra-ui/react';
+import { Box, Heading, HStack, Text, Input, VStack, Tag, TagLabel, Wrap, WrapItem, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, SimpleGrid, Button, useColorModeValue, Badge , Divider, Icon, Link as ChakraLink } from '@chakra-ui/react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectBlocks } from '../store/blockSlice';
@@ -9,6 +9,7 @@ import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 import { FiPrinter, FiInfo, FiAlertCircle } from 'react-icons/fi';
 import { findDayAnnotations } from '../utils/scheduleUtils';
 import { getExamDateSet } from '../utils/scheduleUtils';
+import { encodeShareBlock, encodeShareRoom } from '../utils/share';
 
 const SESSIONS = ['Morning','Afternoon','Evening'];
 const ROOM_SPLIT_THRESHOLD = 10; // split rooms into two parts when exceeding this count
@@ -45,10 +46,25 @@ function BlockChips({ blocks, day, session }) {
     <HStack align="start" spacing={2} wrap="wrap">
       {shown.map(b => {
         const scheme = schemeForBlockCode(b);
+        const href = `/share/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`;
         return (
-          <Tag key={b} size="sm" variant="subtle" colorScheme={scheme} as={RouterLink} to={`/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`}>
-            <TagLabel>{b}</TagLabel>
-          </Tag>
+          <ChakraLink
+            as={RouterLink}
+            to={href}
+            key={b}
+            _hover={{ textDecoration: 'none' }}
+          >
+            <Tag
+              size="sm"
+              variant="subtle"
+              colorScheme={scheme}
+              cursor="pointer"
+              role="link"
+              tabIndex={0}
+            >
+              <TagLabel>{b}</TagLabel>
+            </Tag>
+          </ChakraLink>
         );
       })}
       {more.length > 0 && (
@@ -63,11 +79,14 @@ function BlockChips({ blocks, day, session }) {
               <Wrap spacing={2}>
                 {more.map(b => {
                   const scheme = schemeForBlockCode(b);
+                  const href = `/share/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`;
                   return (
                     <WrapItem key={b}>
-                      <Tag size="sm" variant="subtle" colorScheme={scheme} as={RouterLink} to={`/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(day)}&session=${encodeURIComponent(session)}`}>
-                        <TagLabel>{b}</TagLabel>
-                      </Tag>
+                      <ChakraLink as={RouterLink} to={href} _hover={{ textDecoration: 'none' }}>
+                        <Tag size="sm" variant="subtle" colorScheme={scheme} cursor="pointer" role="link" tabIndex={0}>
+                          <TagLabel>{b}</TagLabel>
+                        </Tag>
+                      </ChakraLink>
                     </WrapItem>
                   );
                 })}
@@ -96,10 +115,18 @@ export default function VisualMap() {
   const blocks = useSelector(selectBlocks);
   const acadData = useSelector(s => s.data.acadData);
   const holidays = useSelector(s => s.data.holidays);
+  const authUser = useSelector(s => s.auth.user);
   const [q, setQ] = useState('');
   const border = useColorModeValue('gray.200','gray.700');
   const cellBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.400');
+  const partHeaderBg = useColorModeValue('white','gray.900');
+  // const headerRowBg = useColorModeValue('gray.100','gray.800');
+  // const rowHoverBg = useColorModeValue('gray.50','gray.800');
+  const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
+  // const partHeaderBg = useColorModeValue('white','gray.900');
+  const headerRowBg = useColorModeValue('gray.100','gray.800');
+  const rowHoverBg = useColorModeValue('gray.50','gray.800');
 
   const weekDays = useMemo(() => getCurrentWeekDays(), []);
   const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
@@ -366,28 +393,35 @@ export default function VisualMap() {
                     {roomParts.map((roomsSlice, partIdx) => (
                       <Box key={`${t.day}-part-${partIdx}`} mb={4}>
                         {roomParts.length > 1 && (
-                          <Box px={4} py={2} bg={useColorModeValue('white','gray.900')} borderTopWidth={partIdx===0? '0':'1px'} borderColor={border}>
+                          <Box px={4} py={2} bg={partHeaderBg} borderTopWidth={partIdx===0? '0':'1px'} borderColor={border}>
                             <Text fontSize="sm" color={subtle}>Rooms {partIdx+1} of {roomParts.length}</Text>
                           </Box>
                         )}
                         <Box overflowX="auto" borderWidth="1px" borderColor={border} rounded="xl" bg={cellBg}>
                           <Box as="table" w="100%" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                             <Box as="thead">
-                              <Box as="tr" bg={useColorModeValue('gray.100','gray.800')}>
+                              <Box as="tr" bg={headerRowBg}>
                                 <Box as="th" position="sticky" left={0} zIndex={1} bg={cellBg} p="10px 12px" textAlign="left" borderRightWidth="1px" borderColor={border} width="150px">Session</Box>
-                                {roomsSlice.map((r) => (
-                                  <Box as="th" key={r} p="10px 12px" textAlign="left" borderLeftWidth="1px" borderColor={border}>
-                                    <HStack>
-                                      <Box w="10px" h="10px" rounded="full" bg={roomAccent(r)}></Box>
-                                      <Text fontWeight="600" noOfLines={1}>{r}</Text>
-                                    </HStack>
-                                  </Box>
-                                ))}
+                                {roomsSlice.map((r) => {
+                                  const to = isAdmin
+                                    ? `/views/rooms/${encodeURIComponent(r)}?day=${encodeURIComponent(t.day)}`
+                                    : `/share/rooms/${encodeURIComponent(encodeShareRoom(r))}?day=${encodeURIComponent(t.day)}`;
+                                  return (
+                                    <Box as="th" key={r} p="10px 12px" textAlign="left" borderLeftWidth="1px" borderColor={border}>
+                                      <HStack>
+                                        <Box w="10px" h="10px" rounded="full" bg={roomAccent(r)}></Box>
+                                        <ChakraLink as={RouterLink} to={to} _hover={{ textDecoration: 'none' }} cursor="pointer">
+                                          <Text fontWeight="600" noOfLines={1}>{r}</Text>
+                                        </ChakraLink>
+                                      </HStack>
+                                    </Box>
+                                  );
+                                })}
                               </Box>
                             </Box>
                             <Box as="tbody">
                               {SESSIONS.map((sess) => (
-                                <Box as="tr" key={`${t.day}-${sess}-${partIdx}`} _hover={{ bg: useColorModeValue('gray.50','gray.800') }}>
+                                <Box as="tr" key={`${t.day}-${sess}-${partIdx}`} _hover={{ bg: rowHoverBg }}>
                                   <Box as="td" position="sticky" left={0} zIndex={1} bg={cellBg} p="10px 12px" borderTopWidth="1px" borderColor={border} fontWeight="700">{sess}</Box>
                                   {roomsSlice.length === 0 && (
                                     <Box as="td" p="10px 12px" borderTopWidth="1px" borderColor={border} colSpan={999}>
@@ -402,12 +436,32 @@ export default function VisualMap() {
                                         {arr.length === 0 ? (
                                           <Text fontSize="xs" color={subtle}>—</Text>
                                         ) : (
-                                          <Wrap spacing={2} shouldWrapChildren>
+                                          <Wrap spacing={2}>
                                             {arr.map((b) => (
                                               <WrapItem key={`${sess}-${r}-${b}-${partIdx}`} maxW="100%">
-                                                <Tag variant="subtle" colorScheme={schemeForBlockCode(b)} rounded="full" px={6} py={2} display="inline-block" maxW="100%" style={{ fontSize: '12px', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
-                                                  <TagLabel display="block" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{b}</TagLabel>
-                                                </Tag>
+                                                <ChakraLink
+                                                  as={RouterLink}
+                                                  to={isAdmin
+                                                    ? `/views/session/block/${encodeURIComponent(b)}?day=${encodeURIComponent(t.day)}&session=${encodeURIComponent(sess)}`
+                                                    : `/share/session/block/${encodeURIComponent(encodeShareBlock(b))}?day=${encodeURIComponent(t.day)}&session=${encodeURIComponent(sess)}`}
+                                                  _hover={{ textDecoration: 'none' }}
+                                                >
+                                                  <Tag
+                                                    variant="subtle"
+                                                    colorScheme={schemeForBlockCode(b)}
+                                                    rounded="full"
+                                                    px={6}
+                                                    py={2}
+                                                    display="inline-block"
+                                                    maxW="100%"
+                                                    cursor="pointer"
+                                                    role="link"
+                                                    tabIndex={0}
+                                                    style={{ fontSize: '12px', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                                                  >
+                                                    <TagLabel display="block" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{b}</TagLabel>
+                                                  </Tag>
+                                                </ChakraLink>
                                               </WrapItem>
                                             ))}
                                           </Wrap>
