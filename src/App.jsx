@@ -25,6 +25,7 @@ import ShareVisualMap from './pages/ShareVisualMap';
 import ReportsFacultySummary from './pages/ReportsFacultySummary';
 import Unauthorized from './pages/Unauthorized';
 import RequireAdmin from './components/RequireAdmin';
+import RequireAuth from './components/RequireAuth';
 // DataProvider removed; using Redux directly
 // VisitorProvider removed
 import { useDispatch, useSelector } from 'react-redux';
@@ -50,15 +51,15 @@ function App() {
               <Route path="/" element={<VisualMap />} />
               <Route path="/overview/calendar" element={<AcademicCalendar />} />
               <Route path="/faculty/:id" element={<RequireAdmin><FacultyDetail /></RequireAdmin>} />
-              <Route path="/views/faculty" element={<RequireAdmin><Dashboard /></RequireAdmin>} />
-              <Route path="/views/courses" element={<RequireAdmin><ViewsCourses /></RequireAdmin>} />
+              <Route path="/views/faculty" element={<RequireAuth><Dashboard /></RequireAuth>} />
+              <Route path="/views/courses" element={<RequireAuth><ViewsCourses /></RequireAuth>} />
               <Route path="/views/departments" element={<ViewsDepartments />} />
               <Route path="/views/departments/:dept" element={<DepartmentSchedule />} />
               <Route path="/views/rooms" element={<ViewsRooms />} />
               <Route path="/views/rooms/:room" element={<RoomSchedule />} />
               <Route path="/views/rooms/:room/auto" element={<RoomScheduleAuto />} />
-              <Route path="/views/session" element={<RequireAdmin><ViewsSession /></RequireAdmin>} />
-              <Route path="/views/session/block/:block" element={<RequireAdmin><BlockSchedule /></RequireAdmin>} />
+              <Route path="/views/session" element={<RequireAuth><ViewsSession /></RequireAuth>} />
+              <Route path="/views/session/block/:block" element={<RequireAuth><BlockSchedule /></RequireAuth>} />
               <Route path="/admin/conflicts" element={<RequireAdmin><ConflictSchedules /></RequireAdmin>} />
               <Route path="/admin/unassigned" element={<RequireAdmin><UnassignedSchedules /></RequireAdmin>} />
               <Route path="/admin/faculty" element={<RequireAdmin><AdminFaculty /></RequireAdmin>} />
@@ -66,7 +67,7 @@ function App() {
               <Route path="/admin/blocks" element={<RequireAdmin><AdminBlockSettings /></RequireAdmin>} />
               <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
               <Route path="/admin/guest-logs" element={<RequireAdmin><AdminGuestLogs /></RequireAdmin>} />
-              <Route path="/reports/faculty-summary" element={<RequireAdmin><ReportsFacultySummary /></RequireAdmin>} />
+              <Route path="/reports/faculty-summary" element={<RequireAuth><ReportsFacultySummary /></RequireAuth>} />
               {/* Share/public routes (chrome-less) */}
               <Route path="/share/faculty/:id" element={<FacultyDetail />} />
               <Route path="/share/courses" element={<ViewsCourses />} />

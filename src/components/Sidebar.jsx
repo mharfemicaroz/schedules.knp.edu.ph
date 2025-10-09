@@ -31,6 +31,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
   const border = useColorModeValue('gray.200', 'gray.700');
 
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
+  const isUser = !!authUser && !isAdmin;
 
   // Compute conflict count similar to page logic (lightweight but consistent)
   const conflictCount = React.useMemo(() => {
@@ -125,15 +126,19 @@ export default function Sidebar({ mobile = false, onNavigate }) {
 
         {/* Views */}
         <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Views</Text>
-        {isAdmin && <NavItem to="/views/faculty" icon={FiUsers} onClick={onNavigate}>By Faculty</NavItem>}
-        {isAdmin && <NavItem to="/views/courses" icon={FiBook} onClick={onNavigate}>By Courses</NavItem>}
+        {(isAdmin || isUser) && <NavItem to="/views/faculty" icon={FiUsers} onClick={onNavigate}>By Faculty</NavItem>}
+        {(isAdmin || isUser) && <NavItem to="/views/courses" icon={FiBook} onClick={onNavigate}>By Courses</NavItem>}
         <NavItem to="/views/departments" icon={FiLayers} onClick={onNavigate}>By Department</NavItem>
         <NavItem to="/views/rooms" icon={FiMapPin} onClick={onNavigate}>By Rooms</NavItem>
-        {isAdmin && <NavItem to="/views/session" icon={FiSun} onClick={onNavigate}>By Session</NavItem>}
-        {isAdmin && (
+        {(isAdmin || isUser) && <NavItem to="/views/session" icon={FiSun} onClick={onNavigate}>By Session</NavItem>}
+        {(isAdmin || isUser) && (
           <>
             <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Reports</Text>
             <NavItem to="/reports/faculty-summary" icon={FiFileText} onClick={onNavigate}>Faculty Summary</NavItem>
+          </>
+        )}
+        {isAdmin && (
+          <>
             <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Admin</Text>
             <NavItem to="/admin/faculty" icon={FiUsers} onClick={onNavigate}>Faculty</NavItem>
             <NavItem to="/admin/academic-calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>
