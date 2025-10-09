@@ -50,7 +50,7 @@ function App() {
             <Routes>
               <Route path="/" element={<VisualMap />} />
               <Route path="/overview/calendar" element={<AcademicCalendar />} />
-              <Route path="/faculty/:id" element={<RequireAdmin><FacultyDetail /></RequireAdmin>} />
+              <Route path="/faculty/:id" element={<RequireAuth><FacultyDetail /></RequireAuth>} />
               <Route path="/views/faculty" element={<RequireAuth><Dashboard /></RequireAuth>} />
               <Route path="/views/courses" element={<RequireAuth><ViewsCourses /></RequireAuth>} />
               <Route path="/views/departments" element={<ViewsDepartments />} />
