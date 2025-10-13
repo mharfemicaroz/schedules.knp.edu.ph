@@ -41,6 +41,14 @@ export default function ViewsDepartments() {
       .sort((a,b)=>a.department.localeCompare(b.department));
   }, [allCourses]);
 
+  const uniqueFacultyCount = useMemo(() => {
+    const s = new Set();
+    allCourses.forEach(c => {
+      s.add(canonFacultyKey(c.facultyId, c.facultyName));
+    });
+    return s.size;
+  }, [allCourses]);
+
   function Card({ item }) {
     const accent = getProgramColor(item.department);
     return (
@@ -104,7 +112,7 @@ export default function ViewsDepartments() {
         </Box>
         <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
           <Text fontSize="xs" color={subtle}>Unique Faculty</Text>
-          <Text fontWeight="800" fontSize="xl">{rows.reduce((s, r) => s + (r.facultyCount || 0), 0)}</Text>
+          <Text fontWeight="800" fontSize="xl">{uniqueFacultyCount}</Text>
         </Box>
         <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
           <Text fontSize="xs" color={subtle}>Total Blocks</Text>
