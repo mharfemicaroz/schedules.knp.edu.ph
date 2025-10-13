@@ -28,14 +28,16 @@ export default function ViewsDepartments() {
     const m = new Map();
     allCourses.forEach(c => {
       const key = c.program || 'N/A';
-      const e = m.get(key) || { department: key, units: 0, courses: 0, facultyKeys: new Set() };
-      e.units += c.units || c.hours || 0;
+      const e = m.get(key) || { department: key, courses: 0, facultyKeys: new Set(), blockKeys: new Set() };
       e.courses += 1;
       e.facultyKeys.add(canonFacultyKey(c.facultyId, c.facultyName));
+      const yl = c.yearlevel || 'N/A';
+      const blk = c.section || c.block || 'N/A';
+      e.blockKeys.add(`${yl}||${blk}`);
       m.set(key, e);
     });
     return Array.from(m.values())
-      .map(e => ({ department: e.department, units: e.units, courses: e.courses, facultyCount: e.facultyKeys.size }))
+      .map(e => ({ department: e.department, blocks: e.blockKeys.size, courses: e.courses, facultyCount: e.facultyKeys.size }))
       .sort((a,b)=>a.department.localeCompare(b.department));
   }, [allCourses]);
 
@@ -69,7 +71,7 @@ export default function ViewsDepartments() {
           </HStack>
           <HStack spacing={4}>
             <Stat label="Faculty" value={item.facultyCount} />
-            <Stat label="Units" value={item.units} />
+            <Stat label="Blocks" value={item.blocks} />
             <Stat label="Courses" value={item.courses} />
           </HStack>
           <Text fontSize="sm" color={subtle}>Click view to see Year Levels → Blocks ordered by term and time.</Text>
@@ -105,8 +107,8 @@ export default function ViewsDepartments() {
           <Text fontWeight="800" fontSize="xl">{rows.reduce((s, r) => s + (r.facultyCount || 0), 0)}</Text>
         </Box>
         <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
-          <Text fontSize="xs" color={subtle}>Total Units</Text>
-          <Text fontWeight="800" fontSize="xl">{rows.reduce((s, r) => s + (r.units || 0), 0)}</Text>
+          <Text fontSize="xs" color={subtle}>Total Blocks</Text>
+          <Text fontWeight="800" fontSize="xl">{rows.reduce((s, r) => s + (r.blocks || 0), 0)}</Text>
         </Box>
         <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
           <Text fontSize="xs" color={subtle}>Courses</Text>
