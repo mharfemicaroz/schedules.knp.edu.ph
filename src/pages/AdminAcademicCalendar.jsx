@@ -130,6 +130,9 @@ function TermEditor({ title, term, onChange }) {
   const editActivityDisc = useDisclosure();
   const [editing, setEditing] = React.useState(null);
   const [editIndex, setEditIndex] = React.useState(-1);
+  const border = useColorModeValue('gray.200','gray.700');
+  const panelBg = useColorModeValue('white','gray.800');
+  const muted = useColorModeValue('gray.600','gray.300');
   const doAdd = (payload) => { onChange({ ...term, activities: [...(term.activities||[]), payload] }); addActivityDisc.onClose(); };
   const doEdit = (payload) => { const list = [...(term.activities||[])]; list[editIndex] = payload; onChange({ ...term, activities: list }); editActivityDisc.onClose(); setEditing(null); setEditIndex(-1); };
   const del = (idx) => { const list = (term.activities||[]).filter((_, i) => i !== idx); onChange({ ...term, activities: list }); };
@@ -151,7 +154,39 @@ function TermEditor({ title, term, onChange }) {
           <Input type="date" value={term.end || ''} onChange={(e)=>onChange({ ...term, end: e.target.value })} />
         </FormControl>
       </HStack>
-      <Table size="sm">
+
+      {/* Mobile cards for activities */}
+      <Box display={{ base: 'block', md: 'none' }}>
+        <VStack align="stretch" spacing={3}>
+          {(term.activities || []).map((a, idx) => (
+            <Box key={idx} borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} p={4}>
+              <VStack align="stretch" spacing={3}>
+                <Text fontWeight="700" noOfLines={2}>{a.event}</Text>
+                <SimpleGrid columns={2} spacing={3}>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Date / Range</Text>
+                    <Text>{a.date_range ? a.date_range : Array.isArray(a.date) ? a.date.join(', ') : (a.date || '')}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Mode</Text>
+                    <Text>{a.mode || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Type</Text>
+                    <Text>{a.type || '-'}</Text>
+                  </Box>
+                </SimpleGrid>
+                <HStack justify="flex-end" spacing={2}>
+                  <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="outline" onClick={()=>{ setEditing(a); setEditIndex(idx); editActivityDisc.onOpen(); }} />
+                  <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" variant="outline" colorScheme="red" onClick={()=>del(idx)} />
+                </HStack>
+              </VStack>
+            </Box>
+          ))}
+        </VStack>
+      </Box>
+
+      <Table size="sm" display={{ base: 'none', md: 'table' }}>
         <Thead>
           <Tr>
             <Th>Event</Th>
@@ -190,6 +225,7 @@ function TermEditor({ title, term, onChange }) {
 export default function AdminAcademicCalendar() {
   const border = useColorModeValue('gray.200','gray.700');
   const bg = useColorModeValue('white','gray.800');
+  const muted = useColorModeValue('gray.600','gray.300');
   const [schoolYear, setSchoolYear] = React.useState('2025-2026');
   const [cal, setCal] = React.useState(ensureCalendarShape(null, '2025-2026'));
   const [holYear, setHolYear] = React.useState(new Date().getFullYear());
@@ -302,7 +338,41 @@ export default function AdminAcademicCalendar() {
                 </FormControl>
                 <Button leftIcon={<FiPlus />} onClick={addHoliday} size="sm">Add Holiday</Button>
               </HStack>
-              <Box overflowX="auto">
+              {/* Mobile cards for holidays */}
+              <Box display={{ base: 'block', md: 'none' }}>
+                <VStack align="stretch" spacing={3}>
+                  {holidays.map((h, idx) => (
+                    <Box key={`${h.date}-${idx}`} borderWidth="1px" borderColor={border} rounded="xl" bg={bg} p={4}>
+                      <VStack align="stretch" spacing={3}>
+                        <SimpleGrid columns={1} spacing={3}>
+                          <Box>
+                            <Text fontSize="xs" color={muted}>Date</Text>
+                            <Input type="date" value={h.date || ''} onChange={(e)=>setHoliday(idx, 'date', e.target.value)} />
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" color={muted}>Name</Text>
+                            <Input value={h.name || ''} onChange={(e)=>setHoliday(idx, 'name', e.target.value)} placeholder="New Year's Day" />
+                          </Box>
+                          <Box>
+                            <Text fontSize="xs" color={muted}>Type</Text>
+                            <Select value={h.type || ''} onChange={(e)=>setHoliday(idx, 'type', e.target.value)}>
+                              <option value="">(none)</option>
+                              <option>Regular Holiday</option>
+                              <option>Special Non-Working Holiday</option>
+                              <option>Special Working Holiday</option>
+                            </Select>
+                          </Box>
+                        </SimpleGrid>
+                        <HStack justify="flex-end">
+                          <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="outline" onClick={()=>setHolidays(list=>list.filter((_,i)=>i!==idx))} />
+                        </HStack>
+                      </VStack>
+                    </Box>
+                  ))}
+                </VStack>
+              </Box>
+
+              <Box overflowX="auto" display={{ base: 'none', md: 'block' }}>
                 <Table size="sm">
                   <Thead>
                     <Tr>

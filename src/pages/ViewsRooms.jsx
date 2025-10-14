@@ -7,6 +7,7 @@ import {
   IconButton,
   Tooltip,
   Input,
+  Select,
   Tabs,
   TabList,
   TabPanels,
@@ -220,6 +221,8 @@ export default function ViewsRooms() {
     return pos >= 0 ? pos : 0;
   }, [filteredGroups]);
 
+  const [tabIndex, setTabIndex] = useState(defaultDayIndex);
+
   return (
     <Box>
       <HStack justify="space-between" mb={4} flexWrap="wrap" gap={3}>
@@ -232,7 +235,7 @@ export default function ViewsRooms() {
             <Badge colorScheme="orange" variant="subtle">Exam Period Detected</Badge>
           )}
         </HStack>
-        <HStack spacing={4}>
+        <HStack spacing={4} flexWrap="wrap" justify={{ base: 'flex-start', md: 'flex-end' }} w={{ base: '100%', md: 'auto' }}>
           {!isPublic && (
           <FormControl display="flex" alignItems="center" w="auto">
             <FormLabel htmlFor="rooms-schedule-mode" mb="0" fontSize="sm" fontWeight="medium">
@@ -250,34 +253,60 @@ export default function ViewsRooms() {
             </FormLabel>
           </FormControl>
           )}
-          {!isPublic && <Input placeholder="Filter rooms." value={q} onChange={e=>setQ(e.target.value)} maxW="280px" />}
+          {!isPublic && <Input placeholder="Filter rooms." value={q} onChange={e=>setQ(e.target.value)} maxW="280px" w={{ base: '100%', sm: 'auto' }} />}
           {isAdmin && !isPublic && (
-            <Button as={RouterLink} to="/share/rooms" leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
+            <Button as={RouterLink} to="/share/rooms" leftIcon={<FiShare2 />} size="sm" colorScheme="blue" w={{ base: '100%', sm: 'auto' }}>
+              Share
+            </Button>
           )}
         </HStack>
       </HStack>
 
-      <Tabs variant="enclosed-colored" colorScheme="brand" defaultIndex={defaultDayIndex}>
-        <TabList>
+      {/* Mobile day picker */}
+      <Box display={{ base: 'block', md: 'none' }} mb={2}>
+        <Select size="sm" value={String(tabIndex)} onChange={(e) => setTabIndex(Number(e.target.value))}>
+          {filteredGroups.map((g, i) => (
+            <option key={g.day} value={String(i)}>{labelByCode[g.day] || g.day}</option>
+          ))}
+        </Select>
+      </Box>
+
+      <Tabs variant="enclosed-colored" colorScheme="brand" size="sm" index={tabIndex} onChange={setTabIndex}>
+        <TabList
+          display={{ base: 'none', md: 'flex' }}
+          overflowX="auto"
+          overflowY="hidden"
+          whiteSpace="nowrap"
+          gap={1}
+          px={1}
+          sx={{ '::-webkit-scrollbar': { display: 'none' }, scrollbarWidth: 'none' }}
+        >
           {filteredGroups.map(g => (
-            <Tab key={g.day} isDisabled={g.rows.length === 0}>
+            <Tab
+              key={g.day}
+              isDisabled={g.rows.length === 0}
+              flexShrink={0}
+              px={3}
+              py={2}
+              minW="auto"
+            >
               <HStack spacing={2}>
                 <Text>{labelByCode[g.day] || g.day}</Text>
                 {(((autoExamDays.has(g.day) && daysWithExams.has(g.day)) || (viewMode === 'examination' && daysWithExams.has(g.day)))) && (
-                  <Badge size="sm" colorScheme="green" variant="subtle">Exam</Badge>
+                  <Badge size="sm" colorScheme="green" variant="subtle" display={{ base: 'none', lg: 'inline-flex' }}>Exam</Badge>
                 )}
                 {dayAnnotations[g.day]?.holiday && (
-                  <Badge size="sm" colorScheme="red" variant="subtle" title={dayAnnotations[g.day].holiday.name}>
+                  <Badge size="sm" colorScheme="red" variant="subtle" title={dayAnnotations[g.day].holiday.name} display={{ base: 'none', lg: 'inline-flex' }}>
                     Holiday
                   </Badge>
                 )}
                 {dayAnnotations[g.day]?.mode === 'asynchronous' && (
-                  <Badge size="sm" colorScheme="purple" variant="subtle" title="Asynchronous Mode">
+                  <Badge size="sm" colorScheme="purple" variant="subtle" title="Asynchronous Mode" display={{ base: 'none', lg: 'inline-flex' }}>
                     Async
                   </Badge>
                 )}
                 {dayAnnotations[g.day]?.mode === 'no_class' && (
-                  <Badge size="sm" colorScheme="gray" variant="subtle" title="No Class">
+                  <Badge size="sm" colorScheme="gray" variant="subtle" title="No Class" display={{ base: 'none', lg: 'inline-flex' }}>
                     No Class
                   </Badge>
                 )}
@@ -319,7 +348,7 @@ export default function ViewsRooms() {
               ) : null}
 
               {dayAnnotations[g.day]?.mode === 'no_class' ? null : (
-              <SimpleGrid columns={{ base: 2, md: 3 }} spacing={4} mb={4}>
+              <SimpleGrid columns={{ base: 1, sm: 2, md: 3 }} spacing={4} mb={4}>
                 <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
                   <Text fontSize="xs" color={subtle}>Rooms</Text>
                   <Text fontWeight="800" fontSize="xl">{g.rows.length}</Text>
@@ -357,8 +386,8 @@ export default function ViewsRooms() {
                     >
                       <Box position="absolute" top={0} left={0} right={0} h="4px" bg={roomAccent(r.room)} roundedTop="xl" />
                       <VStack align="start" spacing={3}>
-                        <HStack justify="space-between" w="full">
-                          <Text fontWeight="800">{r.room}</Text>
+                        <HStack justify="space-between" w="full" minW={0}>
+                          <Text fontWeight="800" noOfLines={1}>{r.room}</Text>
                           <Tooltip label={`View schedule (${labelByCode[g.day] || g.day})`}>
                             <IconButton
                               aria-label="View"

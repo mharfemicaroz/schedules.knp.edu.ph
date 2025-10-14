@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Heading, HStack, VStack, Input, Select, Table, Thead, Tr, Th, Tbody, Td, Tag, TagLabel, useColorModeValue, Button, Text, Spinner, Grid, GridItem } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Input, Select, Table, Thead, Tr, Th, Tbody, Td, Tag, TagLabel, useColorModeValue, Button, Text, Spinner, Grid, GridItem, SimpleGrid } from '@chakra-ui/react';
 import apiService from '../services/apiService';
 import { FiActivity, FiClock, FiUsers } from 'react-icons/fi';
 
@@ -22,6 +22,7 @@ function StatCard({ icon: Icon, label, value, accent='brand' }){
 export default function AdminGuestLogs(){
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
+  const muted = useColorModeValue('gray.600','gray.300');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [rows, setRows] = useState([]);
@@ -86,7 +87,42 @@ export default function AdminGuestLogs(){
         <GridItem><StatCard icon={FiClock} label="Roles Tracked" value={(stats.byRole||[]).length} /></GridItem>
       </Grid>
 
-      <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} overflowX="auto">
+      {/* Mobile cards view */}
+      <Box display={{ base: 'block', md: 'none' }}>
+        <VStack align="stretch" spacing={3}>
+          {paged.map(g => (
+            <Box key={g.id} borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} p={4}>
+              <VStack align="stretch" spacing={3}>
+                <Text fontWeight="800" fontSize="md" noOfLines={2}>{g.name || '-'}</Text>
+                <SimpleGrid columns={2} spacing={3}>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Role</Text>
+                    <Tag size="sm" colorScheme="purple"><TagLabel>{g.role || '-'}</TagLabel></Tag>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>IP</Text>
+                    <Text>{g.ip}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Route</Text>
+                    <Text>{g.lastVisitedPage || g.last_visited_page || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>First Access</Text>
+                    <Text>{g.dateFirstAccessed ? new Date(g.dateFirstAccessed).toLocaleString() : (g.date_first_accessed ? new Date(g.date_first_accessed).toLocaleString() : '-')}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Last Access</Text>
+                    <Text>{g.dateLastAccessed ? new Date(g.dateLastAccessed).toLocaleString() : (g.date_last_accessed ? new Date(g.date_last_accessed).toLocaleString() : '-')}</Text>
+                  </Box>
+                </SimpleGrid>
+              </VStack>
+            </Box>
+          ))}
+        </VStack>
+      </Box>
+
+      <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} overflowX="auto" display={{ base: 'none', md: 'block' }}>
         <Table size={{ base: 'sm', md: 'md' }}>
           <Thead>
             <Tr>

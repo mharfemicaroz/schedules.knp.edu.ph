@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Heading, HStack, VStack, Text, Input, Select, Table, Thead, Tbody, Tr, Th, Td, Tag, TagLabel, useColorModeValue, Button, Spinner } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Text, Input, Select, Table, Thead, Tbody, Tr, Th, Td, Tag, TagLabel, useColorModeValue, Button, Spinner, SimpleGrid } from '@chakra-ui/react';
 import { useDispatch, useSelector } from 'react-redux';
 import { FiChevronUp, FiChevronDown, FiPrinter, FiDownload } from 'react-icons/fi';
 import Pagination from '../components/Pagination';
@@ -12,6 +12,7 @@ import { buildTable, printContent } from '../utils/printDesign';
 export default function ReportsFacultySummary() {
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
+  const muted = useColorModeValue('gray.600','gray.300');
   const dispatch = useDispatch();
   const allCourses = useSelector(selectAllCourses);
   const faculties = useSelector(selectAllFaculty);
@@ -152,7 +153,7 @@ export default function ReportsFacultySummary() {
     return (
       <VStack align="center" spacing={4} py={12}>
         <Spinner thickness="3px" speed="0.6s" color="blue.400" size="lg" />
-        <Text color={useColorModeValue('gray.600','gray.300')}>Loading faculty summary…</Text>
+        <Text color={muted}>Loading faculty summary…</Text>
       </VStack>
     );
   }
@@ -188,7 +189,53 @@ export default function ReportsFacultySummary() {
         </HStack>
       </Box>
 
-      <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} overflowX="auto">
+      {/* Mobile cards: show column labels inline for each record */}
+      <Box display={{ base: 'block', md: 'none' }}>
+        <VStack align="stretch" spacing={3}>
+          {paged.map(r => (
+            <Box key={r.id} borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} p={4}>
+              <VStack align="stretch" spacing={3}>
+                <Text fontWeight="800" fontSize="md" noOfLines={2}>{r.faculty || '-'}</Text>
+                <SimpleGrid columns={2} spacing={3}>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Department</Text>
+                    <Text>{r.department || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Designation</Text>
+                    <Text>{r.designation || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Employment</Text>
+                    <Text>{r.employment || '-'}</Text>
+                  </Box>
+                </SimpleGrid>
+                <HStack spacing={4} wrap="wrap">
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Load Units</Text>
+                    <Text fontWeight="700">{r.load}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Load Release</Text>
+                    <Text fontWeight="700">{r.release}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Overload</Text>
+                    <Text fontWeight="700">{r.overload}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Courses</Text>
+                    <Text fontWeight="700">{r.courses}</Text>
+                  </Box>
+                </HStack>
+              </VStack>
+            </Box>
+          ))}
+        </VStack>
+      </Box>
+
+      {/* Desktop/tablet table view */}
+      <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} overflowX="auto" display={{ base: 'none', md: 'block' }}>
         <Table size={{ base: 'sm', md: 'md' }} variant="striped" colorScheme="gray">
           <Thead>
             <Tr>

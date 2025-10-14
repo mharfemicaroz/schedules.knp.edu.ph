@@ -120,6 +120,7 @@ export default function VisualMap() {
   const border = useColorModeValue('gray.200','gray.700');
   const cellBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.400');
+  const muted = useColorModeValue('gray.600','gray.400');
   const partHeaderBg = useColorModeValue('white','gray.900');
   // const headerRowBg = useColorModeValue('gray.100','gray.800');
   // const rowHoverBg = useColorModeValue('gray.50','gray.800');
@@ -293,7 +294,7 @@ export default function VisualMap() {
     <Box>
       <HStack justify="space-between" mb={4} flexWrap="wrap" gap={3}>
         <Heading size="md">Classroom Assigment</Heading>
-        <Input placeholder="Filter rooms" value={q} onChange={e=>setQ(e.target.value)} maxW="280px" />
+        <Input placeholder="Filter rooms" value={q} onChange={e=>setQ(e.target.value)} maxW="280px" w={{ base: '100%', sm: 'auto' }} />
       </HStack>
 
       {filteredTabs.map(t => (
@@ -315,25 +316,25 @@ export default function VisualMap() {
           </SimpleGrid> */}
 
           {/* Day header next */}
-          <HStack justify="space-between" mb={2}>
+          <HStack justify="space-between" mb={2} flexWrap="wrap" gap={2}>
             <HStack spacing={3} align="center">
               <Heading size="sm">{labelByCode[t.day] || t.day}</Heading>
               {(t.hasExamData && autoExamDays.has(t.day)) && (
-                <Badge size="sm" colorScheme="green" variant="subtle">Exam</Badge>
+                <Badge size="sm" colorScheme="green" variant="subtle" display={{ base: 'none', md: 'inline-flex' }}>Exam</Badge>
               )}
               {dayAnnotations[t.day]?.holiday && (
-                <Badge size="sm" colorScheme="red" variant="subtle" title={dayAnnotations[t.day].holiday.name}>Holiday</Badge>
+                <Badge size="sm" colorScheme="red" variant="subtle" title={dayAnnotations[t.day].holiday.name} display={{ base: 'none', md: 'inline-flex' }}>Holiday</Badge>
               )}
               {dayAnnotations[t.day]?.mode === 'asynchronous' && (
-                <Badge size="sm" colorScheme="purple" variant="subtle" title="Asynchronous Mode">Async</Badge>
+                <Badge size="sm" colorScheme="purple" variant="subtle" title="Asynchronous Mode" display={{ base: 'none', md: 'inline-flex' }}>Async</Badge>
               )}
               {dayAnnotations[t.day]?.mode === 'no_class' && (
-                <Badge size="sm" colorScheme="gray" variant="subtle" title="No Class">No Class</Badge>
+                <Badge size="sm" colorScheme="gray" variant="subtle" title="No Class" display={{ base: 'none', md: 'inline-flex' }}>No Class</Badge>
               )}
             </HStack>
             <HStack>
-              <Badge colorScheme="purple" variant="subtle" rounded="full">Rooms: {t.rooms.length}</Badge>
-              <Badge colorScheme="teal" variant="subtle" rounded="full">
+              <Badge colorScheme="purple" variant="subtle" rounded="full" display={{ base: 'none', md: 'inline-flex' }}>Rooms: {t.rooms.length}</Badge>
+              <Badge colorScheme="teal" variant="subtle" rounded="full" display={{ base: 'none', md: 'inline-flex' }}>
                 Blocks: {(() => { const set = new Set(); SESSIONS.forEach(ses => { t.rooms.forEach(r => { (t.matrix[ses]?.get(r) || new Map()).forEach((_, b) => set.add(b)); }); }); return set.size; })()}
               </Badge>
               <Button leftIcon={<FiPrinter />} onClick={() => onPrint(t)} variant="outline" size="sm">Print</Button>
@@ -371,6 +372,73 @@ export default function VisualMap() {
             </Box>
           ) : (
             <>
+              {/* Mobile cards per room */}
+              <Box display={{ base: 'block', md: 'none' }}>
+                <VStack align="stretch" spacing={3}>
+                  {t.rooms.map((r) => {
+                    const mM = t.matrix['Morning']?.get(r) || new Map();
+                    const mA = t.matrix['Afternoon']?.get(r) || new Map();
+                    const mE = t.matrix['Evening']?.get(r) || new Map();
+                    const to = isAdmin
+                      ? `/views/rooms/${encodeURIComponent(r)}?day=${encodeURIComponent(t.day)}`
+                      : `/share/rooms/${encodeURIComponent(encodeShareRoom(r))}?day=${encodeURIComponent(t.day)}`;
+                    return (
+                      <Box key={`${t.day}-${r}`} borderWidth="1px" borderColor={border} rounded="xl" bg={cellBg} p={4}>
+                        <VStack align="stretch" spacing={3}>
+                          <HStack justify="space-between" minW={0}>
+                            <HStack spacing={2} minW={0}>
+                              <Box w="10px" h="10px" rounded="full" bg={roomAccent(r)}></Box>
+                              <ChakraLink as={RouterLink} to={to} _hover={{ textDecoration: 'none' }}>
+                                <Text fontWeight="700" noOfLines={1}>{r}</Text>
+                              </ChakraLink>
+                            </HStack>
+                            <Badge colorScheme="purple" variant="subtle">Room</Badge>
+                          </HStack>
+                          <VStack align="stretch" spacing={2}>
+                            <Box>
+                              <Text fontSize="xs" color={muted}>Morning</Text>
+                              {mM.size === 0 ? <Text fontSize="xs" color={muted}>-</Text> : (
+                                <Wrap spacing={2} mt={1}>
+                                  {Array.from(mM.keys()).sort().map((b) => (
+                                    <WrapItem key={`m-${r}-${b}`}>
+                                      <Tag size="sm" variant="subtle" colorScheme={schemeForBlockCode(b)}><TagLabel>{b}</TagLabel></Tag>
+                                    </WrapItem>
+                                  ))}
+                                </Wrap>
+                              )}
+                            </Box>
+                            <Box>
+                              <Text fontSize="xs" color={muted}>Afternoon</Text>
+                              {mA.size === 0 ? <Text fontSize="xs" color={muted}>-</Text> : (
+                                <Wrap spacing={2} mt={1}>
+                                  {Array.from(mA.keys()).sort().map((b) => (
+                                    <WrapItem key={`a-${r}-${b}`}>
+                                      <Tag size="sm" variant="subtle" colorScheme={schemeForBlockCode(b)}><TagLabel>{b}</TagLabel></Tag>
+                                    </WrapItem>
+                                  ))}
+                                </Wrap>
+                              )}
+                            </Box>
+                            <Box>
+                              <Text fontSize="xs" color={muted}>Evening</Text>
+                              {mE.size === 0 ? <Text fontSize="xs" color={muted}>-</Text> : (
+                                <Wrap spacing={2} mt={1}>
+                                  {Array.from(mE.keys()).sort().map((b) => (
+                                    <WrapItem key={`e-${r}-${b}`}>
+                                      <Tag size="sm" variant="subtle" colorScheme={schemeForBlockCode(b)}><TagLabel>{b}</TagLabel></Tag>
+                                    </WrapItem>
+                                  ))}
+                                </Wrap>
+                              )}
+                            </Box>
+                          </VStack>
+                        </VStack>
+                      </Box>
+                    );
+                  })}
+                </VStack>
+              </Box>
+
               {/* <SimpleGrid columns={{ base: 2, md: 3 }} spacing={4} mb={4}>
                 <Box bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
                   <Text fontSize="xs" color={subtle}>Rooms Occupied</Text>
@@ -397,7 +465,7 @@ export default function VisualMap() {
                             <Text fontSize="sm" color={subtle}>Rooms {partIdx+1} of {roomParts.length}</Text>
                           </Box>
                         )}
-                        <Box overflowX="auto" borderWidth="1px" borderColor={border} rounded="xl" bg={cellBg}>
+                        <Box overflowX="auto" borderWidth="1px" borderColor={border} rounded="xl" bg={cellBg} display={{ base: 'none', md: 'block' }}>
                           <Box as="table" w="100%" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                             <Box as="thead">
                               <Box as="tr" bg={headerRowBg}>

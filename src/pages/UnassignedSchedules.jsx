@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Box, Heading, HStack, VStack, Table, Thead, Tbody, Tr, Th, Td, Text, useColorModeValue, IconButton, Button, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, FormControl, FormLabel, Input, Select, Tag, TagLabel } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Table, Thead, Tbody, Tr, Th, Td, Text, useColorModeValue, IconButton, Button, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, FormControl, FormLabel, Input, Select, Tag, TagLabel, SimpleGrid } from '@chakra-ui/react';
 import { useSelector, useDispatch } from 'react-redux';
 import { FiEdit, FiTrash, FiChevronUp, FiChevronDown, FiDownload, FiPrinter } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
@@ -21,6 +21,7 @@ export default function UnassignedSchedules() {
   const loading = useSelector(s => s.data.loading);
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
+  const muted = useColorModeValue('gray.600','gray.300');
 
   // Filters
   const [query, setQuery] = useState('');
@@ -206,7 +207,52 @@ export default function UnassignedSchedules() {
         </HStack>
       </Box>
 
-      <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg}>
+      {/* Mobile cards view */}
+      <Box display={{ base: 'block', md: 'none' }}>
+        <VStack align="stretch" spacing={3}>
+          {paged.map((r) => (
+            <Box key={r.id} borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} p={4}>
+              <VStack align="stretch" spacing={3}>
+                <Text fontWeight="800" fontSize="md" noOfLines={2}>{r.code} <Text as="span" color="gray.500">/</Text> {r.section}</Text>
+                <Text fontSize="sm" color={muted} noOfLines={2}>{r.title || '-'}</Text>
+                <SimpleGrid columns={2} spacing={3}>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Term</Text>
+                    <Text>{r.semester || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Time</Text>
+                    <Text>{r.schedule || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Program</Text>
+                    <Text>{r.program || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Units</Text>
+                    <Text>{r.unit ?? r.hours ?? '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Room</Text>
+                    <Text>{r.room || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Session</Text>
+                    <Text>{r.session || '-'}</Text>
+                  </Box>
+                </SimpleGrid>
+                <HStack justify="flex-end" spacing={2}>
+                  <Button size="sm" colorScheme="blue" onClick={()=>{ setSelected(r); assignDisc.onOpen(); }}>Assign</Button>
+                  <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="outline" onClick={() => { setSelected(r); editDisc.onOpen(); }} />
+                  <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="outline" onClick={() => { setSelected(r); delDisc.onOpen(); }} />
+                </HStack>
+              </VStack>
+            </Box>
+          ))}
+        </VStack>
+      </Box>
+
+      <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} display={{ base: 'none', md: 'block' }}>
         <Table size="sm" variant="striped" colorScheme="gray">
           <Thead>
             <Tr>

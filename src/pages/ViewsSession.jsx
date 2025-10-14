@@ -1,5 +1,5 @@
 ﻿import React, { useMemo, useState } from 'react';
-import { Box, Heading, Tabs, TabList, TabPanels, Tooltip, Tab, TabPanel, useColorModeValue, HStack, Text, Button, Input, VStack, Wrap, WrapItem, Tag, TagLabel, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody, PopoverCloseButton, SimpleGrid, RadioGroup, Radio, Switch, FormControl, FormLabel, Badge, Icon } from '@chakra-ui/react';
+import { Box, Heading, Tabs, TabList, TabPanels, Tooltip, Tab, TabPanel, useColorModeValue, HStack, Text, Button, Input, VStack, Wrap, WrapItem, Tag, TagLabel, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody, PopoverCloseButton, SimpleGrid, RadioGroup, Radio, Switch, FormControl, FormLabel, Badge, Icon, Select } from '@chakra-ui/react';
 import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
@@ -229,6 +229,14 @@ export default function ViewsSession() {
     return roomTabs.filter(t => String(t.room).toLowerCase().includes(ql));
   }, [roomTabs, q]);
 
+  const defaultDayIndex = useMemo(() => {
+    const dow = new Date().getDay(); // 0=Sun,1=Mon,...,6=Sat
+    return (dow >= 1 && dow <= 5) ? (dow - 1) : 0;
+  }, []);
+
+  const [dayTabIndex, setDayTabIndex] = useState(defaultDayIndex);
+  const [roomTabIndex, setRoomTabIndex] = useState(0);
+
   function onPrint(day) {
     const scheduleType = day.mode === 'exam' ? 'Examination Schedule' : 'Regular F2F Schedule';
     const headers = ['Room', 'Morning Blocks', 'Afternoon Blocks', 'Evening Blocks'];
@@ -331,10 +339,7 @@ export default function ViewsSession() {
     );
   }
 
-  const defaultDayIndex = useMemo(() => {
-    const dow = new Date().getDay(); // 0=Sun,1=Mon,...,6=Sat
-    return (dow >= 1 && dow <= 5) ? (dow - 1) : 0;
-  }, []);
+  
 
   return (
     <Box>
@@ -348,7 +353,7 @@ export default function ViewsSession() {
             <Badge colorScheme="orange" variant="subtle">Exam Period Detected</Badge>
           )}
         </HStack>
-        <HStack spacing={4}>
+        <HStack spacing={4} flexWrap="wrap" justify={{ base: 'flex-start', md: 'flex-end' }} w={{ base: '100%', md: 'auto' }}>
           <FormControl display="flex" alignItems="center" w="auto">
             <FormLabel htmlFor="schedule-mode" mb="0" fontSize="sm" fontWeight="medium">
               Regular F2F
@@ -375,27 +380,35 @@ export default function ViewsSession() {
       </HStack>
 
       {mode === 'day' ? (
-        <Tabs variant="enclosed-colored" colorScheme="brand" defaultIndex={defaultDayIndex}>
-          <TabList>
+        <>
+          <Box display={{ base: 'block', md: 'none' }} mb={2}>
+            <Select size="sm" value={String(dayTabIndex)} onChange={(e) => setDayTabIndex(Number(e.target.value))}>
+              {filteredTabs.map((t, i) => (
+                <option key={t.day} value={String(i)}>{labelByCode[t.day] || t.day}</option>
+              ))}
+            </Select>
+          </Box>
+          <Tabs variant="enclosed-colored" colorScheme="brand" size="sm" index={dayTabIndex} onChange={setDayTabIndex}>
+          <TabList display={{ base: 'none', md: 'flex' }} overflowX="auto" overflowY="hidden" whiteSpace="nowrap" gap={1} px={1} sx={{ '::-webkit-scrollbar': { display: 'none' }, scrollbarWidth: 'none' }}>
             {filteredTabs.map(t => (
-              <Tab key={t.day}>
+              <Tab key={t.day} flexShrink={0} px={3} py={2} minW="auto">
                 <HStack spacing={2}>
                   <Text>{labelByCode[t.day] || t.day}</Text>
                   {(t.hasExamData && (autoExamDays.has(t.day) || viewMode === 'examination')) && (
-                    <Badge size="sm" colorScheme="green" variant="subtle">Exam</Badge>
+                    <Badge size="sm" colorScheme="green" variant="subtle" display={{ base: 'none', lg: 'inline-flex' }}>Exam</Badge>
                   )}
                   {dayAnnotations[t.day]?.holiday && (
-                    <Badge size="sm" colorScheme="red" variant="subtle" title={dayAnnotations[t.day].holiday.name}>
+                    <Badge size="sm" colorScheme="red" variant="subtle" title={dayAnnotations[t.day].holiday.name} display={{ base: 'none', lg: 'inline-flex' }}>
                       Holiday
                     </Badge>
                   )}
                   {dayAnnotations[t.day]?.mode === 'asynchronous' && (
-                    <Badge size="sm" colorScheme="purple" variant="subtle" title="Asynchronous Mode">
+                    <Badge size="sm" colorScheme="purple" variant="subtle" title="Asynchronous Mode" display={{ base: 'none', lg: 'inline-flex' }}>
                       Async
                     </Badge>
                   )}
                   {dayAnnotations[t.day]?.mode === 'no_class' && (
-                    <Badge size="sm" colorScheme="gray" variant="subtle" title="No Class">
+                    <Badge size="sm" colorScheme="gray" variant="subtle" title="No Class" display={{ base: 'none', lg: 'inline-flex' }}>
                       No Class
                     </Badge>
                   )}
@@ -486,8 +499,8 @@ export default function ViewsSession() {
                         >
                           <Box position="absolute" top={0} left={0} right={0} h="4px" bg={roomAccent(r)} roundedTop="xl" />
                           <VStack align="stretch" spacing={3}>
-                            <HStack justify="space-between">
-                              <Text fontWeight="800">{r}</Text>
+                            <HStack justify="space-between" minW={0}>
+                              <Text fontWeight="800" noOfLines={1}>{r}</Text>
                               <Tooltip label={`View schedule (${labelByCode[t.day] || t.day})`}>
                                 <Button
                                   aria-label="View room schedule"
@@ -530,15 +543,24 @@ export default function ViewsSession() {
             ))}
           </TabPanels>
         </Tabs>
+        </>
       ) : mode === 'room' ? (
-        <Tabs variant="enclosed-colored" colorScheme="brand">
-          <TabList>
+        <>
+          <Box display={{ base: 'block', md: 'none' }} mb={2}>
+            <Select size="sm" value={String(roomTabIndex)} onChange={(e) => setRoomTabIndex(Number(e.target.value))}>
+              {filteredRoomTabs.map((rt, i) => (
+                <option key={rt.room} value={String(i)}>{rt.room}</option>
+              ))}
+            </Select>
+          </Box>
+          <Tabs variant="enclosed-colored" colorScheme="brand" size="sm" index={roomTabIndex} onChange={setRoomTabIndex}>
+          <TabList display={{ base: 'none', md: 'flex' }} overflowX="auto" overflowY="hidden" whiteSpace="nowrap" gap={1} px={1} sx={{ '::-webkit-scrollbar': { display: 'none' }, scrollbarWidth: 'none' }}>
             {filteredRoomTabs.map(rt => (
-              <Tab key={rt.room}>
+              <Tab key={rt.room} flexShrink={0} px={3} py={2} minW="auto">
                 <HStack spacing={2}>
-                  <Text>{rt.room}</Text>
+                  <Text noOfLines={1} maxW={{ base: '160px', lg: 'auto' }}>{rt.room}</Text>
                   {rt.mode === 'exam' && (
-                    <Badge size="sm" colorScheme="green" variant="subtle">Exam</Badge>
+                    <Badge size="sm" colorScheme="green" variant="subtle" display={{ base: 'none', lg: 'inline-flex' }}>Exam</Badge>
                   )}
                 </HStack>
               </Tab>
@@ -582,6 +604,7 @@ export default function ViewsSession() {
             ))}
           </TabPanels>
         </Tabs>
+        </>
       ) : null}
     </Box>
   );

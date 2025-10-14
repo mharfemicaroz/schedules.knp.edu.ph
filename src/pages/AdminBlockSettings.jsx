@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Heading, HStack, VStack, Button, Input, FormControl, FormLabel, Select, Table, Thead, Tr, Th, Tbody, Td, IconButton, useDisclosure, useColorModeValue, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Text, Tag, Wrap, WrapItem } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Button, Input, FormControl, FormLabel, Select, Table, Thead, Tr, Th, Tbody, Td, IconButton, useDisclosure, useColorModeValue, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Text, Tag, Wrap, WrapItem, SimpleGrid } from '@chakra-ui/react';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadBlocksThunk, createBlockThunk, updateBlockThunk, deleteBlockThunk } from '../store/blockThunks';
 import { selectPagedBlocks, setBlockFilters, selectBlockPage, selectBlockPageSize, selectBlockPageCount, selectBlockFilters, setBlockPage, setBlockPageSize } from '../store/blockSlice';
@@ -26,6 +26,7 @@ export default function AdminBlockSettings() {
   const cancelRef = React.useRef();
   const border = useColorModeValue('gray.200','gray.700');
   const tableBg = useColorModeValue('white','gray.800');
+  const muted = useColorModeValue('gray.600','gray.300');
 
   React.useEffect(() => { dispatch(loadBlocksThunk({})); }, [dispatch]);
 
@@ -116,7 +117,55 @@ export default function AdminBlockSettings() {
         </VStack>
       </Box>
 
-      <Box className="responsive-table" overflowX="auto" borderWidth="1px" borderColor={border} rounded="xl" bg={tableBg}>
+      {/* Mobile cards view */}
+      <Box display={{ base: 'block', md: 'none' }}>
+        <VStack align="stretch" spacing={3}>
+          {blocks.map((b) => (
+            <Box key={b.id} borderWidth="1px" borderColor={border} rounded="xl" bg={tableBg} p={4}>
+              <VStack align="stretch" spacing={3}>
+                <Text fontWeight="800" fontSize="md">{b.blockCode}</Text>
+                <SimpleGrid columns={2} spacing={3}>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Room(s)</Text>
+                    <Wrap>{(b.room && chips(b.room).length) ? chips(b.room).map((t,i)=>(<WrapItem key={`r-${b.id}-${i}`}><Tag variant="subtle" colorScheme="blue">{t}</Tag></WrapItem>)) : <Text>-</Text>}</Wrap>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Session</Text>
+                    <Text>{b.session || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>F2F Sched</Text>
+                    <Wrap>{(b.f2fSched && chips(b.f2fSched).length) ? chips(b.f2fSched).map((t,i)=>(<WrapItem key={`f-${b.id}-${i}`}><Tag variant="subtle" colorScheme="green">{t}</Tag></WrapItem>)) : <Text>-</Text>}</Wrap>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Exam Day</Text>
+                    <Text>{b.examDay || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Exam Session</Text>
+                    <Text>{b.examSession || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Exam Room</Text>
+                    <Text>{b.examRoom || '-'}</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="xs" color={muted}>Status</Text>
+                    <Text>{b.isActive ? 'Active' : 'Inactive'}</Text>
+                  </Box>
+                </SimpleGrid>
+                <HStack justify="flex-end" spacing={2}>
+                  <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="outline" colorScheme="yellow" onClick={() => { setSelected(b); editDisc.onOpen(); }} />
+                  <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" variant="outline" colorScheme="red" onClick={() => { setSelected(b); delDisc.onOpen(); }} />
+                </HStack>
+              </VStack>
+            </Box>
+          ))}
+        </VStack>
+      </Box>
+
+      {/* Desktop/tablet table view */}
+      <Box className="responsive-table" overflowX="auto" borderWidth="1px" borderColor={border} rounded="xl" bg={tableBg} display={{ base: 'none', md: 'block' }}>
         <Table size="sm">
           <Thead>
             <Tr>

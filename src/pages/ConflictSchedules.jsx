@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Box, Heading, HStack, VStack, Table, Thead, Tbody, Tr, Th, Td, Text, useColorModeValue, IconButton, Button, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Tag, TagLabel, Badge, Wrap, WrapItem, FormControl, FormLabel, Input, Select } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Table, Thead, Tbody, Tr, Th, Td, Text, useColorModeValue, IconButton, Button, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Tag, TagLabel, Badge, Wrap, WrapItem, FormControl, FormLabel, Input, Select, SimpleGrid } from '@chakra-ui/react';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { FiAlertTriangle, FiEdit, FiTrash, FiChevronUp, FiChevronDown, FiDownload, FiPrinter } from 'react-icons/fi';
@@ -17,6 +17,7 @@ export default function ConflictSchedules() {
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
+  const muted = useColorModeValue('gray.600','gray.300');
   const editDisc = useDisclosure();
   const delDisc = useDisclosure();
   const [selected, setSelected] = useState(null);
@@ -322,7 +323,70 @@ export default function ConflictSchedules() {
         </HStack>
       </Box>
 
-      <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg}>
+      {/* Mobile cards view */}
+      <Box display={{ base: 'block', md: 'none' }}>
+        <VStack align="stretch" spacing={3}>
+          {paged.map(group => {
+            const rep = group.items[0] || {};
+            const fac = rep.facultyName || rep.faculty || rep.instructor || '-';
+            const term = rep.semester || rep.term || '-';
+            const t = rep.schedule || rep.time || '-';
+            const code = rep.code || '-';
+            const sec = rep.section || '-';
+            const room = rep.room || '-';
+            const ses = rep.session || '-';
+            return (
+              <Box key={group.key} borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} p={4}>
+                <VStack align="stretch" spacing={3}>
+                  <Text color="red.500" fontWeight="800">{group.reason}</Text>
+                  <SimpleGrid columns={2} spacing={3}>
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Faculty</Text>
+                      <Text>{fac}</Text>
+                    </Box>
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Term</Text>
+                      <Text>{term}</Text>
+                    </Box>
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Time</Text>
+                      <Text>{t}</Text>
+                    </Box>
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Course / Section</Text>
+                      <Text>{code} <Text as="span" color="gray.500">/</Text> {sec}</Text>
+                    </Box>
+                    <Box gridColumn={{ base: 'span 2', sm: 'auto' }}>
+                      <Text fontSize="xs" color={muted}>Location</Text>
+                      <Text>{room} <Text as="span" color="gray.500">/</Text> <Text as="span" fontSize="xs" color="gray.600">{ses}</Text></Text>
+                    </Box>
+                  </SimpleGrid>
+                  <VStack align="stretch" spacing={2}>
+                    <Text fontSize="xs" color={muted}>Related Items</Text>
+                    <Wrap>
+                      {group.items.slice(0,6).map((c, idx) => (
+                        <WrapItem key={`${c.id}-${idx}`}>
+                          <Badge variant="subtle" colorScheme="gray" px={2} py={1} rounded="md">
+                            <Text as="span" fontSize="xs" color="gray.600">{c.code}/{c.section}</Text>
+                            {isAdmin && (
+                              <>
+                                <IconButton aria-label="Edit" icon={<FiEdit />} size="xs" variant="ghost" ml={1} onClick={() => { setSelected(c); editDisc.onOpen(); }} />
+                                <IconButton aria-label="Delete" icon={<FiTrash />} size="xs" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />
+                              </>
+                            )}
+                          </Badge>
+                        </WrapItem>
+                      ))}
+                    </Wrap>
+                  </VStack>
+                </VStack>
+              </Box>
+            );
+          })}
+        </VStack>
+      </Box>
+
+      <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} display={{ base: 'none', md: 'block' }}>
         <Table size="sm">
           <Thead>
             <Tr>

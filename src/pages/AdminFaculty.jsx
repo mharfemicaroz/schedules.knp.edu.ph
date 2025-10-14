@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, HStack, VStack, Heading, Text, Button, IconButton, Input, Select, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Tag, TagLabel, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
+import { Box, HStack, VStack, Heading, Text, Button, IconButton, Input, Select, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Tag, TagLabel, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, SimpleGrid } from '@chakra-ui/react';
 import { FiPlus, FiEdit, FiTrash, FiFilter, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadFacultiesThunk, createFacultyThunk, updateFacultyThunk, deleteFacultyThunk } from '../store/facultyThunks';
@@ -11,6 +11,7 @@ export default function AdminFaculty() {
   const dispatch = useDispatch();
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
+  const muted = useColorModeValue('gray.600','gray.300');
   const items = useSelector(selectFilteredFaculty);
   const filters = useSelector(selectFacultyFilters);
   const opts = useSelector(selectFacultyFilterOptions);
@@ -109,7 +110,67 @@ export default function AdminFaculty() {
         </HStack>
       </Box>
 
-      <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} overflowX="auto">
+      {/* Mobile cards view */}
+      <Box display={{ base: 'block', md: 'none' }}>
+        <VStack align="stretch" spacing={3}>
+          {paged.map(row => {
+            const name = row.name || row.faculty || row.instructorName || row.instructor || row.full_name || 'N/A';
+            const email = row.email || 'N/A';
+            const dept = row.department || row.dept || row.department_name || row.departmentName || 'N/A';
+            const lru = row.load_release_units ?? row.loadReleaseUnits ?? '0';
+            return (
+              <Box key={row.id} borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} p={4}>
+                <VStack align="stretch" spacing={3}>
+                  <Text fontWeight="800" fontSize="md" noOfLines={2}>{name}</Text>
+                  <SimpleGrid columns={2} spacing={3}>
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Email</Text>
+                      <Text noOfLines={1}>{email}</Text>
+                    </Box>
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Department</Text>
+                      <Text>{dept}</Text>
+                    </Box>
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Designation</Text>
+                      <Text>{row.designation || 'N/A'}</Text>
+                    </Box>
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Employment</Text>
+                      <Text>{row.employment || 'N/A'}</Text>
+                    </Box>
+                  </SimpleGrid>
+                  <HStack spacing={4} wrap="wrap">
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Load Release</Text>
+                      <Text fontWeight="700">{lru}</Text>
+                    </Box>
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Rank</Text>
+                      <Text fontWeight="700">{row.rank || 'N/A'}</Text>
+                    </Box>
+                    {isAdmin && (
+                      <HStack justify="flex-end" spacing={2} ml="auto">
+                        <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="outline" colorScheme="yellow" onClick={()=>onEdit(row)} />
+                        <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" variant="outline" colorScheme="red" onClick={()=>onDelete(row)} />
+                      </HStack>
+                    )}
+                  </HStack>
+                </VStack>
+              </Box>
+            );
+          })}
+        </VStack>
+        {sortedItems.length === 0 && (
+          <VStack py={10}>
+            <Heading size="sm">No faculty found</Heading>
+            <Text color="gray.500">Adjust filters or add a new record.</Text>
+          </VStack>
+        )}
+      </Box>
+
+      {/* Desktop/tablet table view */}
+      <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} overflowX="auto" display={{ base: 'none', md: 'block' }}>
         <HStack justify="space-between" px={4} pt={3} pb={1}>
           <Tag colorScheme="blue" variant="subtle"><TagLabel>{sortedItems.length} results</TagLabel></Tag>
           <Select size="sm" value={pageSize} onChange={(e)=>{ const n=Number(e.target.value)||10; setPageSize(n); setPage(1); }} maxW="100px">
