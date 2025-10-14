@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Box, Heading, HStack, Text, Input, VStack, Tag, TagLabel, Wrap, WrapItem, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, SimpleGrid, Button, useColorModeValue, Badge , Divider, Icon, Link as ChakraLink } from '@chakra-ui/react';
+import { Box, Heading, HStack, Text, Input, VStack, Tag, TagLabel, Wrap, WrapItem, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, SimpleGrid, Button, useColorModeValue, Badge , Divider, Icon, Link as ChakraLink, IconButton } from '@chakra-ui/react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectBlocks } from '../store/blockSlice';
+import { selectAllCourses } from '../store/dataSlice';
 import { loadBlocksThunk } from '../store/blockThunks';
 import { buildTable, printContent } from '../utils/printDesign';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
@@ -113,6 +114,7 @@ function roomAccent(room) {
 export default function VisualMap() {
   const dispatch = useDispatch();
   const blocks = useSelector(selectBlocks);
+  const allCourses = useSelector(selectAllCourses);
   const acadData = useSelector(s => s.data.acadData);
   const holidays = useSelector(s => s.data.holidays);
   const authUser = useSelector(s => s.auth.user);
@@ -263,6 +265,114 @@ export default function VisualMap() {
     return tabs.map(t => ({ ...t, rooms: t.rooms.filter(r => String(r).toLowerCase().includes(ql)) }));
   }, [tabs, q]);
 
+  // KPI metrics across shown days/rooms
+  const kpis = useMemo(() => {
+    const allBlocks = new Set();
+    const programByBlock = new Map();
+    const programs = new Set();
+    (blocks || []).forEach(b => {
+      const code = b.blockCode || b.block_code;
+      const prog = b.program || b.programcode;
+      if (code) {
+        const sc = String(code);
+        allBlocks.add(sc);
+        if (prog) programByBlock.set(sc, String(prog));
+      }
+      if (prog) programs.add(String(prog));
+    });
+
+    const presentBlocks = new Set();
+    let totalRooms = 0;
+    let occupiedRooms = 0;
+    let totalBlocksInOccupiedRooms = 0;
+
+    // Fractional days per program based on schedules' F2F days and total unique blocks per program
+    const DAY_SET = new Set(DAY_CODES);
+    const dayNorm = (v) => {
+      const s = String(v || '').trim().slice(0,3).toLowerCase();
+      return s ? s[0].toUpperCase() + s.slice(1) : '';
+    };
+    const tokens = (s) => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+    const programTotalBlocks = new Map(); // prog -> Set(all unique blocks)
+    const programDayBlockSets = new Map(); // prog -> Map(day -> Set(blocks))
+    (allCourses || []).forEach(c => {
+      const prog = c.program || c.programcode;
+      const block = c.section || c.blockCode || c.block_code;
+      if (!prog || !block) return;
+      // total unique blocks per program
+      const tot = programTotalBlocks.get(prog) || new Set();
+      tot.add(String(block));
+      programTotalBlocks.set(prog, tot);
+      // days this block appears
+      const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : tokens(c.f2fSched).map(dayNorm);
+      daysArr.forEach(d => {
+        if (!DAY_SET.has(d)) return;
+        const dayMap = programDayBlockSets.get(prog) || new Map();
+        const set = dayMap.get(d) || new Set();
+        set.add(String(block));
+        dayMap.set(d, set);
+        programDayBlockSets.set(prog, dayMap);
+      });
+    });
+    const daysCount = DAY_CODES.length;
+
+    filteredTabs.forEach(t => {
+      totalRooms += t.rooms.length;
+      t.rooms.forEach(r => {
+        let roomBlockCount = 0;
+        SESSIONS.forEach(ses => {
+          const m = t.matrix[ses]?.get(r) || new Map();
+          roomBlockCount += m.size;
+          m.forEach((_, b) => presentBlocks.add(b));
+        });
+        if (roomBlockCount > 0) {
+          occupiedRooms += 1;
+          totalBlocksInOccupiedRooms += roomBlockCount;
+        }
+      });
+
+      // occupancy + present blocks are handled above; program/day sets come from schedules
+    });
+
+    const presentCount = presentBlocks.size;
+    const totalUniqueBlocks = allBlocks.size || 0;
+    const presentPct = totalUniqueBlocks ? (presentCount / totalUniqueBlocks) : 0;
+    const occupancyRate = totalRooms ? (occupiedRooms / totalRooms) : 0;
+    const avgBlocksPerOccRoom = occupiedRooms ? (totalBlocksInOccupiedRooms / occupiedRooms) : 0;
+
+    // Compute fractional day counts per program: sum over days of (#blocks that day / total blocks)
+    const programFractionalDays = new Map();
+    programTotalBlocks.forEach((totalSet, prog) => {
+      const total = totalSet.size || 0;
+      if (total === 0) { programFractionalDays.set(prog, 0); return; }
+      const dayMap = programDayBlockSets.get(prog) || new Map();
+      let sum = 0;
+      DAY_CODES.forEach(d => {
+        const set = dayMap.get(d) || new Set();
+        sum += (set.size / total);
+      });
+      programFractionalDays.set(prog, sum); // in [0, 5]
+    });
+    const numPrograms = programTotalBlocks.size || 0;
+    const sumProgramDays = Array.from(programFractionalDays.values()).reduce((s, v) => s + v, 0);
+    const avgDaysPerProgram = numPrograms ? (sumProgramDays / numPrograms) : 0;
+
+    const programDayEntries = Array.from(programFractionalDays.entries()).map(([prog, val]) => ({ prog: String(prog), days: val }))
+      .sort((a,b)=> (b.days - a.days) || a.prog.localeCompare(b.prog));
+
+    return {
+      presentCount,
+      totalUniqueBlocks,
+      presentPct,
+      occupancyRate,
+      avgBlocksPerOccRoom,
+      totalRooms,
+      occupiedRooms,
+      avgDaysPerProgram,
+      programDayEntries,
+    };
+  }, [filteredTabs, blocks]);
+
   // Helper to split rooms list into two halves for large counts
   const splitRooms = (rooms) => {
     if (!rooms || rooms.length <= ROOM_SPLIT_THRESHOLD) return [rooms];
@@ -296,6 +406,56 @@ export default function VisualMap() {
         <Heading size="md">Classroom Assigment</Heading>
         <Input placeholder="Filter rooms" value={q} onChange={e=>setQ(e.target.value)} maxW="280px" w={{ base: '100%', sm: 'auto' }} />
       </HStack>
+
+      {/* KPI cards - admin only */}
+      {isAdmin && (
+        <SimpleGrid columns={{ base: 1, sm: 2, md: 3 }} spacing={4} mb={4}>
+          <Box bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
+            <Text fontSize="xs" color={subtle}>Blocks Present</Text>
+            <HStack justify="space-between" mt={1}>
+              <Text fontWeight="800" fontSize="xl">{kpis.presentCount} / {kpis.totalUniqueBlocks}</Text>
+              <Badge colorScheme="teal" variant="subtle">{(kpis.presentPct*100).toFixed(2)}%</Badge>
+            </HStack>
+          </Box>
+          <Box bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
+            <Text fontSize="xs" color={subtle}>Room Occupancy</Text>
+            <HStack justify="space-between" mt={1}>
+              <Text fontWeight="800" fontSize="xl">{kpis.occupiedRooms} / {kpis.totalRooms}</Text>
+              <Badge colorScheme="purple" variant="subtle">{(kpis.occupancyRate*100).toFixed(2)}%</Badge>
+            </HStack>
+          </Box>
+          <Box bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
+            <HStack spacing={2}>
+              <Text fontSize="xs" color={subtle}>Avg Days Present per Program</Text>
+              <Popover placement="top" isLazy>
+                <PopoverTrigger>
+                  <IconButton aria-label="Program day breakdown" icon={<Icon as={FiInfo} />} size="xs" variant="ghost" />
+                </PopoverTrigger>
+                <PopoverContent w="280px">
+                  <PopoverArrow />
+                  <PopoverBody>
+                    <VStack align="stretch" spacing={1}>
+                      {kpis.programDayEntries.slice(0, 12).map((e, i) => (
+                        <HStack key={`${e.prog}-${i}`} justify="space-between">
+                          <Text fontSize="xs">{e.prog}</Text>
+                          <Text fontSize="xs" fontWeight="700">{e.days.toFixed(2)}d</Text>
+                        </HStack>
+                      ))}
+                      {kpis.programDayEntries.length > 12 && (
+                        <Text fontSize="xs" color={subtle}>+{kpis.programDayEntries.length - 12} more</Text>
+                      )}
+                    </VStack>
+                  </PopoverBody>
+                </PopoverContent>
+              </Popover>
+            </HStack>
+            <HStack justify="space-between" mt={1}>
+              <Text fontWeight="800" fontSize="xl">{kpis.avgDaysPerProgram.toFixed(2)}</Text>
+              <Badge colorScheme="gray" variant="subtle">/ {Math.max(1, filteredTabs.length)}d</Badge>
+            </HStack>
+          </Box>
+        </SimpleGrid>
+      )}
 
       {filteredTabs.map(t => (
         <Box key={t.day} mb={8}>
