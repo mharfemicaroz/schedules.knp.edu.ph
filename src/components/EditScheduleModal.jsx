@@ -27,6 +27,7 @@ import {
   ListItem,
   Collapse,
   Box,
+  SimpleGrid,
 } from '@chakra-ui/react';
 import { FiEdit } from 'react-icons/fi';
 import FacultySelect from './FacultySelect';
@@ -284,10 +285,10 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
     }
   };
 
-  async function computeSuggestions({ schedule, form, allCourses, onStep }) {
+  async function computeSuggestions({ schedule, form, allCourses, onStep, maxDepth = 2 }) {
     const stepNote = (p, note) => { try { onStep && onStep(p, note); } catch {} };
     try {
-      const MAX_DEPTH = 10;
+      const MAX_DEPTH = Math.max(1, Math.min(10, Number(maxDepth) || 2));
 
       const nname = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const facKey = (r) => (r.facultyId != null ? `id:${r.facultyId}` : `nm:${nname(r.facultyName || r.faculty || r.instructor)}`);
@@ -304,7 +305,16 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
       const toLabel = (rg) => `${pad(Math.floor(rg.start/60))}:${pad(rg.start%60)}-${pad(Math.floor(rg.end/60))}:${pad(rg.end%60)}`;
       const sessionOfMinutes = (m) => (m < 12*60 ? 'morning' : (m < 17*60 ? 'afternoon' : 'evening'));
 
-      const timeOpts = (getTimeOptions() || []).map(s => String(s || '').trim()).filter(Boolean);
+      // Restrict suggestions to specific 1-hour slots only
+      const allowedSuggestionTimes = new Set([
+        '8-9AM','9-10AM','10-11AM','11-12NN',
+        '12-1PM','1-2PM','2-3PM','3-4PM','4-5PM','5-6PM',
+        '8-9PM',
+      ]);
+      const timeOpts = (getTimeOptions() || [])
+        .map(s => String(s || '').trim())
+        .filter(Boolean)
+        .filter(t => allowedSuggestionTimes.has(t));
       const optRanges = timeOpts.map(t => ({ src: t, rg: parseTimeBlockToMinutes(t) }))
         .filter(x => x.rg && Number.isFinite(x.rg.start) && Number.isFinite(x.rg.end));
       const keyToSrc = new Map(optRanges.map(x => [keyOf(x.rg), x.src]));
@@ -400,6 +410,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
 
       if (hasSameSectionOverlap(myRg)) {
         stepNote(15, 'Proposing candidate moves within same session…');
+        let count = 0;
         for (const t of prefTerms) {
           for (const tk of sessionKeys) {
             if (t === myTerm && tk === myKey) continue;
@@ -415,12 +426,11 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                   to: `${t} ${srcByKey(tk)}`,
                 }],
               });
-              if (plans.length >= 5) break;
+              count++; if (count >= 3) break;
             }
           }
-          if (plans.length >= 5) break;
+          if (count >= 3) break;
         }
-        if (plans.length) return plans;
       }
 
       if (conflicts.length === 0) {
@@ -451,12 +461,14 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
       const target = conflicts[0];
       stepNote(35, 'Trying to move blocking course to keep this course time…');
 
-      const tryMoveTargetDirect = () => {
+      // 1-step direct: propose several direct moves for the blocking course
+      {
+        let added = 0;
         for (const t of prefTerms) {
           for (const tk of sessionKeys) {
             if (t === myTerm && tk === myKey) continue;
             if (canPlaceRow(target, t, tk)) {
-              return {
+              plans.push({
                 label: 'Move blocking course to free this slot',
                 candidateChange: null,
                 steps: [{
@@ -466,14 +478,13 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                   from: `${myTerm} ${target.schedule || target.time || ''}`,
                   to: `${t} ${srcByKey(tk)}`,
                 }],
-              };
+              });
+              added++; if (added >= 3) break;
             }
           }
+          if (added >= 3) break;
         }
-        return null;
-      };
-      const direct = tryMoveTargetDirect();
-      if (direct) plans.push(direct);
+      }
 
       const occByTerm = new Map();
       for (const r of sameFacRows) {
@@ -486,76 +497,121 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
         occByTerm.set(t, termMap);
       }
 
-      stepNote(45, 'Searching multi-step reallocations (up to 10)…');
+      // Order session keys to prefer currently occupied slots first (to surface 2+/3-step chains),
+      // then fall back to empty slots.
+      const termMapForMy = occByTerm.get(myTerm) || new Map();
+      const sessionKeysOrdered = (sessionKeys || []).slice().sort((a, b) => {
+        const al = (termMapForMy.get(a) || []).length;
+        const bl = (termMapForMy.get(b) || []).length;
+        return bl - al;
+      });
 
-      const searchChain = (depth, termKey, targetKey, occSnapshot, path) => {
-        if (depth > MAX_DEPTH) return null;
-        const termMap = occSnapshot.get(termKey) || new Map();
-        const occupants = (termMap.get(targetKey) || []).filter(x => String(x.id) !== String(target.id));
-        if (occupants.length === 0) {
-          return {
-            label: 'Reallocate multiple courses to free this slot',
-            candidateChange: null,
-            steps: path.concat([{
-              node: depth,
-              course: target.code || target.courseName || 'Course',
-              section: target.section || '',
-              from: `${myTerm} ${target.schedule || target.time || ''}`,
-              to: `${termKey} ${srcByKey(targetKey)}`,
-            }]),
-          };
+      stepNote(45, `Searching multi-step reallocations (up to ${MAX_DEPTH})…`);
+
+      // Also propose moving this course to a free compatible slot (even if conflicts exist)
+      {
+        let added = 0;
+        for (const t of prefTerms) {
+          for (const tk of sessionKeysOrdered) {
+            if (t === myTerm && tk === myKey) continue;
+            if (canPlaceCandidate(t, tk)) {
+              plans.push({
+                label: 'Move this course to a free slot',
+                candidateChange: { toTerm: t, toTime: srcByKey(tk) },
+                steps: [{
+                  node: 1,
+                  course: cand.code || cand.courseName || 'Course',
+                  section: cand.section || '',
+                  from: `${cand.term || ''} ${cand.schedule || cand.time || ''}`,
+                  to: `${t} ${srcByKey(tk)}`,
+                }],
+              });
+              added++; if (added >= 3) break;
+            }
+          }
+          if (added >= 3) break;
         }
-        if (depth === MAX_DEPTH) return null;
+      }
 
-        const blocker = occupants[0];
-        const blockerRg = rangeOf(blocker);
-        const blockerKey = blockerRg ? keyOf(blockerRg) : '';
-        for (const altKey of sessionKeys) {
-          if (altKey === targetKey || altKey === blockerKey) continue;
-          if (!canPlaceRow(blocker, termKey, altKey)) continue;
-
-          const nextOcc = new Map();
-          occSnapshot.forEach((m, k) => {
-            const m2 = new Map();
-            m.forEach((arr, kk) => m2.set(kk, arr.slice()));
-            nextOcc.set(k, m2);
-          });
-          const nextTermMap = nextOcc.get(termKey) || new Map();
-          nextOcc.set(termKey, nextTermMap);
-          nextTermMap.set(blockerKey, (nextTermMap.get(blockerKey) || []).filter(x => String(x.id) !== String(blocker.id)));
-          nextTermMap.set(altKey, (nextTermMap.get(altKey) || []).concat([blocker]));
-
-          const res = searchChain(
-            depth + 1,
-            termKey,
-            targetKey,
-            nextOcc,
-            path.concat([{
-              node: depth,
-              course: blocker.code || blocker.courseName || 'Course',
-              section: blocker.section || '',
-              from: `${termKey} ${blocker.schedule || blocker.time || ''}`,
-              to: `${termKey} ${srcByKey(altKey)}`,
-            }])
-          );
-          if (res) return res;
+      const chainPlansByDepth = new Map();
+      const addChainPlan = (plan) => {
+        const d = plan.steps.length;
+        if (d > MAX_DEPTH) return;
+        const arr = chainPlansByDepth.get(d) || [];
+        const sig = plan.steps.map(s => `${s.course}|${s.from}|${s.to}`).join('>');
+        if (!arr.some(p => p._sig === sig)) {
+          arr.push({ ...plan, _sig: sig });
+          chainPlansByDepth.set(d, arr);
         }
-        return null;
       };
 
-      for (const tk of sessionKeys) {
-        if (tk === myKey) continue;
-        const snapshot = new Map();
+      const searchCollect = (termKey, targetKey) => {
+        const snapshot0 = new Map();
         occByTerm.forEach((m, k) => {
           const m2 = new Map();
           m.forEach((arr, kk) => m2.set(kk, arr.slice()));
-          snapshot.set(k, m2);
+          snapshot0.set(k, m2);
         });
-        const chainPlan = searchChain(1, myTerm, tk, snapshot, []);
-        if (chainPlan) { plans.push(chainPlan); break; }
+        const stack = [{ depth: 1, occ: snapshot0, path: [] }];
+        while (stack.length) {
+          const { depth, occ, path } = stack.pop();
+          if (depth > MAX_DEPTH) continue;
+          const termMap = occ.get(termKey) || new Map();
+          const occupants = (termMap.get(targetKey) || []).filter(x => String(x.id) !== String(target.id));
+          if (occupants.length === 0) {
+            addChainPlan({
+              label: 'Reallocate multiple courses to free this slot',
+              candidateChange: null,
+              steps: path.concat([{
+                node: depth,
+                course: target.code || target.courseName || 'Course',
+                section: target.section || '',
+                from: `${myTerm} ${target.schedule || target.time || ''}`,
+                to: `${termKey} ${srcByKey(targetKey)}`,
+              }]),
+            });
+            continue;
+          }
+          if (depth === MAX_DEPTH) continue;
+          for (const blocker of occupants.slice(0, 3)) {
+            const blockerRg = rangeOf(blocker);
+            const blockerKey = blockerRg ? keyOf(blockerRg) : '';
+            for (const altKey of sessionKeysOrdered) {
+              if (altKey === targetKey || altKey === blockerKey) continue;
+              if (!canPlaceRow(blocker, termKey, altKey)) continue;
+              const nextOcc = new Map();
+              occ.forEach((m, k) => {
+                const m2 = new Map();
+                m.forEach((arr, kk) => m2.set(kk, arr.slice()));
+                nextOcc.set(k, m2);
+              });
+              const nextTermMap = nextOcc.get(termKey) || new Map();
+              nextOcc.set(termKey, nextTermMap);
+              nextTermMap.set(blockerKey, (nextTermMap.get(blockerKey) || []).filter(x => String(x.id) !== String(blocker.id)));
+              nextTermMap.set(altKey, (nextTermMap.get(altKey) || []).concat([blocker]));
+              const nextPath = path.concat([{
+                node: depth,
+                course: blocker.code || blocker.courseName || 'Course',
+                section: blocker.section || '',
+                from: `${termKey} ${blocker.schedule || blocker.time || ''}`,
+                to: `${termKey} ${srcByKey(altKey)}`,
+              }]);
+              stack.push({ depth: depth + 1, occ: nextOcc, path: nextPath });
+            }
+          }
+        }
+      };
+
+      for (const tk of sessionKeysOrdered) {
+        if (tk === myKey) continue;
+        searchCollect(myTerm, tk);
+      }
+      for (let d = MAX_DEPTH; d >= 1; d--) {
+        const arr = (chainPlansByDepth.get(d) || []).slice(0, 3).map(p => { const { _sig, ...rest } = p; return rest; });
+        plans.push(...arr);
       }
 
-      if (plans.length === 0) stepNote(95, 'No viable 10-node plan found.');
+      if (plans.length === 0) stepNote(95, `No viable ${MAX_DEPTH}-node plan found.`);
       return plans;
     } catch (e) {
       console.error('[Suggestions] Error:', e);
@@ -564,9 +620,9 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} isCentered motionPreset="scale">
+    <Modal isOpen={isOpen} onClose={onClose} isCentered motionPreset="scale" size="5xl" scrollBehavior="inside">
       <ModalOverlay backdropFilter="blur(6px)" />
-      <ModalContent overflow="hidden" borderRadius="xl" boxShadow="2xl">
+      <ModalContent overflow="hidden" borderRadius="2xl" boxShadow="2xl" maxW="90vw">
         <ModalHeader bg={headerBg} borderBottomWidth="1px">Edit Schedule</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
@@ -614,7 +670,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                         <Text color="red.600">and {liveConflictGroups.length - 4} more conflict groups…</Text>
                       )}
                       <VStack align="stretch" mt={3} spacing={2}>
-                        <HStack>
+                        <HStack flexWrap="wrap" columnGap={3} rowGap={2}>
                           <Button
                             size="sm"
                             colorScheme="blue"
@@ -634,7 +690,8 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                                     onStep: (p, note) => {
                                       setSuggPercent(Math.min(100, Math.max(0, p || 0)));
                                       if (note) setSuggNote(note);
-                                    }
+                                    },
+                                    maxDepth: 2,
                                   });
                                   setSuggPlans(plans || []);
                                 } finally {
@@ -644,7 +701,40 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                               }, 30);
                             }}
                           >
-                            Find Suggestions
+                            Find Suggestions (up to 2 steps)
+                          </Button>
+                          <Button
+                            size="sm"
+                            colorScheme="purple"
+                            variant="outline"
+                            isDisabled={suggBusy}
+                            onClick={async () => {
+                              setSuggOpen(true);
+                              setSuggBusy(true);
+                              setSuggPlans([]);
+                              setSuggPercent(0);
+                              setSuggNote('Exploring deeper…');
+                              setTimeout(async () => {
+                                try {
+                                  const plans = await computeSuggestions({
+                                    schedule,
+                                    form,
+                                    allCourses,
+                                    onStep: (p, note) => {
+                                      setSuggPercent(Math.min(100, Math.max(0, p || 0)));
+                                      if (note) setSuggNote(note);
+                                    },
+                                    maxDepth: 3,
+                                  });
+                                  setSuggPlans(plans || []);
+                                } finally {
+                                  setSuggBusy(false);
+                                  setSuggPercent(100);
+                                }
+                              }, 30);
+                            }}
+                          >
+                            Explore Deeper (up to 3 steps)
                           </Button>
                           {suggBusy && (
                             <HStack spacing={2}>
@@ -660,11 +750,11 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                         </HStack>
                         <Collapse in={suggOpen} animateOpacity>
                           {suggBusy ? (
-                            <Text fontSize="sm" color="gray.600">Analyzing up to 10 nodes…</Text>
+                            <Text fontSize="sm" color="gray.600">Analyzing suggestions…</Text>
                           ) : (
                             <VStack align="stretch" spacing={3}>
                               {suggPlans.length === 0 ? (
-                                <Text fontSize="sm" color="gray.600">No suggestions up to ten nodes.</Text>
+                                <Text fontSize="sm" color="gray.600">No suggestions found for the selected depth.</Text>
                               ) : (
                                 suggPlans.map((plan, i) => {
                                   const maxNode = Math.max(...plan.steps.map(s => s.node || 1));
@@ -718,10 +808,10 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
               <Text fontSize="sm" color={subtleText} display="none">
                 {schedule.code} {schedule.title}
               </Text>
-              <HStack>
+              <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4} w="full">
                 <FormControl>
                   <FormLabel>Term</FormLabel>
-                  <Select value={form.term} onChange={update('term')}>
+                  <Select value={form.term} onChange={update('term')} w="full">
                     <option value=""></option>
                     <option value="1st">1st</option>
                     <option value="2nd">2nd</option>
@@ -730,26 +820,26 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                 </FormControl>
                 <FormControl>
                   <FormLabel>Session</FormLabel>
-                  <Select value={form.session} onChange={update('session')}>
+                  <Select value={form.session} onChange={update('session')} w="full">
                     <option value="">-</option>
                     <option>Morning</option>
                     <option>Afternoon</option>
                     <option>Evening</option>
                   </Select>
                 </FormControl>
-              </HStack>
-              <FormControl>
-                <FormLabel>Faculty</FormLabel>
-                <FacultySelect
-                  value={form.faculty}
-                  onChange={(v) => setForm(s => ({ ...s, faculty: v }))}
-                  onChangeId={setFacultyId}
-                  allowClear
-                />
-              </FormControl>
+                <FormControl>
+                  <FormLabel>Faculty</FormLabel>
+                  <FacultySelect
+                    value={form.faculty}
+                    onChange={(v) => setForm(s => ({ ...s, faculty: v }))}
+                    onChangeId={setFacultyId}
+                    allowClear
+                  />
+                </FormControl>
+              </SimpleGrid>
               {viewMode === 'examination' ? (
                 <>
-                  <HStack>
+                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} w="full">
                     <FormControl>
                       <FormLabel>Exam Day</FormLabel>
                       <Input value={form.examDay} onChange={update('examDay')} placeholder="Mon/Tue/..." />
@@ -763,7 +853,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                         <option>Evening</option>
                       </Select>
                     </FormControl>
-                  </HStack>
+                  </SimpleGrid>
                   <FormControl>
                     <FormLabel>Exam Room</FormLabel>
                     <Input value={form.examRoom} onChange={update('examRoom')} />
@@ -771,20 +861,24 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                 </>
               ) : (
                 <>
-                  <HStack>
+                  <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4} w="full">
                     <FormControl>
                       <FormLabel>Day</FormLabel>
                       <Input value={form.day} onChange={update('day')} placeholder="Mon/Tue or Mon/Wed/Fri" />
                     </FormControl>
                     <FormControl>
                       <FormLabel>Time</FormLabel>
-                      <Select value={form.time} onChange={update('time')}>
+                      <Select value={form.time} onChange={update('time')} w="full">
                         {getTimeOptions().map((t, i) => (
                           <option key={`${t}-${i}`} value={t}>{t || ''}</option>
                         ))}
                       </Select>
                     </FormControl>
-                  </HStack>
+                    <FormControl>
+                      <FormLabel>Room</FormLabel>
+                      <Input value={form.room} onChange={update('room')} />
+                    </FormControl>
+                  </SimpleGrid>
                   <FormControl>
                     <FormLabel>F2F Sched</FormLabel>
                     <VStack align="stretch" spacing={2}>
@@ -805,10 +899,6 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                         placeholder="Optional notes (will override days if edited)"
                       />
                     </VStack>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Room</FormLabel>
-                    <Input value={form.room} onChange={update('room')} />
                   </FormControl>
                 </>
               )}
