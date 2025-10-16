@@ -73,7 +73,8 @@ function isEligibleAssignment(schedule, faculty, indexes) {
   const timeStr = String(schedule.scheduleKey || schedule.schedule || schedule.time || '').trim();
   const t0 = parseTimeBlockToMinutes(timeStr);
   const term = termOf(schedule);
-  if (!term || !timeStr || !Number.isFinite(t0.start) || !Number.isFinite(t0.end)) return false;
+  // If critical fields are missing or unparsable, assume eligible instead of failing hard
+  if (!term || !timeStr || !Number.isFinite(t0.start) || !Number.isFinite(t0.end)) return true;
 
   const sameSectionKey = `${norm(schedule.section || '')}|${term}`;
   const fnameKey = norm(faculty.name || faculty.faculty || faculty.full_name || '');
@@ -600,8 +601,14 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       setBusy(true);
       // Compute synchronously; dataset is small per faculty due to indexing
       const out = [];
+      // Exclude the current faculty (by id or normalized name)
+      const currId = (schedule?.facultyId != null) ? String(schedule.facultyId) : '';
+      const currName = String(schedule?.faculty || schedule?.facultyName || schedule?.instructor || '').toLowerCase().replace(/[^a-z0-9]/g,'');
       for (const f of filtered) {
-        if (isEligibleAssignment(schedule, f, indexes, allCourses)) out.push(f);
+        const fid = (f?.id != null) ? String(f.id) : '';
+        const fname = String(f?.name || f?.faculty || f?.full_name || '').toLowerCase().replace(/[^a-z0-9]/g,'');
+        if ((currId && fid && currId === fid) || (currName && fname && currName === fname)) continue;
+        if (isEligibleAssignment(schedule, f, indexes)) out.push(f);
       }
       if (alive) { setEligibles(out); setBusy(false); setPage(1); }
     };

@@ -35,6 +35,7 @@ import DayMultiSelect from './DayMultiSelect';
 import { getTimeOptions } from '../utils/timeOptions';
 import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
+// import { selectAllFaculty } from '../store/facultySlice';
 import { buildConflicts, parseF2FDays, parseTimeBlockToMinutes } from '../utils/conflicts';
 import { useLocalStorage } from '../utils/scheduleUtils';
 
@@ -63,6 +64,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
   const headerBg = useColorModeValue('gray.50', 'gray.700');
   const subtleText = useColorModeValue('gray.600', 'gray.400');
   const allCourses = useSelector(selectAllCourses);
+  // const allFaculty = useSelector(selectAllFaculty);
   const [preventSave, setPreventSave] = useLocalStorage('schedPreventSaveOnConflict', true);
 
   const [suggOpen, setSuggOpen] = useState(false);
@@ -70,8 +72,16 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
   const [suggPlans, setSuggPlans] = useState([]);
   const [suggPercent, setSuggPercent] = useState(0);
   const [suggNote, setSuggNote] = useState('');
+  // Suggestion mode no longer needed; single suggestions flow
 
   useEffect(() => {
+    // Reset suggestions state on open/close or when switching schedule
+    setSuggOpen(false);
+    setSuggBusy(false);
+    setSuggPlans([]);
+    setSuggPercent(0);
+    setSuggNote('');
+
     if (schedule) {
       setForm({
         ...emptyForm,
@@ -285,10 +295,10 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
     }
   };
 
-  async function computeSuggestions({ schedule, form, allCourses, onStep, maxDepth = 2 }) {
+  async function computeSuggestions({ schedule, form, allCourses, onStep, maxDepth = 3 }) {
     const stepNote = (p, note) => { try { onStep && onStep(p, note); } catch {} };
     try {
-      const MAX_DEPTH = Math.max(1, Math.min(10, Number(maxDepth) || 2));
+      const MAX_DEPTH = Math.max(1, Math.min(10, Number(maxDepth) || 3));
 
       const nname = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const facKey = (r) => (r.facultyId != null ? `id:${r.facultyId}` : `nm:${nname(r.facultyName || r.faculty || r.instructor)}`);
@@ -619,6 +629,8 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
     }
   }
 
+  // computeOtherFacultySuggestions removed per requirement
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} isCentered motionPreset="scale" size="5xl" scrollBehavior="inside">
       <ModalOverlay backdropFilter="blur(6px)" />
@@ -691,39 +703,6 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                                       setSuggPercent(Math.min(100, Math.max(0, p || 0)));
                                       if (note) setSuggNote(note);
                                     },
-                                    maxDepth: 2,
-                                  });
-                                  setSuggPlans(plans || []);
-                                } finally {
-                                  setSuggBusy(false);
-                                  setSuggPercent(100);
-                                }
-                              }, 30);
-                            }}
-                          >
-                            Find Suggestions (up to 2 steps)
-                          </Button>
-                          <Button
-                            size="sm"
-                            colorScheme="purple"
-                            variant="outline"
-                            isDisabled={suggBusy}
-                            onClick={async () => {
-                              setSuggOpen(true);
-                              setSuggBusy(true);
-                              setSuggPlans([]);
-                              setSuggPercent(0);
-                              setSuggNote('Exploring deeper…');
-                              setTimeout(async () => {
-                                try {
-                                  const plans = await computeSuggestions({
-                                    schedule,
-                                    form,
-                                    allCourses,
-                                    onStep: (p, note) => {
-                                      setSuggPercent(Math.min(100, Math.max(0, p || 0)));
-                                      if (note) setSuggNote(note);
-                                    },
                                     maxDepth: 3,
                                   });
                                   setSuggPlans(plans || []);
@@ -734,7 +713,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                               }, 30);
                             }}
                           >
-                            Explore Deeper (up to 3 steps)
+                            Find Suggestions
                           </Button>
                           {suggBusy && (
                             <HStack spacing={2}>
@@ -773,6 +752,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
                                       {plan.candidateChange?.toTerm || plan.candidateChange?.toTime ? (
                                         <Text mt={2} fontSize="xs" color="gray.600">
                                           Outcome if applied: set this course to {plan.candidateChange?.toTerm || form.term} {plan.candidateChange?.toTime || form.time}
+                                          {plan.candidateChange?.toFacultyName ? ` • Faculty: ${plan.candidateChange?.toFacultyName}` : ''}
                                         </Text>
                                       ) : (
                                         <Text mt={2} fontSize="xs" color="gray.600">

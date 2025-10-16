@@ -74,7 +74,7 @@ function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, 
           variant="ghost"
           onClick={onOpenMenu}
         />
-        <Image src="/logo.png" alt="Logo" boxSize={{ base: '24px', md: '28px' }} rounded="md" />
+        
         <Box>
           <Text fontWeight="800" fontSize={{ base: 'sm', md: 'md' }} noOfLines={1}>
             Faculty Loading SY 2025-2026, 1st Semester

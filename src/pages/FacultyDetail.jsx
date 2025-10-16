@@ -12,6 +12,7 @@ import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../s
 import { FiEdit, FiTrash } from 'react-icons/fi';
 import FacultySelect from '../components/FacultySelect';
 import AssignSchedulesModal from '../components/AssignSchedulesModal';
+import AssignFacultyModal from '../components/AssignFacultyModal';
 // conflict checking removed per request
 import { buildConflicts, buildCrossFacultyOverlaps, parseTimeBlockToMinutes } from '../utils/conflicts';
 import Pagination from '../components/Pagination';
@@ -36,7 +37,8 @@ export default function FacultyDetail() {
   const _authUser = useSelector(s => s.auth.user);
   const _editDisc = useDisclosure();
   const _delDisc = useDisclosure();
-  const _assignDisc = useDisclosure();
+  const _assignDisc = useDisclosure(); // AssignSchedulesModal
+  const _assignFacDisc = useDisclosure(); // AssignFacultyModal
   const _confDisc = useDisclosure();
   const [_selected, _setSelected] = useState(null);
   const [editingName, setEditingName] = useState(false);
@@ -60,6 +62,7 @@ export default function FacultyDetail() {
   const editDisc = _editDisc;
   const delDisc = _delDisc;
   const assignDisc = _assignDisc;
+  const assignFacDisc = _assignFacDisc;
   const confDisc = _confDisc;
   const [selected, setSelected] = [_selected, _setSelected];
   const cancelRef = _cancelRef;
@@ -682,6 +685,7 @@ export default function FacultyDetail() {
                       {isAdmin && !isPublic && (
                         <Td textAlign="right">
                           <HStack justify="end" spacing={1}>
+                            <Button size="sm" colorScheme="blue" variant="solid" onClick={() => { setSelected(c); assignFacDisc.onOpen(); }}>Assign</Button>
                             <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} />
                             <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />
                           </HStack>
@@ -708,6 +712,22 @@ export default function FacultyDetail() {
     />
     {isAdmin && (
       <AssignSchedulesModal isOpen={assignDisc.isOpen} onClose={assignDisc.onClose} currentFacultyName={f?.name} />
+    )}
+    {isAdmin && (
+      <AssignFacultyModal
+        isOpen={assignFacDisc.isOpen}
+        onClose={() => { assignFacDisc.onClose(); setSelected(null); }}
+        schedule={selected}
+        onAssign={async (fac) => {
+          if (!selected || !fac) return;
+          try {
+            await dispatch(updateScheduleThunk({ id: selected.id, changes: { facultyId: fac.id } }));
+            assignFacDisc.onClose();
+            setSelected(null);
+            dispatch(loadAllSchedules());
+          } catch {}
+        }}
+      />
     )}
     <Modal isOpen={confDisc.isOpen} onClose={confDisc.onClose} size="4xl" isCentered>
       <ModalOverlay backdropFilter="blur(6px)" />
