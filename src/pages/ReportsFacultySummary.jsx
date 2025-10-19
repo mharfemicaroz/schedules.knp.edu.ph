@@ -146,7 +146,7 @@ export default function ReportsFacultySummary() {
     const headers = ['Faculty','Department','Designation','Employment','Load Units','Load Release','Overload','Courses'];
     const data = rows.map(r => [r.faculty, r.department, r.designation, r.employment, String(r.load), String(r.release), String(r.overload), String(r.courses)]);
     const html = buildTable(headers, data);
-    printContent({ title: 'Faculty Loading Summary', subtitle: 'Computed from current schedules and faculty records', bodyHtml: html });
+    printContent({ title: 'Course Schedules Summary', subtitle: 'Computed from current schedules and faculty records', bodyHtml: html });
   };
 
   if ((facultyLoading || dataLoading) && (faculties?.length || 0) === 0) {

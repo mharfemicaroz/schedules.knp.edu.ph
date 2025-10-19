@@ -77,7 +77,7 @@ function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, 
         
         <Box>
           <Text fontWeight="800" fontSize={{ base: 'sm', md: 'md' }} noOfLines={1}>
-            Faculty Loading SY 2025-2026, 1st Semester
+            Course Schedules SY 2025-2026, 1st Semester
           </Text>
           <Text fontSize="xs" color={useColorModeValue('gray.600','gray.400')} display={{ base: 'none', md: 'block' }}>
             Office of the Vice President of Academic Affairs

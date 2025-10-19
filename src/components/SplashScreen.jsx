@@ -18,7 +18,7 @@ export default function SplashScreen() {
             Office of the Vice President of Academic Affairs
           </Text>
           <Text fontSize={{ base: 'sm', md: 'md' }} color={subtle} textAlign="center">
-            Kolehiyo ng Pantukan Faculty Loading
+            Kolehiyo ng Pantukan | Course Schedules
           </Text>
         </VStack>
       </Center>
