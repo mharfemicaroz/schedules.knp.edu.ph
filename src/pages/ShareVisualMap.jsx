@@ -14,6 +14,8 @@ import {
   Skeleton,
   Divider,
   Button,
+  VStack,
+  Link as ChakraLink,
 } from '@chakra-ui/react';
 import { FiPrinter } from 'react-icons/fi';
 // PDF download removed as requested
@@ -22,6 +24,8 @@ import { selectBlocks } from '../store/blockSlice';
 import { loadBlocksThunk } from '../store/blockThunks';
 import { getCurrentWeekDays } from '../utils/week';
 import { getExamDateSet } from '../utils/scheduleUtils';
+import { Link as RouterLink } from 'react-router-dom';
+import { encodeShareBlock, encodeShareRoom } from '../utils/share';
 
 // Color scheme by program code
 function schemeForBlockCode(code) {
@@ -60,6 +64,7 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
   const stickyBg = useColorModeValue('white', 'gray.900');
   const subtle = useColorModeValue('gray.600', 'gray.400');
   const headerBg = useColorModeValue('gray.50', 'gray.900');
+  const muted = useColorModeValue('gray.600', 'gray.400');
 
   const dispatch = useDispatch();
   const blocks = useSelector(selectBlocks);
@@ -99,6 +104,17 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
     (blocks || []).forEach(b => { const d = String(b.examDay || '').trim(); if (d) s.add(d); });
     return s;
   }, [blocks]);
+
+  function roomAccent(room) {
+    const r = String(room || '').toUpperCase();
+    if (r.startsWith('OB')) return 'green.500';
+    if (r.startsWith('NB')) return 'blue.500';
+    if (r.startsWith('CL') || r.includes('CLB')) return 'purple.500';
+    if (r.includes('LAB')) return 'orange.500';
+    if (r.includes('LIB')) return 'teal.500';
+    if (r.includes('GYM')) return 'red.500';
+    return 'brand.500';
+  }
 
   const handleReload = async () => {
     setIsLoading(true);
@@ -300,7 +316,109 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
 
       <Divider mb={3} />
 
-      <Box ref={containerRef} className="doc-viewer" overflowX="auto" overflowY="auto" p={{ base: 1, md: 2 }}>
+      {/* Mobile view: cards per room to match admin VisualMap */}
+      <Box display={{ base: 'block', md: 'none' }}>
+        {sections.map((t) => (
+          <Box key={`m-${t.day}`} mb={6}>
+            <HStack justify="space-between" mb={2}>
+              <HStack spacing={3} align="center">
+                <Heading size="sm">{t.label || `${t.day}`}</Heading>
+                {t.mode === 'exam' && (
+                  <Badge size="sm" colorScheme="green" variant="subtle">Exam</Badge>
+                )}
+              </HStack>
+              <HStack>
+                <Badge colorScheme="purple" variant="subtle">Rooms: {t.rooms.length}</Badge>
+                <Badge colorScheme="teal" variant="subtle">
+                  Blocks: {(() => { const set = new Set(); SESSIONS.forEach(ses => { t.rooms.forEach(r => { (t.matrix[ses]?.get(r) || new Map()).forEach((_, b) => set.add(b)); }); }); return set.size; })()}
+                </Badge>
+              </HStack>
+            </HStack>
+            <VStack align="stretch" spacing={3}>
+              {t.rooms.map((r) => {
+                const mM = t.matrix['Morning']?.get(r) || new Map();
+                const mA = t.matrix['Afternoon']?.get(r) || new Map();
+                const mE = t.matrix['Evening']?.get(r) || new Map();
+                const to = `/share/rooms/${encodeURIComponent(encodeShareRoom(r))}?day=${encodeURIComponent(t.day)}`;
+                return (
+                  <Box key={`${t.day}-${r}`} borderWidth="1px" borderColor={border} rounded="xl" bg={cellBg} p={4}>
+                    <VStack align="stretch" spacing={3}>
+                      <HStack justify="space-between" minW={0}>
+                        <HStack spacing={2} minW={0}>
+                          <Box w="10px" h="10px" rounded="full" bg={roomAccent(r)}></Box>
+                          <ChakraLink as={RouterLink} to={to} _hover={{ textDecoration: 'none' }}>
+                            <Text fontWeight="700" noOfLines={1}>{r}</Text>
+                          </ChakraLink>
+                        </HStack>
+                        <Badge colorScheme="purple" variant="subtle">Room</Badge>
+                      </HStack>
+                      <VStack align="stretch" spacing={2}>
+                        <Box>
+                          <Text fontSize="xs" color={muted}>Morning</Text>
+                          {mM.size === 0 ? <Text fontSize="xs" color={muted}>-</Text> : (
+                            <Wrap spacing={2} mt={1}>
+                              {Array.from(mM.keys()).sort().map((b) => (
+                                <WrapItem key={`m-${r}-${b}`}>
+                                  <ChakraLink
+                                    as={RouterLink}
+                                    to={`/share/session/block/${encodeURIComponent(encodeShareBlock(b))}?day=${encodeURIComponent(t.day)}&session=${encodeURIComponent('Morning')}`}
+                                    _hover={{ textDecoration: 'none' }}
+                                  >
+                                    <Tag size="sm" variant="subtle" colorScheme={schemeForBlockCode(b)}><TagLabel>{b}</TagLabel></Tag>
+                                  </ChakraLink>
+                                </WrapItem>
+                              ))}
+                            </Wrap>
+                          )}
+                        </Box>
+                        <Box>
+                          <Text fontSize="xs" color={muted}>Afternoon</Text>
+                          {mA.size === 0 ? <Text fontSize="xs" color={muted}>-</Text> : (
+                            <Wrap spacing={2} mt={1}>
+                              {Array.from(mA.keys()).sort().map((b) => (
+                                <WrapItem key={`a-${r}-${b}`}>
+                                  <ChakraLink
+                                    as={RouterLink}
+                                    to={`/share/session/block/${encodeURIComponent(encodeShareBlock(b))}?day=${encodeURIComponent(t.day)}&session=${encodeURIComponent('Afternoon')}`}
+                                    _hover={{ textDecoration: 'none' }}
+                                  >
+                                    <Tag size="sm" variant="subtle" colorScheme={schemeForBlockCode(b)}><TagLabel>{b}</TagLabel></Tag>
+                                  </ChakraLink>
+                                </WrapItem>
+                              ))}
+                            </Wrap>
+                          )}
+                        </Box>
+                        <Box>
+                          <Text fontSize="xs" color={muted}>Evening</Text>
+                          {mE.size === 0 ? <Text fontSize="xs" color={muted}>-</Text> : (
+                            <Wrap spacing={2} mt={1}>
+                              {Array.from(mE.keys()).sort().map((b) => (
+                                <WrapItem key={`e-${r}-${b}`}>
+                                  <ChakraLink
+                                    as={RouterLink}
+                                    to={`/share/session/block/${encodeURIComponent(encodeShareBlock(b))}?day=${encodeURIComponent(t.day)}&session=${encodeURIComponent('Evening')}`}
+                                    _hover={{ textDecoration: 'none' }}
+                                  >
+                                    <Tag size="sm" variant="subtle" colorScheme={schemeForBlockCode(b)}><TagLabel>{b}</TagLabel></Tag>
+                                  </ChakraLink>
+                                </WrapItem>
+                              ))}
+                            </Wrap>
+                          )}
+                        </Box>
+                      </VStack>
+                    </VStack>
+                  </Box>
+                );
+              })}
+            </VStack>
+          </Box>
+        ))}
+      </Box>
+
+      {/* Desktop/print view: existing table layout */}
+      <Box ref={containerRef} className="doc-viewer" overflowX="auto" overflowY="auto" p={{ base: 1, md: 2 }} display={{ base: 'none', md: 'block' }}>
         <Box width={`${pageWidth}px`}>
           {sections.map((t, idx) => {
             const roomParts = splitRooms(t.rooms);
@@ -349,6 +467,7 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
         @media print {
           @page { size: 8.5in 13in landscape; margin: 8mm; }
           .no-print { display: none !important; }
+          .doc-viewer { display: block !important; }
           .print-break { page-break-after: always; }
           html, body { background: white !important; }
           .doc-viewer { padding: 0 !important; }
