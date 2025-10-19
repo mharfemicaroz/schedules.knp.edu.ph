@@ -162,7 +162,7 @@ export default function ReportsFacultySummary() {
     <VStack align="stretch" spacing={6}>
       <HStack justify="space-between" flexWrap="wrap" gap={3}>
         <HStack>
-          <Heading size="md">Reports: Faculty Loading Summary</Heading>
+          <Heading size="md">Reports: Course Schedules Summary</Heading>
           <Tag colorScheme="blue"><TagLabel>{rows.length} faculties</TagLabel></Tag>
         </HStack>
         <HStack>
