@@ -320,7 +320,7 @@ export default function Layout({ children }) {
       <>
         <Box bg={bg} minH="100vh">
           <Box as="main" px={{ base: 0, md: 0 }} py={0} maxW="100%" mx="auto">
-            {splash ? <SplashScreen /> : children}
+            {children}
           </Box>
         </Box>
         <FirstVisitGuestModal
