@@ -229,9 +229,11 @@ export default function RoomScheduleAuto() {
 
   // Determine if a schedule has an assigned/valid teacher
   const hasTeacher = React.useCallback((rec) => {
+    const name = String(rec.faculty || rec.instructor || rec.facultyName || '').trim();
     const fid = rec.facultyId ?? rec.faculty_id;
-    if (!(Number(fid) > 0)) return false;
-    const name = String(rec.facultyName || rec.faculty || rec.instructor || '').trim();
+    // If we have a clear ID, accept
+    if (Number(fid) > 0) return true;
+    // Else accept non-empty human-readable name that isn't a placeholder
     if (!name) return false;
     const n = name.toLowerCase();
     if (/(unknown|unassigned|none|no\s*faculty|not\s*assigned)/i.test(n)) return false;
@@ -360,7 +362,7 @@ export default function RoomScheduleAuto() {
                       </HStack>
                       <HStack spacing={2}>
                         <Icon as={FiUser} />
-                        <Text>{hasTeacher(c) ? (c.facultyName || '-') : 'No teacher available'}</Text>
+                        <Text>{hasTeacher(c) ? (c.faculty || c.instructor || c.facultyName || '-') : 'No teacher available'}</Text>
                       </HStack>
                       {canAttend && hasTeacher(c) && attMap[c.id] && (
                         <HStack spacing={2}>
@@ -421,7 +423,7 @@ export default function RoomScheduleAuto() {
                         </HStack>
                         <HStack spacing={2}>
                           <Icon as={FiUser} />
-                          <Text>{hasTeacher(c) ? (c.facultyName || '-') : 'No teacher available'}</Text>
+                          <Text>{hasTeacher(c) ? (c.faculty || c.instructor || c.facultyName || '-') : 'No teacher available'}</Text>
                         </HStack>
                         {canAttend && hasTeacher(c) && attMap[c.id] && (
                           <HStack spacing={2}>
