@@ -5,6 +5,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectBlocks } from '../store/blockSlice';
 import { selectAllCourses } from '../store/dataSlice';
+import { loadAllSchedules } from '../store/dataThunks';
 import { loadBlocksThunk } from '../store/blockThunks';
 import { buildTable, printContent } from '../utils/printDesign';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
@@ -160,49 +161,53 @@ export default function VisualMap() {
   }, []);
   const [attByDateBlock, setAttByDateBlock] = useState({});
   const [attByDateSched, setAttByDateSched] = useState({});
-  useEffect(() => {
-    let alive = true;
-    async function run() {
-      if (!canAttend) { if (alive) setAttByDateBlock({}); return; }
-      try {
-        const days = getCurrentWeekDays();
-        const dates = days.map(wd => new Date(wd.date));
-        dates.sort((a,b)=>a-b);
-        const startISO = dates.length ? dates[0].toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
-        const endISO = dates.length ? dates[dates.length-1].toISOString().slice(0,10) : startISO;
-        const list = await apiService.listAttendance({ startDate: startISO, endDate: endISO, limit: 100000 });
-        const arr = Array.isArray(list) ? list : (list?.data || []);
-        const rank = (s) => { const v = String(s||'').toLowerCase(); return v==='absent'?4 : v==='late'?3 : v==='excused'?2 : v==='present'?1 : 0; };
-        const schedToBlock = new Map();
-        (allCourses || []).forEach(c => {
-          const sid = Number(c.id);
-          const blk = c.section || c.blockCode || c.block_code;
-          if (sid && blk) schedToBlock.set(sid, String(blk));
-        });
-        const byDateBlock = {};
-        const byDateSched = {};
-        arr.forEach(r => {
-          const d = String(r.date || '').slice(0,10);
-          const sid = Number(r.scheduleId || r.schedule_id);
-          const blk = schedToBlock.get(sid);
-          const st = String(r.status || '').toLowerCase();
-          if (!d || !blk || !st) return;
-          if (!byDateSched[d]) byDateSched[d] = {};
-          byDateSched[d][sid] = st;
-          if (!byDateBlock[d]) byDateBlock[d] = {};
-          const cur = byDateBlock[d][blk];
-          if (!cur || rank(st) > rank(cur)) byDateBlock[d][blk] = st;
-        });
-        if (!alive) return;
-        setAttByDateBlock(byDateBlock);
-        setAttByDateSched(byDateSched);
-      } catch {
-        if (alive) { setAttByDateBlock({}); setAttByDateSched({}); }
-      }
-    }
-    run();
-    return () => { alive = false; };
+  const loadAttendance = React.useCallback(async () => {
+    if (!canAttend) { setAttByDateBlock({}); setAttByDateSched({}); return; }
+    const days = getCurrentWeekDays();
+    const dates = days.map(wd => new Date(wd.date)).sort((a,b)=>a-b);
+    const startISO = dates.length ? dates[0].toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+    const endISO = dates.length ? dates[dates.length-1].toISOString().slice(0,10) : startISO;
+    const list = await apiService.listAttendance({ startDate: startISO, endDate: endISO, limit: 100000 });
+    const arr = Array.isArray(list) ? list : (list?.data || []);
+    const rank = (s) => { const v = String(s||'').toLowerCase(); return v==='absent'?4 : v==='late'?3 : v==='excused'?2 : v==='present'?1 : 0; };
+    const schedToBlock = new Map();
+    (allCourses || []).forEach(c => {
+      const sid = Number(c.id);
+      const blk = c.section || c.blockCode || c.block_code;
+      if (sid && blk) schedToBlock.set(sid, String(blk));
+    });
+    const byDateBlock = {};
+    const byDateSched = {};
+    arr.forEach(r => {
+      const d = String(r.date || '').slice(0,10);
+      const sid = Number(r.scheduleId || r.schedule_id);
+      const blk = schedToBlock.get(sid);
+      const st = String(r.status || '').toLowerCase();
+      if (!d || !blk || !st) return;
+      if (!byDateSched[d]) byDateSched[d] = {};
+      byDateSched[d][sid] = st;
+      if (!byDateBlock[d]) byDateBlock[d] = {};
+      const cur = byDateBlock[d][blk];
+      if (!cur || rank(st) > rank(cur)) byDateBlock[d][blk] = st;
+    });
+    setAttByDateBlock(byDateBlock);
+    setAttByDateSched(byDateSched);
   }, [canAttend, allCourses]);
+
+  useEffect(() => { let alive = true; (async () => { try { await loadAttendance(); } catch {} })(); return () => { alive = false; }; }, [loadAttendance]);
+
+  // Realtime toggle
+  const [rtEnabled, setRtEnabled] = useState(false);
+  const [rtMs, setRtMs] = useState(60000);
+  const rtRef = React.useRef(null);
+  useEffect(() => {
+    if (!rtEnabled) { if (rtRef.current) { clearInterval(rtRef.current); rtRef.current = null; } return; }
+    if (rtRef.current) { clearInterval(rtRef.current); rtRef.current = null; }
+    rtRef.current = setInterval(async () => {
+      try { await dispatch(loadAllSchedules()); await loadAttendance(); } catch {}
+    }, rtMs);
+    return () => { if (rtRef.current) { clearInterval(rtRef.current); rtRef.current = null; } };
+  }, [rtEnabled, rtMs, dispatch, loadAttendance]);
 
   // Compute which specific days in this week are exam dates
   const autoExamDays = useMemo(() => {
@@ -469,7 +474,22 @@ export default function VisualMap() {
     <Box>
       <HStack justify="space-between" mb={4} flexWrap="wrap" gap={3}>
         <Heading size="md">Classroom Assigment</Heading>
-        <Input placeholder="Filter rooms" value={q} onChange={e=>setQ(e.target.value)} maxW="280px" w={{ base: '100%', sm: 'auto' }} />
+        <HStack spacing={3}>
+          <Input placeholder="Filter rooms" value={q} onChange={e=>setQ(e.target.value)} maxW="280px" w={{ base: '100%', sm: 'auto' }} />
+          <HStack spacing={2}>
+            <HStack spacing={1}>
+              <Text fontSize="xs" color={subtle}>Realtime</Text>
+              <Button size="xs" variant={rtEnabled ? 'solid' : 'outline'} colorScheme={rtEnabled ? 'green' : 'gray'} onClick={() => setRtEnabled(v => !v)}>{rtEnabled ? 'On' : 'Off'}</Button>
+            </HStack>
+            <select value={rtMs} onChange={(e)=> setRtMs(Number(e.target.value)||60000)} style={{ fontSize: '12px', padding: '4px 6px', borderRadius: 6, border: '1px solid var(--chakra-colors-gray-300)' }} disabled={!rtEnabled}>
+              <option value={30000}>30s</option>
+              <option value={60000}>1m</option>
+              <option value={90000}>1.5m</option>
+              <option value={180000}>3m</option>
+              <option value={300000}>5m</option>
+            </select>
+          </HStack>
+        </HStack>
       </HStack>
 
       {/* KPI cards - admin only */}
