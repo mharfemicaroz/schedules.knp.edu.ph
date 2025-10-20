@@ -1,11 +1,13 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Box, Heading, HStack, Text, Input, VStack, Tag, TagLabel, Wrap, WrapItem, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, SimpleGrid, Button, useColorModeValue, Badge , Divider, Icon, Link as ChakraLink, IconButton } from '@chakra-ui/react';
+import { keyframes } from '@emotion/react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectBlocks } from '../store/blockSlice';
 import { selectAllCourses } from '../store/dataSlice';
 import { loadBlocksThunk } from '../store/blockThunks';
 import { buildTable, printContent } from '../utils/printDesign';
+import { parseTimeBlockToMinutes } from '../utils/conflicts';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 import { FiPrinter, FiInfo, FiAlertCircle } from 'react-icons/fi';
 import apiService from '../services/apiService';
@@ -134,6 +136,11 @@ export default function VisualMap() {
   // const partHeaderBg = useColorModeValue('white','gray.900');
   const headerRowBg = useColorModeValue('gray.100','gray.800');
   const rowHoverBg = useColorModeValue('gray.50','gray.800');
+  const presentPulse = keyframes`
+    0% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.55); }
+    70% { box-shadow: 0 0 0 6px rgba(72, 187, 120, 0.0); }
+    100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.0); }
+  `;
 
   const weekDays = useMemo(() => getCurrentWeekDays(), []);
   const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
@@ -152,6 +159,7 @@ export default function VisualMap() {
     return m;
   }, []);
   const [attByDateBlock, setAttByDateBlock] = useState({});
+  const [attByDateSched, setAttByDateSched] = useState({});
   useEffect(() => {
     let alive = true;
     async function run() {
@@ -172,20 +180,24 @@ export default function VisualMap() {
           if (sid && blk) schedToBlock.set(sid, String(blk));
         });
         const byDateBlock = {};
+        const byDateSched = {};
         arr.forEach(r => {
           const d = String(r.date || '').slice(0,10);
           const sid = Number(r.scheduleId || r.schedule_id);
           const blk = schedToBlock.get(sid);
           const st = String(r.status || '').toLowerCase();
           if (!d || !blk || !st) return;
+          if (!byDateSched[d]) byDateSched[d] = {};
+          byDateSched[d][sid] = st;
           if (!byDateBlock[d]) byDateBlock[d] = {};
           const cur = byDateBlock[d][blk];
           if (!cur || rank(st) > rank(cur)) byDateBlock[d][blk] = st;
         });
         if (!alive) return;
         setAttByDateBlock(byDateBlock);
+        setAttByDateSched(byDateSched);
       } catch {
-        if (alive) setAttByDateBlock({});
+        if (alive) { setAttByDateBlock({}); setAttByDateSched({}); }
       }
     }
     run();
@@ -727,34 +739,66 @@ export default function VisualMap() {
                                                     : `/share/session/block/${encodeURIComponent(encodeShareBlock(b))}?day=${encodeURIComponent(t.day)}&session=${encodeURIComponent(sess)}`}
                                                   _hover={{ textDecoration: 'none' }}
                                                 >
-                                                  <Tag
-                                                    variant="subtle"
-                                                    colorScheme={schemeForBlockCode(b)}
-                                                    rounded="full"
-                                                    px={6}
-                                                    py={2}
-                                                    display="inline-block"
-                                                    maxW="100%"
-                                                    cursor="pointer"
-                                                    role="link"
-                                                    tabIndex={0}
-                                                    style={{ fontSize: '12px', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
-                                                  
-                                                    borderWidth={canAttend && attByDateBlock[codeToDateISO[t.day]] && attByDateBlock[codeToDateISO[t.day]][b] ? '2px' : undefined}
-                                                    borderColor={(() => {
-                                                      if (!canAttend) return undefined;
-                                                      const dateISO = codeToDateISO[t.day];
-                                                      const s = (attByDateBlock[dateISO] || {})[b];
-                                                      if (!s) return undefined;
-                                                      if (s==='present') return 'green.400';
-                                                      if (s==='absent') return 'red.400';
-                                                      if (s==='late') return 'orange.400';
-                                                      if (s==='excused') return 'blue.400';
-                                                      return undefined;
-                                                    })()}
-                                                  >
-                                                    <TagLabel display="block" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{b}</TagLabel>
-                                                  </Tag>
+                                                  {(() => {
+                                                    const dateISO = codeToDateISO[t.day];
+                                                    const dateSched = attByDateSched[dateISO] || {};
+                                                    // Find schedules for this block and day
+                                                    const candidates = (allCourses || []).filter(c => {
+                                                      const blk = c.section || c.blockCode || c.block_code;
+                                                      if (String(blk) !== String(b)) return false;
+                                                      const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
+                                                      return daysArr.includes(t.day);
+                                                    });
+                                                    // Determine current time window
+                                                    const now = new Date();
+                                                    const nowMin = now.getHours()*60 + now.getMinutes();
+                                                    const within = (rec) => {
+                                                      let s = rec.timeStartMinutes, e = rec.timeEndMinutes;
+                                                      if (!Number.isFinite(s) || !Number.isFinite(e)) {
+                                                        const tt = parseTimeBlockToMinutes(String(rec.scheduleKey || rec.schedule || rec.time || ''));
+                                                        s = tt.start; e = tt.end;
+                                                      }
+                                                      return Number.isFinite(s) && Number.isFinite(e) && s <= nowMin && nowMin < e;
+                                                    };
+                                                    const rank = (st) => { const v = String(st||'').toLowerCase(); return v==='absent'?4 : v==='late'?3 : v==='excused'?2 : v==='present'?1 : 0; };
+                                                    // Only consider schedules that are currently in session
+                                                    let chosen = null;
+                                                    let animate = false;
+                                                    candidates.forEach(c => {
+                                                      if (!within(c)) return;
+                                                      const st = dateSched[c.id];
+                                                      if (!st) return;
+                                                      if (!chosen || rank(st) > rank(chosen)) chosen = st;
+                                                    });
+                                                    // Animate only when current and present; if no current schedule attendance, no highlight
+                                                    if (chosen) {
+                                                      animate = String(chosen).toLowerCase() === 'present';
+                                                    }
+                                                    const borderColor = (!canAttend || !chosen)
+                                                      ? undefined
+                                                      : (chosen==='present' ? 'green.400' : chosen==='absent' ? 'red.400' : chosen==='late' ? 'orange.400' : chosen==='excused' ? 'blue.400' : undefined);
+                                                    const anim = canAttend && animate ? `${presentPulse} 1.8s ease-out infinite` : undefined;
+                                                    return (
+                                                      <Tag
+                                                        variant="subtle"
+                                                        colorScheme={schemeForBlockCode(b)}
+                                                        rounded="full"
+                                                        px={6}
+                                                        py={2}
+                                                        display="inline-block"
+                                                        maxW="100%"
+                                                        cursor="pointer"
+                                                        role="link"
+                                                        tabIndex={0}
+                                                        style={{ fontSize: '12px', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                                                        borderWidth={borderColor ? '2px' : undefined}
+                                                        borderColor={borderColor}
+                                                        sx={anim ? { animation: anim } : undefined}
+                                                      >
+                                                        <TagLabel display="block" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{b}</TagLabel>
+                                                      </Tag>
+                                                    );
+                                                  })()}
                                                 </ChakraLink>
                                               </WrapItem>
                                             ))}
