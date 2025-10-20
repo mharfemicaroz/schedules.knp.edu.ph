@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Box, Heading, HStack, Text, Input, VStack, Tag, TagLabel, Wrap, WrapItem, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, SimpleGrid, Button, useColorModeValue, Badge , Divider, Icon, Link as ChakraLink, IconButton } from '@chakra-ui/react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
@@ -8,6 +8,7 @@ import { loadBlocksThunk } from '../store/blockThunks';
 import { buildTable, printContent } from '../utils/printDesign';
 import { DAY_CODES, getCurrentWeekDays } from '../utils/week';
 import { FiPrinter, FiInfo, FiAlertCircle } from 'react-icons/fi';
+import apiService from '../services/apiService';
 import { findDayAnnotations } from '../utils/scheduleUtils';
 import { getExamDateSet } from '../utils/scheduleUtils';
 import { encodeShareBlock, encodeShareRoom } from '../utils/share';
@@ -126,7 +127,10 @@ export default function VisualMap() {
   const partHeaderBg = useColorModeValue('white','gray.900');
   // const headerRowBg = useColorModeValue('gray.100','gray.800');
   // const rowHoverBg = useColorModeValue('gray.50','gray.800');
-  const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
+  const roleStr = String(authUser?.role || '').toLowerCase();
+  const isAdmin = !!authUser && (roleStr === 'admin' || roleStr === 'manager');
+  const isChecker = !!authUser && roleStr === 'checker';
+  const canAttend = isAdmin || isChecker;
   // const partHeaderBg = useColorModeValue('white','gray.900');
   const headerRowBg = useColorModeValue('gray.100','gray.800');
   const rowHoverBg = useColorModeValue('gray.50','gray.800');
@@ -138,6 +142,55 @@ export default function VisualMap() {
     // Ensure blocks are loaded for mapping
     dispatch(loadBlocksThunk({}));
   }, [dispatch]);
+
+  // Attendance map for current week (dateISO -> block -> status)
+  const codeToDateISO = useMemo(() => {
+    const m = {};
+    (getCurrentWeekDays() || []).forEach(wd => {
+      try { m[wd.code] = new Date(wd.date).toISOString().slice(0,10); } catch { m[wd.code] = ''; }
+    });
+    return m;
+  }, []);
+  const [attByDateBlock, setAttByDateBlock] = useState({});
+  useEffect(() => {
+    let alive = true;
+    async function run() {
+      if (!canAttend) { if (alive) setAttByDateBlock({}); return; }
+      try {
+        const days = getCurrentWeekDays();
+        const dates = days.map(wd => new Date(wd.date));
+        dates.sort((a,b)=>a-b);
+        const startISO = dates.length ? dates[0].toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+        const endISO = dates.length ? dates[dates.length-1].toISOString().slice(0,10) : startISO;
+        const list = await apiService.listAttendance({ startDate: startISO, endDate: endISO, limit: 100000 });
+        const arr = Array.isArray(list) ? list : (list?.data || []);
+        const rank = (s) => { const v = String(s||'').toLowerCase(); return v==='absent'?4 : v==='late'?3 : v==='excused'?2 : v==='present'?1 : 0; };
+        const schedToBlock = new Map();
+        (allCourses || []).forEach(c => {
+          const sid = Number(c.id);
+          const blk = c.section || c.blockCode || c.block_code;
+          if (sid && blk) schedToBlock.set(sid, String(blk));
+        });
+        const byDateBlock = {};
+        arr.forEach(r => {
+          const d = String(r.date || '').slice(0,10);
+          const sid = Number(r.scheduleId || r.schedule_id);
+          const blk = schedToBlock.get(sid);
+          const st = String(r.status || '').toLowerCase();
+          if (!d || !blk || !st) return;
+          if (!byDateBlock[d]) byDateBlock[d] = {};
+          const cur = byDateBlock[d][blk];
+          if (!cur || rank(st) > rank(cur)) byDateBlock[d][blk] = st;
+        });
+        if (!alive) return;
+        setAttByDateBlock(byDateBlock);
+      } catch {
+        if (alive) setAttByDateBlock({});
+      }
+    }
+    run();
+    return () => { alive = false; };
+  }, [canAttend, allCourses]);
 
   // Compute which specific days in this week are exam dates
   const autoExamDays = useMemo(() => {
@@ -686,6 +739,19 @@ export default function VisualMap() {
                                                     role="link"
                                                     tabIndex={0}
                                                     style={{ fontSize: '12px', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                                                  
+                                                    borderWidth={canAttend && attByDateBlock[codeToDateISO[t.day]] && attByDateBlock[codeToDateISO[t.day]][b] ? '2px' : undefined}
+                                                    borderColor={(() => {
+                                                      if (!canAttend) return undefined;
+                                                      const dateISO = codeToDateISO[t.day];
+                                                      const s = (attByDateBlock[dateISO] || {})[b];
+                                                      if (!s) return undefined;
+                                                      if (s==='present') return 'green.400';
+                                                      if (s==='absent') return 'red.400';
+                                                      if (s==='late') return 'orange.400';
+                                                      if (s==='excused') return 'blue.400';
+                                                      return undefined;
+                                                    })()}
                                                   >
                                                     <TagLabel display="block" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{b}</TagLabel>
                                                   </Tag>

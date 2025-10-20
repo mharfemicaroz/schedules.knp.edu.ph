@@ -6,6 +6,7 @@ class ApiService {
     this.baseURL = API_CONFIG.BASE_URL;
     this.schedulesPath = "/schedules";
     this.blocksPath = "/blocks";
+    this.attendancePath = "/attendance";
     this.authPath = "/auth";
     this.usersPath = "/users";
     this.token = null;
@@ -125,6 +126,79 @@ class ApiService {
 
   setAuthToken(token) {
     this.token = token || null;
+  }
+
+  // ATTENDANCE API
+  async listAttendance(params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") search.set(k, v);
+    });
+    const qs = search.toString();
+    const url = `${this.baseURL}${this.attendancePath}${qs ? `/?${qs}` : '/'}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async getAttendanceStats(params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") search.set(k, v);
+    });
+    const qs = search.toString();
+    const url = `${this.baseURL}${this.attendancePath}/stats${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async getAttendanceById(id) {
+    const url = `${this.baseURL}${this.attendancePath}/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async getAttendanceBySchedule(scheduleId, params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") search.set(k, v);
+    });
+    const qs = search.toString();
+    const url = `${this.baseURL}${this.attendancePath}/schedule/${encodeURIComponent(scheduleId)}${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async createAttendance(payload) {
+    const url = `${this.baseURL}${this.attendancePath}/`;
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async bulkCreateAttendance(items) {
+    const url = `${this.baseURL}${this.attendancePath}/bulk`;
+    const body = Array.isArray(items) ? items : { items };
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async updateAttendance(id, payload) {
+    const url = `${this.baseURL}${this.attendancePath}/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async deleteAttendance(id) {
+    const url = `${this.baseURL}${this.attendancePath}/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
   }
 
   // GET /api/schedules - Get all schedules with optional filtering and pagination

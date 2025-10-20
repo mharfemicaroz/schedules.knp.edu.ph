@@ -1,11 +1,17 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
-import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGrid, Button, Icon, Divider } from '@chakra-ui/react';
-import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar } from 'react-icons/fi';
+import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGrid, Button, Icon, Divider, Avatar, useDisclosure, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider } from '@chakra-ui/react';
+import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut } from 'react-icons/fi';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
 import { buildTable, printContent } from '../utils/printDesign';
+import apiService from '../services/apiService';
+import LoginModal from '../components/LoginModal';
+import AttendanceFormModal from '../components/AttendanceFormModal';
+import { loginThunk, logoutThunk, changePasswordThunk, updateProfileThunk } from '../store/authThunks';
+import ChangePasswordModal from '../components/ChangePasswordModal';
+import ProfileModal from '../components/ProfileModal';
 
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const todayTag = () => {
@@ -46,12 +52,40 @@ export default function RoomScheduleAuto() {
   const room = decodeURIComponent(roomParam || '');
   const all = useSelector(selectAllCourses);
   const acadData = useSelector(s => s.data.acadData);
+  const authUser = useSelector(s => s.auth.user);
+  const roleStr = String(authUser?.role || '').toLowerCase();
+  const canAttend = !!authUser && (roleStr === 'admin' || roleStr === 'manager' || roleStr === 'checker');
+  const dispatch = useDispatch();
+  const loginModal = useDisclosure();
+  const attendModal = useDisclosure();
+  const changePwdModal = useDisclosure();
+  const profileModal = useDisclosure();
+  const [selectedScheduleId, setSelectedScheduleId] = useState(null);
+  const toast = useToast();
   const border = useColorModeValue('gray.200','gray.700');
   const panel = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.400');
   const accent = useColorModeValue('blue.600','blue.300');
 
   const day = todayTag();
+  // Attendance map for today (scheduleId -> { status, date })
+  const [attMap, setAttMap] = useState({});
+  const loadTodayAttendance = React.useCallback(async () => {
+    if (!canAttend) { setAttMap({}); return; }
+    try {
+      const today = new Date().toISOString().slice(0,10);
+      const list = await apiService.listAttendance({ startDate: today, endDate: today, limit: 10000 });
+      const arr = Array.isArray(list) ? list : (list?.data || []);
+      const m = {};
+      for (const r of arr) {
+        const sid = Number(r.scheduleId || r.schedule_id);
+        if (sid) m[sid] = { status: String(r.status || '').toLowerCase(), date: r.date };
+      }
+      setAttMap(m);
+    } catch {
+      setAttMap({});
+    }
+  }, [canAttend]);
 
   const nowMinutes = () => { const d = new Date(); return d.getHours()*60 + d.getMinutes(); };
   const [nowMin, setNowMin] = useState(nowMinutes());
@@ -59,6 +93,17 @@ export default function RoomScheduleAuto() {
     const t = setInterval(() => setNowMin(nowMinutes()), 30000); // update every 30s
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => { loadTodayAttendance(); }, [loadTodayAttendance, room, day]);
+
+  const statusColor = (s) => {
+    const v = String(s || '').toLowerCase();
+    if (v === 'present') return 'green';
+    if (v === 'absent') return 'red';
+    if (v === 'late') return 'orange';
+    if (v === 'excused') return 'blue';
+    return 'gray';
+  };
 
   const rows = useMemo(() => {
     const key = normRoom(room);
@@ -133,6 +178,19 @@ export default function RoomScheduleAuto() {
     printContent({ title: 'Room Schedule (Today)', subtitle, bodyHtml: table });
   }
 
+  async function onLoginSubmit({ username, password }) {
+    try {
+      await dispatch(loginThunk({ identifier: username, password })).unwrap();
+      loginModal.onClose();
+    } catch (e) {
+      toast({ title: 'Login failed', description: e?.message || 'Invalid credentials', status: 'error' });
+    }
+  }
+
+  function onLogout() {
+    dispatch(logoutThunk());
+  }
+
   return (
     <Box minH="100vh" bg={useColorModeValue('gray.50','gray.900')}>
       {/* Public Header */}
@@ -145,7 +203,27 @@ export default function RoomScheduleAuto() {
             </HStack>
             <Text fontSize="sm" color={subtle}>Room: <Text as="span" fontWeight="700">{room}</Text> · {day}</Text>
           </VStack>
-          <Button leftIcon={<FiPrinter />} onClick={onPrint} colorScheme="blue" variant="outline" size="sm">Print</Button>
+          <HStack spacing={2}>
+            <Button leftIcon={<FiPrinter />} onClick={onPrint} colorScheme="blue" variant="outline" size="sm">Print</Button>
+            {!authUser ? (
+              <Button size="sm" onClick={loginModal.onOpen}>Login</Button>
+            ) : (
+              <Menu>
+                <MenuButton as={Button} variant="ghost" size="sm" px={2}>
+                  <HStack spacing={2}>
+                    <Avatar size="xs" name={authUser.username || authUser.email} src={authUser.avatar || undefined} />
+                    <Text fontSize="sm" display={{ base: 'none', md: 'block' }}>{authUser.username || authUser.email}</Text>
+                  </HStack>
+                </MenuButton>
+                <MenuList>
+                  <MenuItem icon={<FiUser />} onClick={profileModal.onOpen}>Profile</MenuItem>
+                  <MenuItem icon={<FiKey />} onClick={changePwdModal.onOpen}>Change Password</MenuItem>
+                  <MenuDivider />
+                  <MenuItem icon={<FiLogOut />} onClick={onLogout}>Logout</MenuItem>
+                </MenuList>
+              </Menu>
+            )}
+          </HStack>
         </HStack>
       </Box>
 
@@ -178,6 +256,18 @@ export default function RoomScheduleAuto() {
                         <Icon as={FiUser} />
                         <Text>{c.facultyName || '-'}</Text>
                       </HStack>
+                      {canAttend && attMap[c.id] && (
+                        <HStack spacing={2}>
+                          <Badge colorScheme={statusColor(attMap[c.id].status)} textTransform="capitalize">
+                            {attMap[c.id].status}
+                          </Badge>
+                        </HStack>
+                      )}
+                      {canAttend && (
+                        <Box pt={2} w="full">
+                          <Button size="sm" colorScheme="green" onClick={() => { setSelectedScheduleId(c.id); attendModal.onOpen(); }}>Check Attendance</Button>
+                        </Box>
+                      )}
                     </VStack>
                   </Box>
                 ))}
@@ -227,6 +317,13 @@ export default function RoomScheduleAuto() {
                           <Icon as={FiUser} />
                           <Text>{c.facultyName || '-'}</Text>
                         </HStack>
+                        {canAttend && attMap[c.id] && (
+                          <HStack spacing={2}>
+                            <Badge colorScheme={statusColor(attMap[c.id].status)} textTransform="capitalize">
+                              {attMap[c.id].status}
+                            </Badge>
+                          </HStack>
+                        )}
                         <HStack spacing={2} fontSize="sm" color={subtle}>
                           <Icon as={FiTag} />
                           <Text>Units: {String(c.unit ?? c.hours ?? '-')}</Text>
@@ -247,7 +344,32 @@ export default function RoomScheduleAuto() {
           <Text fontSize="sm" fontWeight="700">Kolehiyo ng Pantukan</Text>
           <Text fontSize="xs" color={subtle}>Room schedules auto‑filtered to today&apos;s day.</Text>
         </VStack>
-      </Box>
+    </Box>
+
+      {/* Modals */}
+      <LoginModal isOpen={loginModal.isOpen} onClose={loginModal.onClose} onSubmit={onLoginSubmit} />
+      <AttendanceFormModal
+        isOpen={attendModal.isOpen}
+        onClose={() => { attendModal.onClose(); setSelectedScheduleId(null); }}
+        initial={{ scheduleId: selectedScheduleId }}
+        lockSchedule
+        onSaved={() => { toast({ title: 'Attendance saved', status: 'success' }); loadTodayAttendance(); attendModal.onClose(); setSelectedScheduleId(null); }}
+      />
+      <ChangePasswordModal
+        isOpen={changePwdModal.isOpen}
+        onClose={changePwdModal.onClose}
+        onSubmit={async (p) => {
+          try { await dispatch(changePasswordThunk(p)).unwrap(); toast({ title: 'Password changed', status: 'success' }); changePwdModal.onClose(); } catch (e) { toast({ title: 'Failed', description: e?.message || 'Unable to change password', status: 'error' }); }
+        }}
+      />
+      <ProfileModal
+        isOpen={profileModal.isOpen}
+        onClose={profileModal.onClose}
+        user={authUser}
+        onSubmit={async (p) => {
+          try { await dispatch(updateProfileThunk(p)).unwrap(); toast({ title: 'Profile updated', status: 'success' }); profileModal.onClose(); } catch (e) { toast({ title: 'Failed', description: e?.message || 'Unable to update profile', status: 'error' }); }
+        }}
+      />
     </Box>
   );
 }
