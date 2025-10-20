@@ -132,7 +132,16 @@ export default function RoomScheduleAuto() {
     });
     const withStart = (r) => (Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : 1e9);
     list.sort((a,b)=> withStart(a) - withStart(b));
-    return list;
+    // Deduplicate by schedule id to avoid double-rendering the same schedule
+    const seen = new Set();
+    const uniq = [];
+    for (const it of list) {
+      const k = String(it.id);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      uniq.push(it);
+    }
+    return uniq;
   }, [all, room, day, getRoomsForDay]);
 
   // Determine current term from academic calendar
@@ -181,7 +190,18 @@ export default function RoomScheduleAuto() {
     const [s, e] = getInterval(rec);
     return Number.isFinite(s) && Number.isFinite(e) && s <= nowMin && nowMin < e;
   };
-  const nowList = useMemo(() => rowsTerm.filter(isNow), [rowsTerm, nowMin]);
+  const nowList = useMemo(() => {
+    const filtered = rowsTerm.filter(isNow);
+    const seen = new Set();
+    const out = [];
+    for (const it of filtered) {
+      const k = String(it.id);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(it);
+    }
+    return out;
+  }, [rowsTerm, nowMin]);
   const nowIds = useMemo(() => new Set(nowList.map(r => String(r.id))), [nowList]);
 
   function onPrint() {
@@ -206,6 +226,20 @@ export default function RoomScheduleAuto() {
   function onLogout() {
     dispatch(logoutThunk());
   }
+
+  // Determine if a schedule has an assigned/valid teacher
+  const hasTeacher = React.useCallback((rec) => {
+    const fid = rec.facultyId ?? rec.faculty_id;
+    if (!(Number(fid) > 0)) return false;
+    const name = String(rec.facultyName || rec.faculty || rec.instructor || '').trim();
+    if (!name) return false;
+    const n = name.toLowerCase();
+    if (/(unknown|unassigned|none|no\s*faculty|not\s*assigned)/i.test(n)) return false;
+    if (/^n\/?a$/.test(n)) return false;
+    if (/^t\.?b\.?a\.?$/.test(n) || n === 'tba') return false;
+    if (n === '-' || n === '--') return false;
+    return true;
+  }, []);
 
   // Build unique room list (display strings), sorted
   const uniqueRooms = useMemo(() => {
@@ -326,16 +360,16 @@ export default function RoomScheduleAuto() {
                       </HStack>
                       <HStack spacing={2}>
                         <Icon as={FiUser} />
-                        <Text>{c.facultyName || '-'}</Text>
+                        <Text>{hasTeacher(c) ? (c.facultyName || '-') : 'No teacher available'}</Text>
                       </HStack>
-                      {canAttend && attMap[c.id] && (
+                      {canAttend && hasTeacher(c) && attMap[c.id] && (
                         <HStack spacing={2}>
                           <Badge colorScheme={statusColor(attMap[c.id].status)} textTransform="capitalize">
                             {attMap[c.id].status}
                           </Badge>
                         </HStack>
                       )}
-                      {canAttend && (
+                      {canAttend && hasTeacher(c) && (
                         <Box pt={2} w="full">
                           <Button size="sm" colorScheme="green" onClick={() => { setSelectedScheduleId(c.id); attendModal.onOpen(); }}>Check Attendance</Button>
                         </Box>
@@ -387,9 +421,9 @@ export default function RoomScheduleAuto() {
                         </HStack>
                         <HStack spacing={2}>
                           <Icon as={FiUser} />
-                          <Text>{c.facultyName || '-'}</Text>
+                          <Text>{hasTeacher(c) ? (c.facultyName || '-') : 'No teacher available'}</Text>
                         </HStack>
-                        {canAttend && attMap[c.id] && (
+                        {canAttend && hasTeacher(c) && attMap[c.id] && (
                           <HStack spacing={2}>
                             <Badge colorScheme={statusColor(attMap[c.id].status)} textTransform="capitalize">
                               {attMap[c.id].status}
