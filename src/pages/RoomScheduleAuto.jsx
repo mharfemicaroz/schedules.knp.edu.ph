@@ -1,9 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
-import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGrid, Button, Icon, Divider, Avatar, useDisclosure, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider } from '@chakra-ui/react';
-import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut } from 'react-icons/fi';
+import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGrid, Button, Icon, Divider, Avatar, useDisclosure, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider, IconButton, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, Input, InputGroup, InputLeftElement } from '@chakra-ui/react';
+import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiChevronLeft, FiChevronRight, FiSearch } from 'react-icons/fi';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
 import { buildTable, printContent } from '../utils/printDesign';
 import apiService from '../services/apiService';
@@ -50,6 +50,7 @@ function sessionOfRecord(rec) {
 export default function RoomScheduleAuto() {
   const { room: roomParam } = useParams();
   const room = decodeURIComponent(roomParam || '');
+  const navigate = useNavigate();
   const all = useSelector(selectAllCourses);
   const acadData = useSelector(s => s.data.acadData);
   const authUser = useSelector(s => s.auth.user);
@@ -105,19 +106,34 @@ export default function RoomScheduleAuto() {
     return 'gray';
   };
 
+  // Helpers to map days to rooms for schedules with multiple rooms/days
+  const tokens = React.useCallback((s) => String(s || '').split(',').map(t => t.trim()).filter(Boolean), []);
+  const getRoomsForDay = React.useCallback((rec, d) => {
+    try {
+      const daysArr = Array.isArray(rec.f2fDays) && rec.f2fDays.length ? rec.f2fDays : tokens(rec.f2fSched || rec.f2fsched || rec.day);
+      const roomsArr = tokens(rec.room);
+      if (roomsArr.length > 1 && daysArr.length > 1) {
+        const out = [];
+        const len = Math.min(roomsArr.length, daysArr.length);
+        for (let i = 0; i < len; i++) { if (String(daysArr[i]) === String(d)) out.push(roomsArr[i]); }
+        return out;
+      }
+      // Fallback: if day is included and no 1:1 mapping, keep all listed rooms
+      return daysArr.includes(d) ? (roomsArr.length ? roomsArr : [rec.room].filter(Boolean)) : [];
+    } catch { return []; }
+  }, [tokens]);
+
   const rows = useMemo(() => {
     const key = normRoom(room);
-    const list = (all || []).filter(c => (c.roomKey || normRoom(c.room)) === key);
-    // Filter to today by F2F days when available, otherwise by simple day field
-    const sameDay = list.filter(c => {
-      const days = Array.isArray(c.f2fDays) ? c.f2fDays : [];
-      if (days.length) return days.includes(day);
-      return String(c.day||'').trim() === day;
+    const list = (all || []).filter(c => {
+      const roomsForToday = getRoomsForDay(c, day);
+      if (!roomsForToday || roomsForToday.length === 0) return false;
+      return roomsForToday.some(r => normRoom(r) === key);
     });
     const withStart = (r) => (Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : 1e9);
-    sameDay.sort((a,b)=> withStart(a) - withStart(b));
-    return sameDay;
-  }, [all, room, day]);
+    list.sort((a,b)=> withStart(a) - withStart(b));
+    return list;
+  }, [all, room, day, getRoomsForDay]);
 
   // Determine current term from academic calendar
   const currentTermKey = useMemo(() => {
@@ -191,6 +207,28 @@ export default function RoomScheduleAuto() {
     dispatch(logoutThunk());
   }
 
+  // Build unique room list (display strings), sorted
+  const uniqueRooms = useMemo(() => {
+    const map = new Map();
+    (all || []).forEach(c => {
+      const roomsForToday = getRoomsForDay(c, day);
+      roomsForToday.forEach((r) => {
+        const disp = String(r || '').trim(); if (!disp) return;
+        const normed = normRoom(disp);
+        if (!map.has(normed)) map.set(normed, disp);
+      });
+    });
+    return Array.from(map.values()).sort((a,b)=>String(a).localeCompare(String(b)));
+  }, [all, day, getRoomsForDay]);
+  const currentIndex = useMemo(() => uniqueRooms.findIndex(r => normRoom(r) === normRoom(room)), [uniqueRooms, room]);
+  const [roomQuery, setRoomQuery] = useState('');
+  const filteredRooms = useMemo(() => {
+    const q = String(roomQuery || '').toLowerCase();
+    if (!q) return uniqueRooms.slice(0, 100);
+    return uniqueRooms.filter(r => r.toLowerCase().includes(q)).slice(0, 100);
+  }, [roomQuery, uniqueRooms]);
+  const goRoom = (r) => navigate(`/views/rooms/${encodeURIComponent(r)}/auto`);
+
   return (
     <Box minH="100vh" bg={useColorModeValue('gray.50','gray.900')}>
       {/* Public Header */}
@@ -204,6 +242,40 @@ export default function RoomScheduleAuto() {
             <Text fontSize="sm" color={subtle}>Room: <Text as="span" fontWeight="700">{room}</Text> · {day}</Text>
           </VStack>
           <HStack spacing={2}>
+            {canAttend && (
+              <HStack spacing={1}>
+                <IconButton aria-label="Previous room" icon={<FiChevronLeft />} size="sm" variant="ghost" isDisabled={currentIndex <= 0} onClick={() => { if (currentIndex > 0) goRoom(uniqueRooms[currentIndex - 1]); }} />
+                <Popover placement="bottom-end">
+                  <PopoverTrigger>
+                    <Button size="sm" variant="outline" leftIcon={<FiSearch />}>Change Room</Button>
+                  </PopoverTrigger>
+                  <PopoverContent w="280px">
+                    <PopoverArrow />
+                    <PopoverCloseButton />
+                    <PopoverBody>
+                      <VStack align="stretch" spacing={2}>
+                        <InputGroup size="sm">
+                          <InputLeftElement><FiSearch /></InputLeftElement>
+                          <Input placeholder="Search rooms..." value={roomQuery} onChange={(e)=>setRoomQuery(e.target.value)} />
+                        </InputGroup>
+                        <Box maxH="260px" overflowY="auto" borderWidth="1px" borderColor={useColorModeValue('gray.200','gray.700')} rounded="md">
+                          {(filteredRooms.length === 0) ? (
+                            <Text p={3} fontSize="sm" color={subtle}>No matches</Text>
+                          ) : (
+                            filteredRooms.map((r) => (
+                              <Button key={r} variant="ghost" justifyContent="flex-start" w="full" size="sm" onClick={() => { goRoom(r); }}>
+                                {r}
+                              </Button>
+                            ))
+                          )}
+                        </Box>
+                      </VStack>
+                    </PopoverBody>
+                  </PopoverContent>
+                </Popover>
+                <IconButton aria-label="Next room" icon={<FiChevronRight />} size="sm" variant="ghost" isDisabled={currentIndex < 0 || currentIndex >= uniqueRooms.length - 1} onClick={() => { if (currentIndex >= 0 && currentIndex < uniqueRooms.length - 1) goRoom(uniqueRooms[currentIndex + 1]); }} />
+              </HStack>
+            )}
             <Button leftIcon={<FiPrinter />} onClick={onPrint} colorScheme="blue" variant="outline" size="sm">Print</Button>
             {!authUser ? (
               <Button size="sm" onClick={loginModal.onOpen}>Login</Button>
