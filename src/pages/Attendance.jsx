@@ -8,6 +8,7 @@ import useAttendance from '../hooks/useAttendance';
 import apiService from '../services/apiService';
 import AttendanceTable from '../components/AttendanceTable';
 import AttendanceFormModal from '../components/AttendanceFormModal';
+import { Link as RouterLink } from 'react-router-dom';
 
 const STATUS_OPTIONS = [
   { value: 'present', label: 'Present' },
@@ -58,6 +59,7 @@ export default function Attendance() {
           <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>Track attendance per schedule, with quick filters.</Text>
         </VStack>
         <HStack>
+          <Button as={RouterLink} to="/admin/room-attendance" target="_blank" colorScheme="purple" variant="solid">Open Room Attendance</Button>
           <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={refresh} />
           <Button leftIcon={<FiPlus />} colorScheme="blue" onClick={() => { setEditing(null); modal.onOpen(); }}>Add</Button>
         </HStack>

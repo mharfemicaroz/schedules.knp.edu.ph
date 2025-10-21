@@ -137,6 +137,7 @@ export default function Layout({ children }) {
   }, [loc.pathname, loc.search]);
   const [routeBusy, setRouteBusy] = React.useState(false);
   const isPublicRoomAuto = /^\/views\/rooms\/[^/]+\/auto$/.test(loc.pathname || '');
+  const isRoomAttendance = /^\/admin\/room-attendance$/.test(loc.pathname || '');
   const isSharePublic = /^\/share\//.test(loc.pathname || '');
   const isShareVisualMap = isSharePublic && /^\/share\/visual-map/.test(loc.pathname || '');
   // Hoist color values used by shared/public branch to keep hook order stable
@@ -232,7 +233,7 @@ export default function Layout({ children }) {
 
   const splash = showSplash;
 
-  if (isPublicRoomAuto || isSharePublic) {
+  if (isPublicRoomAuto || isSharePublic || isRoomAttendance) {
     // Public-facing view without app chrome (sidebar/topbar/footer)
     if (isSharePublic) {
       // Special-case: full-bleed canvas for Share Visual Map (landscape doc preview)
