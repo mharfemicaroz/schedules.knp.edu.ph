@@ -140,6 +140,7 @@ export default function Layout({ children }) {
   const isRoomAttendance = /^\/admin\/room-attendance$/.test(loc.pathname || '');
   const isSharePublic = /^\/share\//.test(loc.pathname || '');
   const isShareVisualMap = isSharePublic && /^\/share\/visual-map/.test(loc.pathname || '');
+  const isShareRoomAttendance = isSharePublic && /^\/share\/room-attendance$/.test(loc.pathname || '');
   // Hoist color values used by shared/public branch to keep hook order stable
   const sharedPaperBg = useColorModeValue('white', 'gray.800');
   const sharedFrameBg = useColorModeValue('gray.100', 'gray.900');
@@ -260,6 +261,31 @@ export default function Layout({ children }) {
         );
       }
       // Default shared view: framed, fixed max width (portrait-style paper)
+      // Special-case: Room Attendance share should be full-width for maximum table space
+      if (isShareRoomAttendance) {
+        return (
+          <>
+            <Box bg={sharedFrameBg} minH="100vh" px={{ base: 1, md: 2 }} py={{ base: 2, md: 4 }}>
+              <Box as="main" maxW="100%" mx="auto" bg={sharedPaperBg} px={0} py={0}>
+                {splash ? <SplashScreen /> : children}
+              </Box>
+            </Box>
+            <FirstVisitGuestModal
+              isOpen={guest.modalOpen}
+              onSubmit={async ({ name, role }) => {
+                try {
+                  localStorage.setItem('guest:name', name);
+                  localStorage.setItem('guest:role', role);
+                  rdispatch(setGuestAction({ name, role }));
+                  await rdispatch(touchGuestThunk({ name, role, route: getCurrentRoute() }));
+                } finally {
+                  rdispatch(closeGuestModal());
+                }
+              }}
+            />
+          </>
+        );
+      }
       return (
         <>
           <Box bg={sharedFrameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>

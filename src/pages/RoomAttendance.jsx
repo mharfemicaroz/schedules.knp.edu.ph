@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGrid, Button, Icon, Popover, PopoverTrigger,PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, Divider, Avatar, useDisclosure, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider, Tag, TagLabel, Wrap, WrapItem, useBreakpointValue } from '@chakra-ui/react';
-import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiDownload } from 'react-icons/fi';
+import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiDownload, FiShare2, FiExternalLink } from 'react-icons/fi';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { loadAllSchedules } from '../store/dataThunks';
@@ -14,6 +14,8 @@ import { loginThunk, logoutThunk, changePasswordThunk, updateProfileThunk } from
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import ProfileModal from '../components/ProfileModal';
 import LoginModal from '../components/LoginModal';
+import { Link as RouterLink } from 'react-router-dom';
+import { usePublicView } from '../utils/uiFlags';
 
 function schemeForBlockCode(code) {
   const s = String(code || '').toUpperCase();
@@ -56,6 +58,7 @@ export default function RoomAttendance() {
   const dotBg = useColorModeValue('gray.700','gray.200');
   const stickyBg = headerBg;
   const footerBg = headerBg;
+  const isPublic = usePublicView();
   const loginModal = useDisclosure();
   const changePwdModal = useDisclosure();
   const profileModal = useDisclosure();
@@ -123,6 +126,8 @@ export default function RoomAttendance() {
     return idx;
   }, [slots]);
   const [slotIndex, setSlotIndex] = React.useState(defaultSlotIndex);
+
+  
 
   const tokens = React.useCallback((s) => String(s || '').split(',').map(t => t.trim()).filter(Boolean), []);
   const getRoomsForDay = React.useCallback((rec, d) => {
@@ -209,6 +214,37 @@ export default function RoomAttendance() {
     // overlap with slot
     return s < slot.end && slot.start < e;
   }
+
+  // Per-time summary of faculty attendance for the currently selected slot (after bySched is initialized)
+  const slotSummary = React.useMemo(() => {
+    const rank = (s) => {
+      const v = String(s || '').toLowerCase();
+      return v === 'present' ? 4 : v === 'late' ? 3 : v === 'excused' ? 2 : v === 'absent' ? 1 : 0;
+    };
+    const statusByFaculty = new Map();
+    (all || []).forEach((c) => {
+      const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
+      if (!daysArr.includes(todayCode)) return;
+      if (!termMatches(c.term)) return;
+      if (!withinSlot(c, slots[slotIndex])) return;
+      const fac = (c.faculty || c.instructor || '').trim();
+      if (!fac) return;
+      const st = String(bySched[Number(c.id)] || '') || '';
+      if (!st) return;
+      const cur = statusByFaculty.get(fac);
+      if (!cur || rank(st) > rank(cur)) statusByFaculty.set(fac, st);
+    });
+    const present = [], absent = [], late = [], excused = [];
+    statusByFaculty.forEach((st, fac) => {
+      const v = String(st).toLowerCase();
+      if (v === 'present') present.push(fac);
+      else if (v === 'absent') absent.push(fac);
+      else if (v === 'late') late.push(fac);
+      else if (v === 'excused') excused.push(fac);
+    });
+    present.sort(); absent.sort(); late.sort(); excused.sort();
+    return { present, absent, late, excused };
+  }, [all, bySched, slotIndex, todayCode, currentTermKey]);
 
   
 
@@ -587,19 +623,24 @@ export default function RoomAttendance() {
             <Text fontSize="sm" color={subtle}>Day: <Text as="span" fontWeight="700">{getCurrentWeekDays().find(d=>d.code===todayCode)?.label || todayCode}</Text></Text>
           </VStack>
           <HStack spacing={3}>
-            <HStack spacing={2}>
-              <Text fontSize="xs" color={subtle}>Realtime</Text>
-              <Button size="xs" variant={rtEnabled ? 'solid' : 'outline'} colorScheme={rtEnabled ? 'green' : 'gray'} onClick={() => setRtEnabled(v => !v)}>{rtEnabled ? 'On' : 'Off'}</Button>
-              <select value={rtMs} onChange={(e)=> setRtMs(Number(e.target.value)||60000)} style={{ fontSize: '12px', padding: '4px 6px', borderRadius: 6, border: '1px solid var(--chakra-colors-gray-300)' }} disabled={!rtEnabled}>
-                <option value={30000}>30s</option>
-                <option value={60000}>1m</option>
-                <option value={90000}>1.5m</option>
-                <option value={180000}>3m</option>
-                <option value={300000}>5m</option>
-              </select>
-            </HStack>
-            <Button leftIcon={<FiDownload />} onClick={onDownloadXlsx} colorScheme="blue" variant="outline" size="sm">Download XLSX</Button>
-            {!authUser ? (
+            {!isPublic && (
+              <>
+                <HStack spacing={2}>
+                  <Text fontSize="xs" color={subtle}>Realtime</Text>
+                  <Button size="xs" variant={rtEnabled ? 'solid' : 'outline'} colorScheme={rtEnabled ? 'green' : 'gray'} onClick={() => setRtEnabled(v => !v)}>{rtEnabled ? 'On' : 'Off'}</Button>
+                  <select value={rtMs} onChange={(e)=> setRtMs(Number(e.target.value)||60000)} style={{ fontSize: '12px', padding: '4px 6px', borderRadius: 6, border: '1px solid var(--chakra-colors-gray-300)' }} disabled={!rtEnabled}>
+                    <option value={30000}>30s</option>
+                    <option value={60000}>1m</option>
+                    <option value={90000}>1.5m</option>
+                    <option value={180000}>3m</option>
+                    <option value={300000}>5m</option>
+                  </select>
+                </HStack>
+                <Button leftIcon={<FiDownload />} onClick={onDownloadXlsx} colorScheme="blue" variant="outline" size="sm">Download XLSX</Button>
+                <Button as={RouterLink} to="/share/room-attendance" target="_blank" leftIcon={<FiShare2 />} colorScheme="brand" variant="solid" size="sm">Share</Button>
+              </>
+            )}
+            {!isPublic && (!authUser ? (
               <Button size="sm" onClick={loginModal.onOpen}>Login</Button>
             ) : (
               <Menu>
@@ -616,7 +657,7 @@ export default function RoomAttendance() {
                   <MenuItem icon={<FiLogOut />} onClick={onLogout}>Logout</MenuItem>
                 </MenuList>
               </Menu>
-            )}
+            ))}
           </HStack>
         </HStack>
       </Box>
@@ -632,6 +673,87 @@ export default function RoomAttendance() {
               </Button>
             ))}
           </HStack>
+        </Box>
+
+        {/* Per-time faculty attendance summary */}
+        <Box borderWidth="1px" borderColor={border} rounded="lg" bg={panel} p={4} mb={6}>
+          <HStack justify="space-between" align="center" mb={3} flexWrap="wrap" spacing={3}>
+            <HStack>
+              <Icon as={FiClock} color={accent} />
+              <Text fontWeight="700">Summary for {slots[slotIndex]?.label}</Text>
+            </HStack>
+            <Text fontSize="xs" color={subtle}>Auto-refresh {rtEnabled ? 'enabled' : 'disabled'} · Today</Text>
+          </HStack>
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4}>
+            <Box borderWidth="1px" borderColor={border} rounded="md" p={3}>
+              <HStack justify="space-between" mb={2}>
+                <Text fontSize="sm" fontWeight="700">Present</Text>
+                <Badge colorScheme="green" rounded="full">{slotSummary.present.length}</Badge>
+              </HStack>
+              <Wrap spacing={2}>
+                {slotSummary.present.length === 0 ? (
+                  <Text fontSize="xs" color={subtle}>No entries</Text>
+                ) : (
+                  slotSummary.present.map((name, idx) => (
+                    <WrapItem key={`p-${idx}`}>
+                      <Tag size="sm" colorScheme="green" variant="subtle"><TagLabel>{name}</TagLabel></Tag>
+                    </WrapItem>
+                  ))
+                )}
+              </Wrap>
+            </Box>
+            <Box borderWidth="1px" borderColor={border} rounded="md" p={3}>
+              <HStack justify="space-between" mb={2}>
+                <Text fontSize="sm" fontWeight="700">Absent</Text>
+                <Badge colorScheme="red" rounded="full">{slotSummary.absent.length}</Badge>
+              </HStack>
+              <Wrap spacing={2}>
+                {slotSummary.absent.length === 0 ? (
+                  <Text fontSize="xs" color={subtle}>No entries</Text>
+                ) : (
+                  slotSummary.absent.map((name, idx) => (
+                    <WrapItem key={`a-${idx}`}>
+                      <Tag size="sm" colorScheme="red" variant="subtle"><TagLabel>{name}</TagLabel></Tag>
+                    </WrapItem>
+                  ))
+                )}
+              </Wrap>
+            </Box>
+            <Box borderWidth="1px" borderColor={border} rounded="md" p={3}>
+              <HStack justify="space-between" mb={2}>
+                <Text fontSize="sm" fontWeight="700">Late</Text>
+                <Badge colorScheme="orange" rounded="full">{slotSummary.late.length}</Badge>
+              </HStack>
+              <Wrap spacing={2}>
+                {slotSummary.late.length === 0 ? (
+                  <Text fontSize="xs" color={subtle}>No entries</Text>
+                ) : (
+                  slotSummary.late.map((name, idx) => (
+                    <WrapItem key={`l-${idx}`}>
+                      <Tag size="sm" colorScheme="orange" variant="subtle"><TagLabel>{name}</TagLabel></Tag>
+                    </WrapItem>
+                  ))
+                )}
+              </Wrap>
+            </Box>
+            <Box borderWidth="1px" borderColor={border} rounded="md" p={3}>
+              <HStack justify="space-between" mb={2}>
+                <Text fontSize="sm" fontWeight="700">Excused</Text>
+                <Badge colorScheme="blue" rounded="full">{slotSummary.excused.length}</Badge>
+              </HStack>
+              <Wrap spacing={2}>
+                {slotSummary.excused.length === 0 ? (
+                  <Text fontSize="xs" color={subtle}>No entries</Text>
+                ) : (
+                  slotSummary.excused.map((name, idx) => (
+                    <WrapItem key={`e-${idx}`}>
+                      <Tag size="sm" colorScheme="blue" variant="subtle"><TagLabel>{name}</TagLabel></Tag>
+                    </WrapItem>
+                  ))
+                )}
+              </Wrap>
+            </Box>
+          </SimpleGrid>
         </Box>
         {isMobile ? (
           <VStack align="stretch" spacing={4}>

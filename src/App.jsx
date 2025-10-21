@@ -83,6 +83,7 @@ function App() {
               <Route path="/share/session" element={<ViewsSession />} />
               <Route path="/share/session/block/:block" element={<BlockSchedule />} />
               <Route path="/share/visual-map" element={<ShareVisualMap />} />
+              <Route path="/share/room-attendance" element={<RoomAttendance />} />
               <Route path="/unauthorized" element={<Unauthorized />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
