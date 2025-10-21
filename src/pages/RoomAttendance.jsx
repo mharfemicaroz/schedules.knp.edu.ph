@@ -3,6 +3,7 @@ import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGri
 import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiDownload } from 'react-icons/fi';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
+import { loadAllSchedules } from '../store/dataThunks';
 import { getCurrentWeekDays, DAY_CODES } from '../utils/week';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
 import { buildTable, printContent } from '../utils/printDesign';
@@ -176,7 +177,7 @@ export default function RoomAttendance() {
   `;
 
   const [bySched, setBySched] = React.useState({});
-  React.useEffect(() => { (async () => {
+  const loadAttendance = React.useCallback(async () => {
     try {
       const iso = new Date().toISOString().slice(0,10);
       const list = await apiService.listAttendance({ startDate: iso, endDate: iso, limit: 100000 });
@@ -185,7 +186,21 @@ export default function RoomAttendance() {
       arr.forEach(r => { m[Number(r.scheduleId || r.schedule_id)] = String(r.status || '').toLowerCase(); });
       setBySched(m);
     } catch { setBySched({}); }
-  })(); }, []);
+  }, []);
+  React.useEffect(() => { (async () => { try { await loadAttendance(); } catch {} })(); }, [loadAttendance]);
+
+  // Realtime auto-refresh similar to VisualMap
+  const [rtEnabled, setRtEnabled] = React.useState(false);
+  const [rtMs, setRtMs] = React.useState(60000);
+  const rtRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!rtEnabled) { if (rtRef.current) { clearInterval(rtRef.current); rtRef.current = null; } return; }
+    if (rtRef.current) { clearInterval(rtRef.current); rtRef.current = null; }
+    rtRef.current = setInterval(async () => {
+      try { await dispatch(loadAllSchedules()); await loadAttendance(); } catch {}
+    }, rtMs);
+    return () => { if (rtRef.current) { clearInterval(rtRef.current); rtRef.current = null; } };
+  }, [rtEnabled, rtMs, dispatch, loadAttendance]);
 
   function withinSlot(rec, slot) {
     let s = rec.timeStartMinutes, e = rec.timeEndMinutes;
@@ -571,7 +586,18 @@ export default function RoomAttendance() {
             </HStack>
             <Text fontSize="sm" color={subtle}>Day: <Text as="span" fontWeight="700">{getCurrentWeekDays().find(d=>d.code===todayCode)?.label || todayCode}</Text></Text>
           </VStack>
-          <HStack spacing={2}>
+          <HStack spacing={3}>
+            <HStack spacing={2}>
+              <Text fontSize="xs" color={subtle}>Realtime</Text>
+              <Button size="xs" variant={rtEnabled ? 'solid' : 'outline'} colorScheme={rtEnabled ? 'green' : 'gray'} onClick={() => setRtEnabled(v => !v)}>{rtEnabled ? 'On' : 'Off'}</Button>
+              <select value={rtMs} onChange={(e)=> setRtMs(Number(e.target.value)||60000)} style={{ fontSize: '12px', padding: '4px 6px', borderRadius: 6, border: '1px solid var(--chakra-colors-gray-300)' }} disabled={!rtEnabled}>
+                <option value={30000}>30s</option>
+                <option value={60000}>1m</option>
+                <option value={90000}>1.5m</option>
+                <option value={180000}>3m</option>
+                <option value={300000}>5m</option>
+              </select>
+            </HStack>
             <Button leftIcon={<FiDownload />} onClick={onDownloadXlsx} colorScheme="blue" variant="outline" size="sm">Download XLSX</Button>
             {!authUser ? (
               <Button size="sm" onClick={loginModal.onOpen}>Login</Button>
