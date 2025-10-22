@@ -1,10 +1,10 @@
-import React from 'react';
+﻿import React from 'react';
 import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGrid, Button, Icon, Popover, PopoverTrigger,PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, Divider, Avatar, useDisclosure, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider, Tag, TagLabel, Wrap, WrapItem, useBreakpointValue } from '@chakra-ui/react';
-import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiDownload, FiShare2, FiExternalLink } from 'react-icons/fi';
+import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiDownload, FiShare2, FiExternalLink, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { loadAllSchedules } from '../store/dataThunks';
-import { getCurrentWeekDays, DAY_CODES } from '../utils/week';
+import { getCurrentWeekDays, DAY_CODES, formatDayLabel } from '../utils/week';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
 import { buildTable, printContent } from '../utils/printDesign';
 import apiService from '../services/apiService';
@@ -71,6 +71,26 @@ export default function RoomAttendance() {
   const today = new Date(); today.setHours(0,0,0,0);
   const todayIdx = days.findIndex(d => { const dd = new Date(d.date); dd.setHours(0,0,0,0); return dd.getTime() === today.getTime(); });
   const todayCode = todayIdx >= 0 ? days[todayIdx].code : DAY_CODES[0];
+  const [selectedDate, setSelectedDate] = React.useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
+  const dateToISO = React.useCallback((d) => {
+    try {
+      const zz = new Date(d);
+      zz.setHours(0,0,0,0);
+      const y = zz.getFullYear();
+      const m = String(zz.getMonth() + 1).padStart(2, '0');
+      const day = String(zz.getDate()).padStart(2, '0');
+      // Local YYYY-MM-DD (avoid UTC shift from toISOString)
+      return `${y}-${m}-${day}`;
+    } catch {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+  }, []);
+  const selectedDayCode = React.useMemo(() => { const wd = new Date(selectedDate).getDay(); const map = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; return map[wd] || 'Mon'; }, [selectedDate]);
+  const selectedIso = React.useMemo(() => dateToISO(selectedDate), [selectedDate, dateToISO]);
 
   // Determine current term from academic calendar (1st/2nd Term)
   const currentTermKey = React.useMemo(() => {
@@ -144,13 +164,13 @@ export default function RoomAttendance() {
     } catch { return []; }
   }, [tokens]);
 
-  // Build matrix for today
+  // Build matrix for selected day
   const matrix = React.useMemo(() => {
     const roomsSet = new Map(); // norm -> display
     (all || []).forEach(c => {
       const termOk = termMatches(c.term);
       if (!termOk) return;
-      const rs = getRoomsForDay(c, todayCode);
+      const rs = getRoomsForDay(c, selectedDayCode);
       rs.forEach(r => { const disp = String(r||'').trim(); if (!disp) return; const n = normRoom(disp); if (!roomsSet.has(n)) roomsSet.set(n, disp); });
     });
     const rooms = Array.from(roomsSet.values()).sort((a,b)=>String(a).localeCompare(String(b)));
@@ -159,7 +179,7 @@ export default function RoomAttendance() {
     (all || []).forEach(c => {
       const termOk = termMatches(c.term);
       if (!termOk) return;
-      const rs = getRoomsForDay(c, todayCode);
+      const rs = getRoomsForDay(c, selectedDayCode);
       if (!rs.length) return;
       const ses = deriveSession(c.timeStartMinutes, c.session);
       const block = c.section || c.blockCode || c.block_code;
@@ -172,7 +192,7 @@ export default function RoomAttendance() {
       });
     });
     return { rooms, matrix: m };
-  }, [all, todayCode, getRoomsForDay, currentTermKey]);
+  }, [all, selectedDayCode, getRoomsForDay, currentTermKey]);
 
   // Attendance mapping for today
   const presentPulse = keyframes`
@@ -184,15 +204,15 @@ export default function RoomAttendance() {
   const [bySched, setBySched] = React.useState({});
   const loadAttendance = React.useCallback(async () => {
     try {
-      const iso = new Date().toISOString().slice(0,10);
+      const iso = selectedIso;
       const list = await apiService.listAttendance({ startDate: iso, endDate: iso, limit: 100000 });
       const arr = Array.isArray(list) ? list : (list?.data || []);
       const m = {};
       arr.forEach(r => { m[Number(r.scheduleId || r.schedule_id)] = String(r.status || '').toLowerCase(); });
       setBySched(m);
     } catch { setBySched({}); }
-  }, []);
-  React.useEffect(() => { (async () => { try { await loadAttendance(); } catch {} })(); }, [loadAttendance]);
+  }, [selectedIso]);
+  React.useEffect(() => { (async () => { try { await loadAttendance(); } catch {} })(); }, [loadAttendance, selectedIso]);
 
   // Realtime auto-refresh similar to VisualMap
   const [rtEnabled, setRtEnabled] = React.useState(false);
@@ -224,7 +244,7 @@ export default function RoomAttendance() {
     const statusByFaculty = new Map();
     (all || []).forEach((c) => {
       const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
-      if (!daysArr.includes(todayCode)) return;
+      if (!daysArr.includes(selectedDayCode)) return;
       if (!termMatches(c.term)) return;
       if (!withinSlot(c, slots[slotIndex])) return;
       const fac = (c.faculty || c.instructor || '').trim();
@@ -244,12 +264,12 @@ export default function RoomAttendance() {
     });
     present.sort(); absent.sort(); late.sort(); excused.sort();
     return { present, absent, late, excused };
-  }, [all, bySched, slotIndex, todayCode, currentTermKey]);
+  }, [all, bySched, slotIndex, selectedDayCode, currentTermKey]);
 
   
 
   function onPrint() {
-    const label = getCurrentWeekDays().find(d=>d.code===todayCode)?.label || todayCode;
+    const label = formatDayLabel(new Date(selectedDate));
     // Time grid slots
     const timeSlots = slots; // already computed 7am-9pm hourly
     // Sort rooms alphabetically and split into three groups for layout
@@ -262,7 +282,7 @@ export default function RoomAttendance() {
 
     const getCell = (room, slot) => {
       const candidates = (all || []).filter(c => {
-        const rs = getRoomsForDay(c, todayCode);
+        const rs = getRoomsForDay(c, selectedDayCode);
         if (!rs.find(rr => normRoom(rr) === normRoom(room))) return false;
         // Filter by current term when available
         const term = String(c.term || '').toLowerCase();
@@ -344,7 +364,7 @@ export default function RoomAttendance() {
               const bg = programBg(info.program);
               return `<td class="cell" style="background:${bg};width: calc((100% - 70px)/${grp.length})">
                 ${info.faculty ? `<div class="faculty">${info.faculty}</div>` : `<div class="meta">&nbsp;</div>`}
-                ${(info.course||info.title) ? `<div class="meta">${info.course || ''}${info.title ? ' — ' + info.title : ''}</div>` : ''}
+                ${(info.course||info.title) ? `<div class="meta">${info.course || ''}${info.title ? '-' + info.title : ''}</div>` : ''}
                 ${(info.term||info.time) ? `<div class="meta">${info.term ? ('Term: ' + info.term) : ''}${info.time ? (info.term ? ' · ' : '') + info.time : ''}</div>` : ''}
                 ${st ? `<div class="status ${st}">Status: ${info.status}</div>` : ''}
                 <div class="sig"></div>
@@ -364,8 +384,8 @@ export default function RoomAttendance() {
     const html = `
       <!doctype html><html><head><meta charset="utf-8"/><title>Attendance Sheet</title>${styles}</head>
       <body>
-        <div class="head"><div class="left">Attendance Sheet — Day: ${label}</div><div class="right">Generated: ${new Date().toLocaleString()}</div></div>
-        ${groupHtml}
+        <div class="head"><div class="left">Attendance Sheet - Day: ${label}</div><div class="right">Generated: ${new Date().toLocaleString()}</div></div>
+            <Text fontSize="sm" color={subtle}>Day: <Text as="span" fontWeight="700">{formatDayLabel(new Date(selectedDate))}</Text></Text>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
         <script>(function(){function download(){try{var jsp=window.jspdf&&window.jspdf.jsPDF?window.jspdf.jsPDF:null;if(!jsp){setTimeout(download,200);return;}var pw=936,ph=612,margin=12;var doc=new jsp({orientation:"landscape",unit:"pt",format:[pw,ph]});var innerW=pw-(margin*2);var ww=Math.max(document.documentElement.scrollWidth,document.body.scrollWidth);if(!ww||ww<innerW) ww=innerW;var scale=innerW/ww;doc.html(document.body,{x:margin,y:margin,width:innerW,windowWidth:ww,autoPaging:"text",html2canvas:{scale:Math.min(1,scale),useCORS:true},callback:function(doc){var fn="Attendance_Sheet_"+(new Date().toISOString().slice(0,10))+".pdf";doc.save(fn);setTimeout(function(){window.close();},300);}});}catch(e){setTimeout(download,200);}}if(document.readyState==="complete")download();else window.addEventListener("load",download);})();</script>
@@ -381,7 +401,7 @@ export default function RoomAttendance() {
   }
 
   async function onDownloadXlsx() {
-    const label = getCurrentWeekDays().find(d=>d.code===todayCode)?.label || todayCode;
+    const label = formatDayLabel(new Date(selectedDate));
     const timeSlots = slots;
     const roomsSorted = [...rooms].sort((a,b)=>String(a).localeCompare(String(b)));
     const groups = (() => {
@@ -410,7 +430,7 @@ export default function RoomAttendance() {
       const ws = wb.addWorksheet(`Rooms ${gi + 1}`);
 
       // Build rows
-      const title = `Attendance Sheet — Day: ${label}`;
+      const title = `Attendance Sheet - Day: ${label}`;
       ws.addRow([title]);
       const header = ['Time', ...grp];
       ws.addRow(header);
@@ -419,7 +439,7 @@ export default function RoomAttendance() {
         const rowVals = [sl.label];
         grp.forEach((r) => {
           const candidates = (all || []).filter(c => {
-            const rs = getRoomsForDay(c, todayCode);
+            const rs = getRoomsForDay(c, selectedDayCode);
             if (!rs.find(rr => normRoom(rr) === normRoom(r))) return false;
             const term = String(c.term || '').toLowerCase();
             const tKey = currentTermKey ? String(currentTermKey).charAt(0) : null;
@@ -435,7 +455,7 @@ export default function RoomAttendance() {
           const course = info.code || info.courseName || '';
           const titleC = info.courseTitle || '';
           if (faculty) parts.push(faculty);
-          if (course || titleC) parts.push(`${course || ''}${titleC ? ' — ' + titleC : ''}`);
+          if (course || titleC) parts.push(`${course || ''}${titleC ? ' - ' + titleC : ''}`);
           const meta = [];
           if (info.term) meta.push(`Term: ${info.term}`);
           if (info.time) meta.push(info.time);
@@ -494,7 +514,7 @@ export default function RoomAttendance() {
               const roomName = grp[c - 2];
               const sl = timeSlots[slIdx];
               const candidates = (all || []).filter(rec => {
-                const rs = getRoomsForDay(rec, todayCode);
+                const rs = getRoomsForDay(rec, selectedDayCode);
                 if (!rs.find(rr => normRoom(rr) === normRoom(roomName))) return false;
                 const term = String(rec.term || '').toLowerCase();
                 const tKey = currentTermKey ? String(currentTermKey).charAt(0) : null;
@@ -620,7 +640,25 @@ export default function RoomAttendance() {
               <Icon as={FiCalendar} color={accent} />
               <Heading size="md">Room Attendance</Heading>
             </HStack>
-            <Text fontSize="sm" color={subtle}>Day: <Text as="span" fontWeight="700">{getCurrentWeekDays().find(d=>d.code===todayCode)?.label || todayCode}</Text></Text>
+            <HStack spacing={2}>
+              <Text fontSize="sm" color={subtle}>Day:</Text>
+              <HStack spacing={2}>
+                <Button size="xs" variant="ghost" onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()-1); d.setHours(0,0,0,0); setSelectedDate(d); }}>Prev</Button>
+                <input type="date" value={selectedIso} onChange={(e)=>{ try { const [y,m,dd] = String(e.target.value||'').split('-').map(Number); const d = new Date(y, (m||1)-1, dd||1); d.setHours(0,0,0,0); setSelectedDate(d); } catch {} }} style={{ fontSize: '12px', padding: '4px 6px', borderRadius: 6, border: '1px solid var(--chakra-colors-gray-300)' }} />
+                <Button size="xs" variant="ghost" onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()+1); d.setHours(0,0,0,0); setSelectedDate(d); }}>Next</Button>
+                <Button size="xs" onClick={() => {
+                  const now = new Date();
+                  // set date (midnight) for attendance filtering
+                  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                  setSelectedDate(d);
+                  // set current slot based on time
+                  const minutes = now.getHours() * 60 + now.getMinutes();
+                  let idx = slots.findIndex(s => s.start <= minutes && minutes < s.end);
+                  if (idx === -1) idx = 0;
+                  setSlotIndex(idx);
+                }}>Today</Button>
+              </HStack>
+            </HStack>
           </VStack>
           <HStack spacing={3}>
             {!isPublic && (
@@ -682,7 +720,7 @@ export default function RoomAttendance() {
               <Icon as={FiClock} color={accent} />
               <Text fontWeight="700">Summary for {slots[slotIndex]?.label}</Text>
             </HStack>
-            <Text fontSize="xs" color={subtle}>Auto-refresh {rtEnabled ? 'enabled' : 'disabled'} · Today</Text>
+            <Text fontSize="xs" color={subtle}>Auto-refresh {rtEnabled ? 'enabled' : 'disabled'} - {formatDayLabel(new Date(selectedDate))}</Text>
           </HStack>
           <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4}>
             <Box borderWidth="1px" borderColor={border} rounded="md" p={3}>
@@ -770,7 +808,7 @@ export default function RoomAttendance() {
                     <Box key={`m-${r}-${sess}`} mb={2}>
                       <Text fontSize="xs" color={subtle} mb={1}>{sess}</Text>
                       {arr.length === 0 ? (
-                        <Text fontSize="xs" color={subtle}>—</Text>
+                        <Text fontSize="xs" color={subtle}></Text>
                       ) : (
                         <Wrap spacing={2}>
                           {arr.map((b) => {
@@ -779,7 +817,7 @@ export default function RoomAttendance() {
                               if (String(blk) !== String(b)) return false;
                               const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
                               const termOk = termMatches(c.term);
-                              return termOk && daysArr.includes(todayCode) && withinSlot(c, slots[slotIndex]);
+                              return termOk && daysArr.includes(selectedDayCode) && withinSlot(c, slots[slotIndex]);
                             });
                             let chosen = null;
                             candidates.forEach(c => { const st = bySched[c.id]; if (st) chosen = st; });
@@ -811,7 +849,7 @@ export default function RoomAttendance() {
           <VStack align="stretch" spacing={6}>
             {roomParts.map((roomsSlice, partIdx) => (
               <Box key={`part-${partIdx}`} borderWidth="1px" borderColor={border} rounded="lg" p={0} overflowX="auto">
-                <Box as="table" w="100%" borderCollapse="separate" style={{ borderSpacing: 0 }}>
+                <Box as="table" w="100%" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                 <Box as="thead" position="sticky" top={0} zIndex={1} bg={headerBg}>
                     <Box as="tr">
                     <Box as="th" textAlign="left" p="10px 12px" borderBottomWidth="1px" borderColor={border} position="sticky" left={0} zIndex={2} bg={stickyBg}>Session</Box>
@@ -827,11 +865,11 @@ export default function RoomAttendance() {
                   </Box>
                   <Box as="tbody">
                     {sessions.map((sess) => (
-                      <Box as="tr" key={`${todayCode}-${sess}-${partIdx}`}>
+                      <Box as="tr" key={`${selectedDayCode}-${sess}-${partIdx}`}>
                       <Box as="td" position="sticky" left={0} zIndex={1} bg={stickyBg} p="10px 12px" borderTopWidth="1px" borderColor={border} fontWeight="700">{sess}</Box>
                         {roomsSlice.length === 0 && (
                           <Box as="td" p="10px 12px" borderTopWidth="1px" borderColor={border} colSpan={999}>
-                            <Text fontSize="xs" color={subtle}>—</Text>
+                            <Text fontSize="xs" color={subtle}></Text>
                           </Box>
                         )}
                         {roomsSlice.map((r, cIdx) => {
@@ -840,7 +878,7 @@ export default function RoomAttendance() {
                           return (
                             <Box as="td" key={`${sess}-${r}-${partIdx}`} p="8px 10px" borderTopWidth="1px" borderLeftWidth={cIdx===0? '1px':'1px'} borderColor={border}>
                               {arr.length === 0 ? (
-                                <Text fontSize="xs" color={subtle}>—</Text>
+                                <Text fontSize="xs" color={subtle}></Text>
                               ) : (
                                 <HStack spacing={2} wrap="wrap" align="start">
                                   {arr.map((b) => {
@@ -850,7 +888,7 @@ export default function RoomAttendance() {
                                       if (String(blk) !== String(b)) return false;
                                       const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
                                       const termOk = termMatches(c.term);
-                                      return termOk && daysArr.includes(todayCode) && withinSlot(c, slots[slotIndex]);
+                                      return termOk && daysArr.includes(selectedDayCode) && withinSlot(c, slots[slotIndex]);
                                     });
                                     let chosen = null;
                                     candidates.forEach(c => { const st = bySched[c.id]; if (st) chosen = st; });
@@ -907,6 +945,16 @@ export default function RoomAttendance() {
     </Box>
   );
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
