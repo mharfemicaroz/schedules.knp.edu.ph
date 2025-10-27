@@ -676,7 +676,14 @@ export default function FacultyDetail() {
                       {courseData.map((data, index) => (
                         <Td key={index}>
                           {index === 1 ? (
-                            <Text maxW="380px" noOfLines={1}>{data}</Text>
+                            <Text
+                              maxW={isPublic ? 'unset' : '380px'}
+                              noOfLines={isPublic ? undefined : 1}
+                              whiteSpace="normal"
+                              wordBreak="break-word"
+                            >
+                              {data}
+                            </Text>
                           ) : (
                             data
                           )}
