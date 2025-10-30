@@ -2,9 +2,10 @@ import React from 'react';
 import { Box, Heading, HStack, VStack, Text, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Input, IconButton, Button, Badge, Tooltip, chakra, Progress, Accordion, AccordionItem, AccordionButton, AccordionPanel, AccordionIcon, Spinner, Center, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
 import { useSelector, useDispatch } from 'react-redux';
 import FacultySelect from '../components/FacultySelect';
+import Pagination from '../components/Pagination';
 import { selectAllCourses } from '../store/dataSlice';
 import { loadAllSchedules, loadAcademicCalendar } from '../store/dataThunks';
-import { FiEdit, FiChevronUp, FiChevronDown } from 'react-icons/fi';
+import { FiEdit, FiChevronUp, FiChevronDown, FiX } from 'react-icons/fi';
 import { updateScheduleThunk } from '../store/dataThunks';
 
 function parseDate(val) {
@@ -61,6 +62,7 @@ export default function AdminGradesSubmission() {
   const roleStr = String(authUser?.role || '').toLowerCase();
   const canEditDate = roleStr === 'admin' || roleStr === 'manager';
   const canConfirm = roleStr === 'admin' || roleStr === 'manager' || roleStr === 'registrar';
+  const canClear = roleStr === 'admin';
   const border = useColorModeValue('gray.200','gray.700');
   const bg = useColorModeValue('white','gray.800');
 
@@ -70,6 +72,8 @@ export default function AdminGradesSubmission() {
   const [sortBy, setSortBy] = React.useState('code');
   const [sortOrder, setSortOrder] = React.useState('asc'); // 'asc' | 'desc'
   const [expanded, setExpanded] = React.useState([]); // indices of expanded faculty accordions
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(10);
   const confirmDisc = useDisclosure();
   const [confirmMode, setConfirmMode] = React.useState(null); // 'submit' | 'save'
   const [pendingCourse, setPendingCourse] = React.useState(null);
@@ -133,8 +137,17 @@ export default function AdminGradesSubmission() {
 
   // Reset expansion when data set changes (keeps initial rendering light)
   React.useEffect(() => { setExpanded([]); }, [rowsBase]);
-  const allIdx = React.useMemo(() => facultyGroups.map((_, i) => i), [facultyGroups]);
-  const allExpanded = expanded.length === facultyGroups.length && facultyGroups.length > 0;
+  // Pagination of faculty groups to improve performance
+  const pageCount = React.useMemo(() => Math.max(1, Math.ceil(facultyGroups.length / pageSize)), [facultyGroups.length, pageSize]);
+  const pagedFacultyGroups = React.useMemo(() => {
+    const p = Math.max(1, Math.min(page, pageCount));
+    const start = (p - 1) * pageSize;
+    return facultyGroups.slice(start, start + pageSize);
+  }, [facultyGroups, page, pageSize, pageCount]);
+  React.useEffect(() => { setPage(1); }, [rowsBase]);
+  React.useEffect(() => { setExpanded([]); }, [page, pageSize]);
+  const allIdx = React.useMemo(() => pagedFacultyGroups.map((_, i) => i), [pagedFacultyGroups]);
+  const allExpanded = expanded.length === pagedFacultyGroups.length && pagedFacultyGroups.length > 0;
   const toggleAll = () => setExpanded(allExpanded ? [] : allIdx);
 
   const dayIndex = (d) => {
@@ -202,6 +215,12 @@ export default function AdminGradesSubmission() {
     setConfirmMode('save');
     confirmDisc.onOpen();
   };
+  const askConfirmClear = (c) => {
+    setPendingCourse(c);
+    setPendingDate('');
+    setConfirmMode('clear');
+    confirmDisc.onOpen();
+  };
   const handleConfirm = async () => {
     const c = pendingCourse;
     if (!c) { confirmDisc.onClose(); return; }
@@ -218,6 +237,8 @@ export default function AdminGradesSubmission() {
         await dispatch(updateScheduleThunk({ id: c.id, changes: { gradesSubmitted: d ? d.toISOString() : null, gradesStatus: d ? status : null } }));
         setEditingId(null);
         setTempDate('');
+      } else if (confirmMode === 'clear') {
+        await dispatch(updateScheduleThunk({ id: c.id, changes: { gradesSubmitted: null, gradesStatus: null } }));
       }
       dispatch(loadAllSchedules());
     } finally {
@@ -283,8 +304,10 @@ export default function AdminGradesSubmission() {
         </Center>
       )}
 
+
+
       <Accordion allowMultiple isLazy index={expanded} onChange={(idx) => setExpanded(Array.isArray(idx) ? idx : [idx])}>
-        {facultyGroups.map((g, idx) => (
+        {pagedFacultyGroups.map((g, idx) => (
           <AccordionItem key={g.faculty} border="none" mb={3}>
             <h2>
               <AccordionButton borderWidth="1px" borderColor={border} rounded="md" _expanded={{ bg: useColorModeValue('gray.50','whiteAlpha.100') }} px={{ base: 3, md: 4 }} py={{ base: 3, md: 3 }}>
@@ -355,6 +378,11 @@ export default function AdminGradesSubmission() {
                                           <IconButton aria-label="Edit Grade Date" icon={<FiEdit />} size="xs" variant="ghost" onClick={()=>{ setEditingId(c.id); setTempDate(toDateInput(submitted || new Date())); }} />
                                         </Tooltip>
                                       )}
+                                      {canClear && submitted && (
+                                        <Tooltip label="Clear submitted date">
+                                          <IconButton aria-label="Clear" icon={<FiX />} size="xs" variant="ghost" colorScheme="red" onClick={()=>askConfirmClear(c)} />
+                                        </Tooltip>
+                                      )}
                                       {!submitted && canConfirm && (
                                          <Button size="xs" colorScheme="green" onClick={()=>askConfirmSubmit(c)}>Confirm Submit</Button>
                                       )}
@@ -377,12 +405,17 @@ export default function AdminGradesSubmission() {
         ))}
       </Accordion>
 
+      {/* Bottom pagination */}
+      <Box mt={3}>
+        <Pagination page={page} pageCount={pageCount} onPage={setPage} pageSize={pageSize} onPageSize={setPageSize} />
+      </Box>
+
       {/* Confirmation Dialog */}
       <AlertDialog isOpen={confirmDisc.isOpen} onClose={confirmDisc.onClose} leastDestructiveRef={undefined} isCentered>
         <AlertDialogOverlay />
         <AlertDialogContent>
           <AlertDialogHeader>
-            {confirmMode === 'submit' ? 'Confirm Grade Submission' : 'Confirm Save Date'}
+            {confirmMode === 'submit' ? 'Confirm Grade Submission' : confirmMode === 'save' ? 'Confirm Save Date' : 'Clear Submitted Date'}
           </AlertDialogHeader>
           <AlertDialogBody>
             {confirmMode === 'submit' ? (
@@ -394,9 +427,18 @@ export default function AdminGradesSubmission() {
                   </Text>
                 )}
               </VStack>
-            ) : (
+            ) : confirmMode === 'save' ? (
               <VStack align="stretch" spacing={1}>
                 <Text>Save the selected submitted date for this schedule?</Text>
+                {pendingCourse && (
+                  <Text fontSize="sm" color={useColorModeValue('gray.600','gray.300')}>
+                    {(pendingCourse.code || pendingCourse.courseName || '') + ' — ' + (pendingCourse.title || pendingCourse.courseTitle || '')}
+                  </Text>
+                )}
+              </VStack>
+            ) : (
+              <VStack align="stretch" spacing={1}>
+                <Text>Remove the submitted date and status for this schedule?</Text>
                 {pendingCourse && (
                   <Text fontSize="sm" color={useColorModeValue('gray.600','gray.300')}>
                     {(pendingCourse.code || pendingCourse.courseName || '') + ' — ' + (pendingCourse.title || pendingCourse.courseTitle || '')}
