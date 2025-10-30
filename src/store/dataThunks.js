@@ -114,6 +114,9 @@ function transformSchedulesToFacultyDataset(schedules) {
       dept: schedule.dept,
       room: schedule.room,
       session: schedule.session,
+      // grades
+      gradesSubmitted: schedule.gradesSubmitted ?? schedule.grades_submitted ?? null,
+      gradesStatus: schedule.gradesStatus ?? schedule.grades_status ?? null,
       programcode: schedule.programcode,
       semester: schedule.term,
       program: schedule.programcode,

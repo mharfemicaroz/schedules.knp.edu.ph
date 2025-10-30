@@ -32,6 +32,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
 
   const roleStr = String(authUser?.role || '').toLowerCase();
   const isAdmin = !!authUser && (roleStr === 'admin' || roleStr === 'manager');
+  const isRegistrar = !!authUser && roleStr === 'registrar';
   const isChecker = !!authUser && roleStr === 'checker';
   const isUser = !!authUser && !isAdmin && !isChecker;
 
@@ -139,14 +140,15 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             <NavItem to="/reports/faculty-summary" icon={FiFileText} onClick={onNavigate}>Faculty Summary</NavItem>
           </>
         )}
-        {(isAdmin || isChecker) && (
+        {(isAdmin || isChecker || isRegistrar) && (
           <>
             <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Admin</Text>
             <NavItem to="/admin/attendance" icon={FiCheckSquare} onClick={onNavigate}>Attendance</NavItem>
-            {isAdmin && (
+            {(isAdmin || isRegistrar) && (
               <>
               <NavItem to="/admin/faculty" icon={FiUsers} onClick={onNavigate}>Faculty</NavItem>
               <NavItem to="/admin/academic-calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>
+              <NavItem to="/admin/grades-submission" icon={FiFileText} onClick={onNavigate}>Grades Submission</NavItem>
               <NavItem to="/admin/blocks" icon={FiSettings} onClick={onNavigate}>Block Settings</NavItem>
               <NavItem to="/admin/users" icon={FiUser} onClick={onNavigate}>User Management</NavItem>
               <NavItem to="/admin/guest-logs" icon={FiActivity} onClick={onNavigate}>Guest Logs</NavItem>
