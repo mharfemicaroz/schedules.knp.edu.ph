@@ -139,6 +139,8 @@ export default function Layout({ children }) {
   const isPublicRoomAuto = /^\/views\/rooms\/[^/]+\/auto$/.test(loc.pathname || '');
   const isRoomAttendance = /^\/admin\/room-attendance$/.test(loc.pathname || '');
   const isSharePublic = /^\/share\//.test(loc.pathname || '');
+  const currentPath = `${loc.pathname || ''}${loc.hash || ''}`;
+  const isUnauthorizedRoute = /(?:^|#)\/unauthorized$/.test(currentPath);
   const isShareVisualMap = isSharePublic && /^\/share\/visual-map/.test(loc.pathname || '');
   const isShareRoomAttendance = isSharePublic && /^\/share\/room-attendance$/.test(loc.pathname || '');
   // Hoist color values used by shared/public branch to keep hook order stable
@@ -233,6 +235,51 @@ export default function Layout({ children }) {
   }, [isSharePublic]);
 
   const splash = showSplash;
+
+  if (isUnauthorizedRoute) {
+    // Dedicated unauthorized view: no sidebar, custom header + footer
+    return (
+      <>
+        <Box bg={sharedFrameBg} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 4, md: 8 }}>
+          <Box
+            as="main"
+            maxW="800px"
+            mx="auto"
+            bg={sharedPaperBg}
+            borderWidth="1px"
+            borderColor={sharedHeaderBorder}
+            rounded={{ base: 'lg', md: 'xl' }}
+            boxShadow={{ base: 'md', md: 'xl' }}
+            overflow="hidden"
+          >
+            {/* Aesthetic header */}
+            <Box bg={sharedHeaderBg} borderBottomWidth="1px" borderColor={sharedHeaderBorder} px={{ base: 4, md: 6 }} py={{ base: 3, md: 4 }}>
+              <HStack spacing={3} align="center" justify="space-between">
+                <HStack spacing={3} align="center">
+                  <Image src="/logo.png" alt="Logo" boxSize={{ base: '28px', md: '36px' }} rounded="md" />
+                  <VStack align="start" spacing={0}>
+                    <Text fontWeight="800" fontSize={{ base: 'sm', md: 'md' }}>Access Restricted</Text>
+                    <Text fontSize={{ base: 'xs', md: 'sm' }} color={sharedHeaderTextSecondary}>You dont have permission to view this page.</Text>
+                  </VStack>
+                </HStack>
+              </HStack>
+            </Box>
+            {/* Body */}
+            <Box px={{ base: 4, md: 6 }} py={{ base: 5, md: 8 }}>
+              {splash ? <SplashScreen /> : children}
+            </Box>
+            {/* Aesthetic footer */}
+            <Box bg={sharedHeaderBg} borderTopWidth="1px" borderColor={sharedHeaderBorder} px={{ base: 4, md: 6 }} py={{ base: 3, md: 4 }}>
+              <VStack spacing={1} align="center">
+                <Text fontSize="sm" fontWeight="700" color={sharedHeaderTextPrimary}>Kolehiyo ng Pantukan</Text>
+                <Text fontSize="xs" color={sharedHeaderTextSecondary}>Please contact the administrator if you believe this is an error.</Text>
+              </VStack>
+            </Box>
+          </Box>
+        </Box>
+      </>
+    );
+  }
 
   if (isPublicRoomAuto || isSharePublic || isRoomAttendance) {
     // Public-facing view without app chrome (sidebar/topbar/footer)

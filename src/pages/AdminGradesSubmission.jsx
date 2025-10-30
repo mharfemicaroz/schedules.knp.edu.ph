@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Heading, HStack, VStack, Text, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Input, IconButton, Button, Badge, Tooltip, chakra, Progress, Accordion, AccordionItem, AccordionButton, AccordionPanel, AccordionIcon, Spinner, Center } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Text, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Input, IconButton, Button, Badge, Tooltip, chakra, Progress, Accordion, AccordionItem, AccordionButton, AccordionPanel, AccordionIcon, Spinner, Center, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
 import { useSelector, useDispatch } from 'react-redux';
 import FacultySelect from '../components/FacultySelect';
 import { selectAllCourses } from '../store/dataSlice';
@@ -70,6 +70,10 @@ export default function AdminGradesSubmission() {
   const [sortBy, setSortBy] = React.useState('code');
   const [sortOrder, setSortOrder] = React.useState('asc'); // 'asc' | 'desc'
   const [expanded, setExpanded] = React.useState([]); // indices of expanded faculty accordions
+  const confirmDisc = useDisclosure();
+  const [confirmMode, setConfirmMode] = React.useState(null); // 'submit' | 'save'
+  const [pendingCourse, setPendingCourse] = React.useState(null);
+  const [pendingDate, setPendingDate] = React.useState('');
 
   React.useEffect(() => {
     if (!acadData) dispatch(loadAcademicCalendar());
@@ -185,6 +189,44 @@ export default function AdminGradesSubmission() {
     return list;
   }, [sortBy, sortOrder, acadData]);
 
+  // Confirmation helpers
+  const askConfirmSubmit = (c) => {
+    setPendingCourse(c);
+    setPendingDate(toDateInput(new Date()));
+    setConfirmMode('submit');
+    confirmDisc.onOpen();
+  };
+  const askConfirmSaveDate = (c) => {
+    setPendingCourse(c);
+    setPendingDate(tempDate);
+    setConfirmMode('save');
+    confirmDisc.onOpen();
+  };
+  const handleConfirm = async () => {
+    const c = pendingCourse;
+    if (!c) { confirmDisc.onClose(); return; }
+    try {
+      if (confirmMode === 'submit') {
+        const now = new Date();
+        const due = findGradesDueDate(acadData, c.term);
+        const status = computeStatus(now, due);
+        await dispatch(updateScheduleThunk({ id: c.id, changes: { gradesSubmitted: now.toISOString(), gradesStatus: status } }));
+      } else if (confirmMode === 'save') {
+        const d = fromDateInput(pendingDate);
+        const due = findGradesDueDate(acadData, c.term);
+        const status = computeStatus(d, due);
+        await dispatch(updateScheduleThunk({ id: c.id, changes: { gradesSubmitted: d ? d.toISOString() : null, gradesStatus: d ? status : null } }));
+        setEditingId(null);
+        setTempDate('');
+      }
+      dispatch(loadAllSchedules());
+    } finally {
+      confirmDisc.onClose();
+      setPendingCourse(null);
+      setConfirmMode(null);
+    }
+  };
+
   const onSort = (key) => {
     setSortBy((prev) => {
       if (prev === key) {
@@ -299,7 +341,7 @@ export default function AdminGradesSubmission() {
                                     canEditDate ? (
                                       <HStack>
                                         <Input type="date" size="sm" value={tempDate} onChange={(e)=>setTempDate(e.target.value)} />
-                                        <Button size="xs" colorScheme="blue" onClick={()=>saveEditedDate(c)}>Save</Button>
+                                  <Button size="xs" colorScheme="blue" onClick={()=>askConfirmSaveDate(c)}>Save</Button>
                                         <Button size="xs" variant="ghost" onClick={()=>{ setEditingId(null); setTempDate(''); }}>Cancel</Button>
                                       </HStack>
                                     ) : (
@@ -314,7 +356,7 @@ export default function AdminGradesSubmission() {
                                         </Tooltip>
                                       )}
                                       {!submitted && canConfirm && (
-                                        <Button size="xs" colorScheme="green" onClick={()=>confirmSubmit(c)}>Confirm Submit</Button>
+                                         <Button size="xs" colorScheme="green" onClick={()=>askConfirmSubmit(c)}>Confirm Submit</Button>
                                       )}
                                     </HStack>
                                   )}
@@ -334,6 +376,41 @@ export default function AdminGradesSubmission() {
           </AccordionItem>
         ))}
       </Accordion>
+
+      {/* Confirmation Dialog */}
+      <AlertDialog isOpen={confirmDisc.isOpen} onClose={confirmDisc.onClose} leastDestructiveRef={undefined} isCentered>
+        <AlertDialogOverlay />
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            {confirmMode === 'submit' ? 'Confirm Grade Submission' : 'Confirm Save Date'}
+          </AlertDialogHeader>
+          <AlertDialogBody>
+            {confirmMode === 'submit' ? (
+              <VStack align="stretch" spacing={1}>
+                <Text>Proceed to mark this schedule as submitted?</Text>
+                {pendingCourse && (
+                  <Text fontSize="sm" color={useColorModeValue('gray.600','gray.300')}>
+                    {(pendingCourse.code || pendingCourse.courseName || '') + ' — ' + (pendingCourse.title || pendingCourse.courseTitle || '')}
+                  </Text>
+                )}
+              </VStack>
+            ) : (
+              <VStack align="stretch" spacing={1}>
+                <Text>Save the selected submitted date for this schedule?</Text>
+                {pendingCourse && (
+                  <Text fontSize="sm" color={useColorModeValue('gray.600','gray.300')}>
+                    {(pendingCourse.code || pendingCourse.courseName || '') + ' — ' + (pendingCourse.title || pendingCourse.courseTitle || '')}
+                  </Text>
+                )}
+              </VStack>
+            )}
+          </AlertDialogBody>
+          <AlertDialogFooter>
+            <Button variant="ghost" onClick={confirmDisc.onClose}>Cancel</Button>
+            <Button colorScheme="blue" onClick={handleConfirm} ml={3}>Confirm</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </Box>
   );
