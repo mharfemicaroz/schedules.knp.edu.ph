@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Heading, HStack, VStack, Text, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Input, IconButton, Button, Badge, Tooltip, chakra, Progress, Accordion, AccordionItem, AccordionButton, AccordionPanel, AccordionIcon, Spinner, Center, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Text, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Input, IconButton, Button, Badge, Tooltip, chakra, Progress, Accordion, AccordionItem, AccordionButton, AccordionPanel, AccordionIcon, Spinner, Center, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Select } from '@chakra-ui/react';
 import { useSelector, useDispatch } from 'react-redux';
 import FacultySelect from '../components/FacultySelect';
 import Pagination from '../components/Pagination';
@@ -58,6 +58,7 @@ export default function AdminGradesSubmission() {
   const allCourses = useSelector(selectAllCourses);
   const acadData = useSelector(s => s.data.acadData);
   const loadingData = useSelector(s => s.data.loading);
+  const facultyList = useSelector(s => Array.isArray(s.data.faculties) ? s.data.faculties : []);
   const authUser = useSelector(s => s.auth.user);
   const roleStr = String(authUser?.role || '').toLowerCase();
   const canEditDate = roleStr === 'admin' || roleStr === 'manager';
@@ -74,6 +75,10 @@ export default function AdminGradesSubmission() {
   const [expanded, setExpanded] = React.useState([]); // indices of expanded faculty accordions
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(10);
+  const [groupSortBy, setGroupSortBy] = React.useState('faculty'); // 'faculty' | 'pct'
+  const [groupSortOrder, setGroupSortOrder] = React.useState('asc'); // 'asc' | 'desc'
+  const [deptFilter, setDeptFilter] = React.useState('');
+  const [empFilter, setEmpFilter] = React.useState('');
   const confirmDisc = useDisclosure();
   const [confirmMode, setConfirmMode] = React.useState(null); // 'submit' | 'save'
   const [pendingCourse, setPendingCourse] = React.useState(null);
@@ -105,6 +110,16 @@ export default function AdminGradesSubmission() {
     return 9;
   };
 
+  const profileMap = React.useMemo(() => {
+    const map = new Map();
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    (facultyList || []).forEach(f => {
+      const key = norm(f.name || f.faculty);
+      if (key) map.set(key, f);
+    });
+    return map;
+  }, [facultyList]);
+
   const facultyGroups = React.useMemo(() => {
     const map = new Map();
     rows.forEach((c) => {
@@ -112,6 +127,7 @@ export default function AdminGradesSubmission() {
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(c);
     });
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const arr = Array.from(map.entries()).map(([faculty, items]) => {
       const submitted = items.reduce((acc, it) => acc + (parseDate(it.gradesSubmitted) ? 1 : 0), 0);
       const total = items.length;
@@ -123,28 +139,79 @@ export default function AdminGradesSubmission() {
         if (!termMap.has(t)) termMap.set(t, []);
         termMap.get(t).push(it);
       });
+      // Pull department and employment from faculty profile where possible
+      const prof = profileMap.get(norm(faculty));
+      const dept = prof?.department || prof?.dept || '';
+      const employment = prof?.employment || '';
       const terms = Array.from(termMap.entries()).map(([term, tItems]) => {
         const s = tItems.reduce((acc, it) => acc + (parseDate(it.gradesSubmitted) ? 1 : 0), 0);
         const tot = tItems.length;
         const pp = tot > 0 ? Math.round((s / tot) * 100) : 0;
         return { term, items: tItems, submitted: s, total: tot, pct: pp };
       }).sort((a,b) => termOrder(a.term) - termOrder(b.term));
-      return { faculty, items, submitted, total, pct, terms };
+      return { faculty, items, submitted, total, pct, terms, department: dept, employment };
     });
     arr.sort((a,b) => a.faculty.localeCompare(b.faculty));
     return arr;
   }, [rows]);
 
+  // Build filter option lists from faculty profiles
+  const deptOptions = React.useMemo(() => {
+    const set = new Set();
+    (facultyList || []).forEach(f => {
+      const d = String(f.department || f.dept || '').trim();
+      if (d) set.add(d);
+    });
+    return Array.from(set).sort((a,b)=>a.localeCompare(b));
+  }, [facultyList]);
+  const empOptions = React.useMemo(() => {
+    const set = new Set();
+    (facultyList || []).forEach(f => {
+      const e = String(f.employment || '').trim();
+      if (e) set.add(e);
+    });
+    return Array.from(set).sort((a,b)=>a.localeCompare(b));
+  }, [facultyList]);
+
   // Reset expansion when data set changes (keeps initial rendering light)
   React.useEffect(() => { setExpanded([]); }, [rowsBase]);
+  // Sort faculty groups
+  const filteredFacultyGroups = React.useMemo(() => {
+    const norm = (s) => String(s || '').toLowerCase();
+    return facultyGroups.filter(g => {
+      if (deptFilter && norm(g.department) !== norm(deptFilter)) return false;
+      if (empFilter && norm(g.employment) !== norm(empFilter)) return false;
+      return true;
+    });
+  }, [facultyGroups, deptFilter, empFilter]);
+
+  const sortedFacultyGroups = React.useMemo(() => {
+    const arr = filteredFacultyGroups.slice();
+    arr.sort((a, b) => {
+      let cmp;
+      if (groupSortBy === 'pct') {
+        cmp = (a.pct - b.pct);
+      } else if (groupSortBy === 'dept') {
+        cmp = String(a.department || '').localeCompare(String(b.department || ''));
+      } else if (groupSortBy === 'employment') {
+        cmp = String(a.employment || '').localeCompare(String(b.employment || ''));
+      } else {
+        cmp = String(a.faculty || '').localeCompare(String(b.faculty || ''));
+      }
+      return groupSortOrder === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+  }, [filteredFacultyGroups, groupSortBy, groupSortOrder]);
+
   // Pagination of faculty groups to improve performance
-  const pageCount = React.useMemo(() => Math.max(1, Math.ceil(facultyGroups.length / pageSize)), [facultyGroups.length, pageSize]);
+  const pageCount = React.useMemo(() => Math.max(1, Math.ceil(sortedFacultyGroups.length / pageSize)), [sortedFacultyGroups.length, pageSize]);
   const pagedFacultyGroups = React.useMemo(() => {
     const p = Math.max(1, Math.min(page, pageCount));
     const start = (p - 1) * pageSize;
-    return facultyGroups.slice(start, start + pageSize);
-  }, [facultyGroups, page, pageSize, pageCount]);
+    return sortedFacultyGroups.slice(start, start + pageSize);
+  }, [sortedFacultyGroups, page, pageSize, pageCount]);
   React.useEffect(() => { setPage(1); }, [rowsBase]);
+  React.useEffect(() => { setPage(1); setExpanded([]); }, [groupSortBy, groupSortOrder, deptFilter, empFilter]);
   React.useEffect(() => { setExpanded([]); }, [page, pageSize]);
   const allIdx = React.useMemo(() => pagedFacultyGroups.map((_, i) => i), [pagedFacultyGroups]);
   const allExpanded = expanded.length === pagedFacultyGroups.length && pagedFacultyGroups.length > 0;
@@ -292,6 +359,24 @@ export default function AdminGradesSubmission() {
           <Box minW={{ base: '220px', md: '360px' }}>
             <FacultySelect value={selectedFaculty} onChange={setSelectedFaculty} allowClear placeholder="Filter by faculty" />
           </Box>
+          <HStack spacing={1}>
+            <Select size="sm" placeholder="Dept" value={deptFilter} onChange={(e)=>setDeptFilter(e.target.value)} maxW="160px">
+              {deptOptions.map(d => (<option key={d} value={d}>{d}</option>))}
+            </Select>
+            <Select size="sm" placeholder="Employment" value={empFilter} onChange={(e)=>setEmpFilter(e.target.value)} maxW="160px">
+              {empOptions.map(v => (<option key={v} value={v}>{v}</option>))}
+            </Select>
+            <Select size="sm" value={groupSortBy} onChange={(e)=>setGroupSortBy(e.target.value)} maxW="160px">
+              <option value="faculty">Sort: Faculty Name</option>
+              <option value="pct">Sort: Percentage</option>
+              <option value="dept">Sort: Dept</option>
+              <option value="employment">Sort: Employment</option>
+            </Select>
+            <Select size="sm" value={groupSortOrder} onChange={(e)=>setGroupSortOrder(e.target.value)} maxW="120px">
+              <option value="asc">Asc</option>
+              <option value="desc">Desc</option>
+            </Select>
+          </HStack>
           <Button size="sm" variant="outline" onClick={toggleAll}>{allExpanded ? 'Collapse All' : 'Expand All'}</Button>
         </HStack>
       </HStack>
@@ -312,8 +397,10 @@ export default function AdminGradesSubmission() {
             <h2>
               <AccordionButton borderWidth="1px" borderColor={border} rounded="md" _expanded={{ bg: useColorModeValue('gray.50','whiteAlpha.100') }} px={{ base: 3, md: 4 }} py={{ base: 3, md: 3 }}>
                 <VStack align="stretch" flex={1} spacing={1} pr={2}>
-                  <HStack>
+                  <HStack spacing={2} align="center" flexWrap="wrap">
                     <Heading size="sm" noOfLines={1}>{g.faculty}</Heading>
+                    {g.department && (<Badge colorScheme="blue" variant="subtle">{g.department}</Badge>)}
+                    {g.employment && (<Badge colorScheme="green" variant="subtle">{g.employment}</Badge>)}
                     <Badge colorScheme={g.pct >= 90 ? 'green' : g.pct >= 70 ? 'blue' : g.pct >= 40 ? 'orange' : 'red'} variant="subtle">{g.submitted}/{g.total} ({g.pct}%)</Badge>
                   </HStack>
                   <Progress value={g.pct} size="sm" rounded="md" colorScheme={g.pct >= 90 ? 'green' : g.pct >= 70 ? 'blue' : g.pct >= 40 ? 'orange' : 'red'} />
