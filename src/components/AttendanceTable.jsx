@@ -1,6 +1,6 @@
 import React from 'react';
-import { Table, Thead, Tbody, Tr, Th, Td, Badge, HStack, IconButton, Tooltip, SkeletonText, useColorModeValue } from '@chakra-ui/react';
-import { FiTrash2, FiEdit } from 'react-icons/fi';
+import { Table, Thead, Tbody, Tr, Th, Td, Badge, HStack, IconButton, Tooltip, SkeletonText, useColorModeValue, Button } from '@chakra-ui/react';
+import { FiTrash2, FiEdit, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 
 const statusColor = (s, mode) => {
   const v = String(s || '').toLowerCase();
@@ -14,17 +14,28 @@ const statusColor = (s, mode) => {
   }
 };
 
-export default function AttendanceTable({ items = [], loading, onEdit, onDelete }) {
+export default function AttendanceTable({ items = [], loading, onEdit, onDelete, sortKey, sortOrder, onSortChange }) {
   const mode = useColorModeValue('light', 'dark');
+  const activeClr = useColorModeValue('blue.600', 'blue.300');
+  const idleClr = useColorModeValue('gray.600', 'gray.400');
+  const headerBtn = (label, key) => {
+    const active = sortKey === key;
+    const Icon = active ? (sortOrder === 'asc' ? FiChevronUp : FiChevronDown) : FiChevronUp;
+    return (
+      <Button onClick={() => onSortChange && onSortChange(key)} variant="ghost" size="xs" px={1} py={0} rightIcon={<Icon />} color={active ? activeClr : idleClr} _hover={{ color: activeClr }}>
+        {label}
+      </Button>
+    );
+  };
   return (
     <Table size="sm" variant="striped" colorScheme={useColorModeValue('blackAlpha','whiteAlpha')}>
       <Thead>
         <Tr>
-          <Th>Date</Th>
-          <Th>Status</Th>
-          <Th>Course</Th>
-          <Th>Instructor</Th>
-          <Th>Schedule</Th>
+          <Th>{headerBtn('Date', 'date')}</Th>
+          <Th>{headerBtn('Status', 'status')}</Th>
+          <Th>{headerBtn('Course', 'course')}</Th>
+          <Th>{headerBtn('Instructor', 'instructor')}</Th>
+          <Th>{headerBtn('Schedule', 'schedule')}</Th>
           <Th>Remarks</Th>
           <Th>Recorded By</Th>
           <Th isNumeric>Actions</Th>
@@ -56,4 +67,3 @@ export default function AttendanceTable({ items = [], loading, onEdit, onDelete 
     </Table>
   );
 }
-

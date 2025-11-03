@@ -3,12 +3,16 @@ import {
   Box, Heading, Text, HStack, VStack, Button, useColorModeValue, Input, Select, Tag, TagLabel, TagCloseButton,
   SimpleGrid, IconButton, useDisclosure, useToast, Divider
 } from '@chakra-ui/react';
-import { FiRefreshCw, FiPlus, FiFilter } from 'react-icons/fi';
+import { FiRefreshCw, FiPlus, FiFilter, FiPrinter } from 'react-icons/fi';
 import useAttendance from '../hooks/useAttendance';
 import apiService from '../services/apiService';
 import AttendanceTable from '../components/AttendanceTable';
 import AttendanceFormModal from '../components/AttendanceFormModal';
 import { Link as RouterLink } from 'react-router-dom';
+import FacultySelect from '../components/FacultySelect';
+import { useSelector } from 'react-redux';
+import { selectAllCourses } from '../store/dataSlice';
+import { buildTable, printContent } from '../utils/printDesign';
 
 const STATUS_OPTIONS = [
   { value: 'present', label: 'Present' },
@@ -22,12 +26,15 @@ export default function Attendance() {
   const border = useColorModeValue('gray.200', 'gray.700');
   const [page, setPage] = React.useState(1);
   const [limit, setLimit] = React.useState(100);
-  const [filters, setFilters] = React.useState({ startDate: '', endDate: '', status: '', scheduleId: '' });
-  const { data, loading, error, refresh } = useAttendance({ page, limit, ...filters });
+  const [filters, setFilters] = React.useState({ startDate: '', endDate: '', status: '', faculty: '', facultyId: '' });
+  const schedules = useSelector(selectAllCourses);
+  const { data, loading, error, refresh } = useAttendance({ page, limit, ...filters, schedules });
   const [stats, setStats] = React.useState({ total: 0, byStatus: {} });
   const [editing, setEditing] = React.useState(null);
   const modal = useDisclosure();
   const toast = useToast();
+  const [sortKey, setSortKey] = React.useState('date'); // 'date' | 'status' | 'course' | 'instructor' | 'schedule'
+  const [sortOrder, setSortOrder] = React.useState('desc'); // 'asc' | 'desc'
 
   const loadStats = React.useCallback(async () => {
     try { const s = await apiService.getAttendanceStats(filters); setStats(s || { total: 0, byStatus: {} }); } catch {}
@@ -51,6 +58,97 @@ export default function Attendance() {
 
   const onSaved = async () => { await refresh(true); await loadStats(); };
 
+  const onPrint = React.useCallback(() => {
+    const titleParts = ['Attendance Report'];
+    if (filters.faculty) titleParts.push(`Faculty: ${filters.faculty}`);
+    const title = titleParts.join(' — ');
+    const subParts = [];
+    if (filters.startDate || filters.endDate) {
+      subParts.push(`Dates: ${filters.startDate || '…'} to ${filters.endDate || '…'}`);
+    }
+    if (filters.status) subParts.push(`Status: ${filters.status}`);
+    const subtitle = subParts.join('  |  ');
+
+    const headers = ['Date', 'Status', 'Course', 'Schedule', 'Remarks'];
+    const rows = (Array.isArray(data) ? data : []).map((r) => {
+      const sch = r.schedule || {};
+      const course = [sch.programcode, sch.courseName].filter(Boolean).join(' · ');
+      const schedule = [sch.day, sch.time].filter(Boolean).join(' ');
+      const remarks = String(r.remarks || '').slice(0, 80);
+      return [r.date || '', (r.status || '').toUpperCase(), course || '-', schedule || '-', remarks];
+    });
+    const bodyHtml = buildTable(headers, rows);
+    printContent({ title, subtitle, bodyHtml }, { compact: true, pageSize: 'A4', orientation: 'portrait', margin: '8mm' });
+  }, [data, filters]);
+
+  const sortedItems = React.useMemo(() => {
+    const items = Array.isArray(data) ? [...data] : [];
+    const dir = sortOrder === 'asc' ? 1 : -1;
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const statusRank = (s) => {
+      const v = norm(s);
+      if (v === 'present') return 3;
+      if (v === 'late') return 2;
+      if (v === 'excused') return 1;
+      if (v === 'absent') return 0;
+      return -1;
+    };
+    const cmp = (a, b) => {
+      const sa = a?.schedule || {};
+      const sb = b?.schedule || {};
+      const ida = Number(a?.id) || 0;
+      const idb = Number(b?.id) || 0;
+      switch (sortKey) {
+        case 'date': {
+          const da = new Date(a?.date || '1970-01-01').getTime();
+          const db = new Date(b?.date || '1970-01-01').getTime();
+          const p = (da === db ? 0 : da < db ? -1 : 1);
+          return (p !== 0 ? p : (ida === idb ? 0 : ida < idb ? -1 : 1)) * dir;
+        }
+        case 'status': {
+          const ra = statusRank(a?.status);
+          const rb = statusRank(b?.status);
+          const p = (ra === rb ? 0 : ra < rb ? -1 : 1);
+          // tie-breaker by date then id
+          if (p !== 0) return p * dir;
+          const da = new Date(a?.date || '1970-01-01').getTime();
+          const db = new Date(b?.date || '1970-01-01').getTime();
+          const q = (da === db ? 0 : da < db ? -1 : 1);
+          return (q !== 0 ? q : (ida === idb ? 0 : ida < idb ? -1 : 1)) * dir;
+        }
+        case 'course': {
+          const ca = `${sa.programcode || ''} ${sa.courseName || ''}`;
+          const cb = `${sb.programcode || ''} ${sb.courseName || ''}`;
+          const p = ca.localeCompare(cb);
+          return (p !== 0 ? p : (ida === idb ? 0 : ida < idb ? -1 : 1)) * dir;
+        }
+        case 'instructor': {
+          const p = norm(sa.instructor).localeCompare(norm(sb.instructor));
+          return (p !== 0 ? p : (ida === idb ? 0 : ida < idb ? -1 : 1)) * dir;
+        }
+        case 'schedule': {
+          const ta = `${sa.day || ''} ${sa.time || ''}`;
+          const tb = `${sb.day || ''} ${sb.time || ''}`;
+          const p = norm(ta).localeCompare(norm(tb));
+          return (p !== 0 ? p : (ida === idb ? 0 : ida < idb ? -1 : 1)) * dir;
+        }
+        default:
+          return 0;
+      }
+    };
+    items.sort(cmp);
+    return items;
+  }, [data, sortKey, sortOrder]);
+
+  const handleSortChange = React.useCallback((key) => {
+    if (sortKey === key) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortOrder(key === 'date' ? 'desc' : 'asc');
+    }
+  }, [sortKey]);
+
   return (
     <Box>
       <HStack justify="space-between" align="center" mb={4}>
@@ -61,6 +159,7 @@ export default function Attendance() {
         <HStack>
           <Button as={RouterLink} to="/admin/room-attendance" target="_blank" colorScheme="purple" variant="solid">Open Room Attendance</Button>
           <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={refresh} />
+          <Button leftIcon={<FiPrinter />} variant="outline" onClick={onPrint}>Print</Button>
           <Button leftIcon={<FiPlus />} colorScheme="blue" onClick={() => { setEditing(null); modal.onOpen(); }}>Add</Button>
         </HStack>
       </HStack>
@@ -81,9 +180,15 @@ export default function Attendance() {
               {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
           </Box>
-          <Box>
-            <Text fontSize="xs" color="gray.500" mb={1}>Schedule ID</Text>
-            <Input placeholder="e.g., 123" value={filters.scheduleId} onChange={(e) => setFilters(f => ({ ...f, scheduleId: e.target.value }))} maxW="160px" />
+          <Box minW={{ base: '220px', md: '260px' }}>
+            <Text fontSize="xs" color="gray.500" mb={1}>Faculty</Text>
+            <FacultySelect
+              value={filters.faculty}
+              onChange={(name) => setFilters(f => ({ ...f, faculty: name || '', facultyId: '' }))}
+              onChangeId={(id) => setFilters(f => ({ ...f, facultyId: id || '' }))}
+              placeholder="All faculty"
+              allowClear
+            />
           </Box>
           <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>Page Size</Text>
@@ -111,8 +216,11 @@ export default function Attendance() {
           ))}
         </HStack>
         <AttendanceTable
-          items={data}
+          items={sortedItems}
           loading={loading}
+          sortKey={sortKey}
+          sortOrder={sortOrder}
+          onSortChange={handleSortChange}
           onEdit={(row) => { setEditing(row); modal.onOpen(); }}
           onDelete={onDelete}
         />
