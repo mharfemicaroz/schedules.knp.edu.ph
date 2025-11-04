@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import {
   Box, Heading, Text, HStack, VStack, Button, useColorModeValue, Input, Select, Tag, TagLabel, TagCloseButton,
   SimpleGrid, IconButton, useDisclosure, useToast, Divider
@@ -13,6 +13,7 @@ import FacultySelect from '../components/FacultySelect';
 import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { buildTable, printContent } from '../utils/printDesign';
+import useFaculties from '../hooks/useFaculties';
 
 const STATUS_OPTIONS = [
   { value: 'present', label: 'Present' },
@@ -26,7 +27,7 @@ export default function Attendance() {
   const border = useColorModeValue('gray.200', 'gray.700');
   const [page, setPage] = React.useState(1);
   const [limit, setLimit] = React.useState(100);
-  const [filters, setFilters] = React.useState({ startDate: '', endDate: '', status: '', faculty: '', facultyId: '' });
+  const [filters, setFilters] = React.useState({ startDate: '', endDate: '', status: '', faculty: '', facultyId: '', term: '' });
   const schedules = useSelector(selectAllCourses);
   const { data, loading, error, refresh } = useAttendance({ page, limit, ...filters, schedules });
   const [stats, setStats] = React.useState({ total: 0, byStatus: {} });
@@ -35,6 +36,16 @@ export default function Attendance() {
   const toast = useToast();
   const [sortKey, setSortKey] = React.useState('date'); // 'date' | 'status' | 'course' | 'instructor' | 'schedule'
   const [sortOrder, setSortOrder] = React.useState('desc'); // 'asc' | 'desc'
+
+  // Faculty lookup for displaying instructor names by facultyId
+  const { data: facultyOptions } = useFaculties();
+  const facultyById = React.useMemo(() => {
+    const map = new Map();
+    (facultyOptions || []).forEach((opt) => {
+      if (opt && opt.id != null) map.set(String(opt.id), opt.label);
+    });
+    return map;
+  }, [facultyOptions]);
 
   const loadStats = React.useCallback(async () => {
     try { const s = await apiService.getAttendanceStats(filters); setStats(s || { total: 0, byStatus: {} }); } catch {}
@@ -61,18 +72,19 @@ export default function Attendance() {
   const onPrint = React.useCallback(() => {
     const titleParts = ['Attendance Report'];
     if (filters.faculty) titleParts.push(`Faculty: ${filters.faculty}`);
-    const title = titleParts.join(' — ');
+    const title = titleParts.join(' â€” ');
     const subParts = [];
     if (filters.startDate || filters.endDate) {
-      subParts.push(`Dates: ${filters.startDate || '…'} to ${filters.endDate || '…'}`);
+      subParts.push(`Dates: ${filters.startDate || 'â€¦'} to ${filters.endDate || 'â€¦'}`);
     }
     if (filters.status) subParts.push(`Status: ${filters.status}`);
+    if (filters.term) subParts.push(`Term: ${filters.term}`);
     const subtitle = subParts.join('  |  ');
 
     const headers = ['Date', 'Status', 'Course', 'Schedule', 'Remarks'];
     const rows = (Array.isArray(data) ? data : []).map((r) => {
       const sch = r.schedule || {};
-      const course = [sch.programcode, sch.courseName].filter(Boolean).join(' · ');
+      const course = [sch.programcode, sch.courseName].filter(Boolean).join(' Â· ');
       const schedule = [sch.day, sch.time].filter(Boolean).join(' ');
       const remarks = String(r.remarks || '').slice(0, 80);
       return [r.date || '', (r.status || '').toUpperCase(), course || '-', schedule || '-', remarks];
@@ -82,7 +94,13 @@ export default function Attendance() {
   }, [data, filters]);
 
   const sortedItems = React.useMemo(() => {
-    const items = Array.isArray(data) ? [...data] : [];
+    const items = Array.isArray(data)
+      ? data.map((r) => {
+          const facId = r?.schedule?.facultyId ?? r?.schedule?.faculty_id;
+          const fname = facId != null ? (facultyById.get(String(facId)) || '') : '';
+          return { ...r, facultyName: fname };
+        })
+      : [];
     const dir = sortOrder === 'asc' ? 1 : -1;
     const norm = (s) => String(s || '').trim().toLowerCase();
     const statusRank = (s) => {
@@ -123,7 +141,7 @@ export default function Attendance() {
           return (p !== 0 ? p : (ida === idb ? 0 : ida < idb ? -1 : 1)) * dir;
         }
         case 'instructor': {
-          const p = norm(sa.instructor).localeCompare(norm(sb.instructor));
+          const p = norm(a?.facultyName).localeCompare(norm(b?.facultyName));
           return (p !== 0 ? p : (ida === idb ? 0 : ida < idb ? -1 : 1)) * dir;
         }
         case 'schedule': {
@@ -138,7 +156,7 @@ export default function Attendance() {
     };
     items.sort(cmp);
     return items;
-  }, [data, sortKey, sortOrder]);
+  }, [data, facultyById, sortKey, sortOrder]);
 
   const handleSortChange = React.useCallback((key) => {
     if (sortKey === key) {
@@ -180,6 +198,14 @@ export default function Attendance() {
               {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
           </Box>
+          <Box>
+            <Text fontSize="xs" color="gray.500" mb={1}>Term</Text>
+            <Select placeholder="All" value={filters.term} onChange={(e) => setFilters(f => ({ ...f, term: e.target.value }))} maxW="160px">
+              <option value="1st">1st</option>
+              <option value="2nd">2nd</option>
+              <option value="Sem">Sem</option>
+            </Select>
+          </Box>
           <Box minW={{ base: '220px', md: '260px' }}>
             <Text fontSize="xs" color="gray.500" mb={1}>Faculty</Text>
             <FacultySelect
@@ -198,12 +224,20 @@ export default function Attendance() {
           </Box>
           <Button leftIcon={<FiFilter />} onClick={onApply}>Apply</Button>
         </HStack>
-        {(filters.status) && (
+        {(filters.status || filters.term) && (
           <HStack spacing={2} mt={3}>
-            <Tag size="sm" colorScheme="blue">
-              <TagLabel>Status: {filters.status}</TagLabel>
-              <TagCloseButton onClick={clearStatus} />
-            </Tag>
+            {filters.status ? (
+              <Tag size="sm" colorScheme="blue">
+                <TagLabel>Status: {filters.status}</TagLabel>
+                <TagCloseButton onClick={clearStatus} />
+              </Tag>
+            ) : null}
+            {filters.term ? (
+              <Tag size="sm" colorScheme="purple">
+                <TagLabel>Term: {filters.term}</TagLabel>
+                <TagCloseButton onClick={() => setFilters(f => ({ ...f, term: '' }))} />
+              </Tag>
+            ) : null}
           </HStack>
         )}
       </Box>

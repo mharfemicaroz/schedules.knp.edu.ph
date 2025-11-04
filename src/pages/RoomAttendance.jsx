@@ -47,7 +47,6 @@ const ROOM_SPLIT_THRESHOLD = 10;
 export default function RoomAttendance() {
   const dispatch = useDispatch();
   const all = useSelector(selectAllCourses);
-  const acadData = useSelector(s => s.data.acadData);
   const authUser = useSelector(s => s.auth.user);
   const border = useColorModeValue('gray.200','gray.700');
   const panel = useColorModeValue('white','gray.800');
@@ -92,33 +91,18 @@ export default function RoomAttendance() {
   const selectedDayCode = React.useMemo(() => { const wd = new Date(selectedDate).getDay(); const map = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; return map[wd] || 'Mon'; }, [selectedDate]);
   const selectedIso = React.useMemo(() => dateToISO(selectedDate), [selectedDate, dateToISO]);
 
-  // Determine current term from academic calendar (1st/2nd Term)
-  const currentTermKey = React.useMemo(() => {
-    try {
-      const cal = Array.isArray(acadData) ? acadData[0]?.academic_calendar : acadData?.academic_calendar;
-      const first = cal?.first_semester || {};
-      const ft = first.first_term || {};
-      const st = first.second_term || {};
-      const now = new Date(); now.setHours(0,0,0,0);
-      const d = (v)=> { const dd = new Date(v); return isNaN(dd.getTime()) ? null : new Date(dd.getFullYear(), dd.getMonth(), dd.getDate()); };
-      const fs = d(ft.start), fe = d(ft.end), ss = d(st.start), se = d(st.end);
-      if (fs && fe && fs <= now && now <= fe) return '1st';
-      if (ss && se && ss <= now && now <= se) return '2nd';
-      return null;
-    } catch { return null; }
-  }, [acadData]);
-
-  // Term matcher (hoisted before use to avoid TDZ)
+  // Term filter (All, 1st, 2nd, Sem)
+  const [termFilter, setTermFilter] = React.useState('all');
+  // Term matcher based on selected filter
   function termMatches(t) {
-    if (!currentTermKey) return true;
-    const cur = String(currentTermKey || '').toLowerCase(); // '1st' or '2nd'
+    const f = String(termFilter || 'all').toLowerCase();
+    if (f === 'all') return true;
     const s = String(t || '').toLowerCase().trim();
     if (!s) return false;
-    const want1 = cur.startsWith('1');
-    const want2 = cur.startsWith('2');
-    const has1 = /(^|\b)(1|first|1st)(\b|$)/i.test(s);
-    const has2 = /(^|\b)(2|second|2nd)(\b|$)/i.test(s);
-    return want1 ? has1 : want2 ? has2 : true;
+    if (f.startsWith('1')) return /(^|\b)(1|first|1st)(\b|$)/i.test(s);
+    if (f.startsWith('2')) return /(^|\b)(2|second|2nd)(\b|$)/i.test(s);
+    if (f.startsWith('sem')) return /(^|\b)(sem|semester)(\b|$)/i.test(s);
+    return true;
   }
 
   // Time slots (7:00 AM to 9:00 PM in 1-hour intervals)
@@ -192,7 +176,7 @@ export default function RoomAttendance() {
       });
     });
     return { rooms, matrix: m };
-  }, [all, selectedDayCode, getRoomsForDay, currentTermKey]);
+  }, [all, selectedDayCode, getRoomsForDay, termFilter]);
 
   // Attendance mapping for today
   const presentPulse = keyframes`
@@ -264,7 +248,7 @@ export default function RoomAttendance() {
     });
     present.sort(); absent.sort(); late.sort(); excused.sort();
     return { present, absent, late, excused };
-  }, [all, bySched, slotIndex, selectedDayCode, currentTermKey]);
+  }, [all, bySched, slotIndex, selectedDayCode, termFilter]);
 
   
 
@@ -284,10 +268,8 @@ export default function RoomAttendance() {
       const candidates = (all || []).filter(c => {
         const rs = getRoomsForDay(c, selectedDayCode);
         if (!rs.find(rr => normRoom(rr) === normRoom(room))) return false;
-        // Filter by current term when available
-        const term = String(c.term || '').toLowerCase();
-        const tKey = currentTermKey ? String(currentTermKey).charAt(0) : null; // '1' or '2'
-        const termOk = tKey ? term.startsWith(tKey) : true;
+        // Filter by selected term
+        const termOk = termMatches(c.term);
         return termOk && withinSlot(c, slot);
       });
       if (!candidates.length) return { faculty: '', status: '', course: '', title: '' };
@@ -441,9 +423,7 @@ export default function RoomAttendance() {
           const candidates = (all || []).filter(c => {
             const rs = getRoomsForDay(c, selectedDayCode);
             if (!rs.find(rr => normRoom(rr) === normRoom(r))) return false;
-            const term = String(c.term || '').toLowerCase();
-            const tKey = currentTermKey ? String(currentTermKey).charAt(0) : null;
-            const termOk = tKey ? term.startsWith(tKey) : true;
+            const termOk = termMatches(c.term);
             return termOk && withinSlot(c, sl);
           });
           if (!candidates.length) { rowVals.push(''); return; }
@@ -516,9 +496,7 @@ export default function RoomAttendance() {
               const candidates = (all || []).filter(rec => {
                 const rs = getRoomsForDay(rec, selectedDayCode);
                 if (!rs.find(rr => normRoom(rr) === normRoom(roomName))) return false;
-                const term = String(rec.term || '').toLowerCase();
-                const tKey = currentTermKey ? String(currentTermKey).charAt(0) : null;
-                const termOk = tKey ? term.startsWith(tKey) : true;
+                const termOk = termMatches(rec.term);
                 return termOk && withinSlot(rec, sl);
               });
               if (candidates.length) {
@@ -663,6 +641,16 @@ export default function RoomAttendance() {
           <HStack spacing={3}>
             {!isPublic && (
               <>
+                {/* Term filter */}
+                <HStack spacing={2}>
+                  <Text fontSize="xs" color={subtle}>Term</Text>
+                  <select value={termFilter} onChange={(e)=> setTermFilter(String(e.target.value||'all'))} style={{ fontSize: '12px', padding: '4px 6px', borderRadius: 6, border: `1px solid var(--chakra-colors-gray-300)` }}>
+                    <option value="all">All</option>
+                    <option value="1st">1st</option>
+                    <option value="2nd">2nd</option>
+                    <option value="sem">Sem</option>
+                  </select>
+                </HStack>
                 <HStack spacing={2}>
                   <Text fontSize="xs" color={subtle}>Realtime</Text>
                   <Button size="xs" variant={rtEnabled ? 'solid' : 'outline'} colorScheme={rtEnabled ? 'green' : 'gray'} onClick={() => setRtEnabled(v => !v)}>{rtEnabled ? 'On' : 'Off'}</Button>

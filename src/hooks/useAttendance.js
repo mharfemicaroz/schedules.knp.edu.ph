@@ -44,6 +44,24 @@ export default function useAttendance(params = {}) {
     const facId = p && (p.facultyId || p.faculty_id);
     const facName = p && (p.faculty || p.facultyName || p.instructor);
     let filtered = arr;
+    // Optional term filter (1st, 2nd, Sem) by schedule.term when available
+    const termFilter = String(p?.term || '').trim();
+    if (termFilter) {
+      const tf = termFilter.toLowerCase();
+      const matchTerm = (t) => {
+        const s = String(t || '').toLowerCase();
+        if (!s) return false;
+        if (tf.startsWith('1')) return /(^|\b)(1|first|1st)(\b|$)/i.test(s);
+        if (tf.startsWith('2')) return /(^|\b)(2|second|2nd)(\b|$)/i.test(s);
+        if (tf.startsWith('s')) return /(^|\b)(sem|semes|semester|semestral)(\b|$)/i.test(s);
+        return s.includes(tf);
+      };
+      filtered = filtered.filter((r) => {
+        const sid = Number(r?.scheduleId || r?.schedule_id || r?.schedule?.id);
+        const schFull = schedMap.get(sid) || r?.schedule || r;
+        return matchTerm(schFull?.term || schFull?.semester);
+      });
+    }
     if (facId) {
       const idStr = String(facId);
       filtered = filtered.filter((r) => {

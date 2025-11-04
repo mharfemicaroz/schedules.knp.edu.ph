@@ -51,7 +51,7 @@ export default function AttendanceTable({ items = [], loading, onEdit, onDelete,
             <Td>{r.date}</Td>
             <Td><Badge colorScheme={statusColor(r.status, mode)} textTransform="capitalize">{r.status}</Badge></Td>
             <Td>{r.schedule ? `${r.schedule.programcode} • ${r.schedule.courseName}` : '-'}</Td>
-            <Td>{r.schedule?.instructor || '-'}</Td>
+            <Td>{r.facultyName || '-'}</Td>
             <Td>{r.schedule ? `${r.schedule.day} ${r.schedule.time}` : '-'}</Td>
             <Td maxW="320px" isTruncated title={r.remarks || ''}>{r.remarks || ''}</Td>
             <Td>{r.recordedBy ? (r.recordedBy.username || r.recordedBy.email) : '-'}</Td>
