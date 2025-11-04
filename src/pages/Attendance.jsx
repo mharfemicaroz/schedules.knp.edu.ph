@@ -48,7 +48,14 @@ export default function Attendance() {
   }, [facultyOptions]);
 
   const loadStats = React.useCallback(async () => {
-    try { const s = await apiService.getAttendanceStats(filters); setStats(s || { total: 0, byStatus: {} }); } catch {}
+    try {
+      const f = { ...filters };
+      // Use facultyId only for stats filtering to avoid name-based inconsistencies
+      if ('faculty' in f) delete f.faculty;
+      if (f.facultyId != null && f.facultyId !== '') f.faculty_id = f.facultyId;
+      const s = await apiService.getAttendanceStats(f);
+      setStats(s || { total: 0, byStatus: {} });
+    } catch {}
   }, [filters]);
 
   React.useEffect(() => { loadStats(); }, [loadStats]);

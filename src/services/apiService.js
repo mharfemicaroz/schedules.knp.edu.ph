@@ -288,6 +288,13 @@ class ApiService {
     if (Object.prototype.hasOwnProperty.call(payload, 'faculty')) {
       payload.instructor = payload.faculty;
     }
+    // Map semester/schoolyear to backend keys if provided
+    if (Object.prototype.hasOwnProperty.call(payload, 'schoolyear') || Object.prototype.hasOwnProperty.call(payload, 'schoolYear')) {
+      payload.sy = payload.schoolyear ?? payload.schoolYear;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'semester')) {
+      payload.sem = payload.semester;
+    }
     const isNonNumericString = (v) => typeof v === 'string' && v.trim() !== '' && !/^[-+]?\d+(?:\.\d+)?$/.test(v.trim());
     if (isNonNumericString(payload.faculty_id)) {
       if (!payload.faculty) payload.faculty = payload.faculty_id;
@@ -327,6 +334,13 @@ class ApiService {
     if (Object.prototype.hasOwnProperty.call(payload, 'faculty')) {
       // Some backends use 'instructor' field
       payload.instructor = payload.faculty;
+    }
+    // Map semester/schoolyear to backend keys if provided
+    if (Object.prototype.hasOwnProperty.call(payload, 'schoolyear') || Object.prototype.hasOwnProperty.call(payload, 'schoolYear')) {
+      payload.sy = payload.schoolyear ?? payload.schoolYear;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'semester')) {
+      payload.sem = payload.semester;
     }
     // Guard: if facultyId was mistakenly set to a name (non-numeric), treat it as faculty name
     const isNonNumericString = (v) => typeof v === 'string' && v.trim() !== '' && !/^[-+]?\d+(?:\.\d+)?$/.test(v.trim());

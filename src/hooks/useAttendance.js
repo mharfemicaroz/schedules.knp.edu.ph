@@ -26,6 +26,14 @@ export default function useAttendance(params = {}) {
     // Do not forward local-only params to the API
     const p2 = { ...(p || {}) };
     if ('schedules' in p2) delete p2.schedules;
+    // Prefer facultyId over name-based filters for API consistency
+    if ('faculty' in p2) delete p2.faculty;
+    if ('facultyName' in p2) delete p2.facultyName;
+    if ('instructor' in p2) delete p2.instructor;
+    if (p2.facultyId != null && p2.facultyId !== '') {
+      // Also provide snake_case variant some backends expect
+      p2.faculty_id = p2.facultyId;
+    }
     // Server now supports faculty filters; keep requested page/limit
 
     let list = [];
