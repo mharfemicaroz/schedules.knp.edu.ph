@@ -50,7 +50,7 @@ export default function Dashboard() {
       })
       .filter(Boolean);
     (courses || []).forEach(c => {
-      const key = [c.code, c.section, c.scheduleKey || c.schedule || '', c.semester || '', c.day || ''].join('|');
+      const key = [c.code, c.section, c.scheduleKey || c.schedule || '', c.term || '', c.day || ''].join('|');
       const prev = map.get(key);
       if (prev) {
         // Merge rooms

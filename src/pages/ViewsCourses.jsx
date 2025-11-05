@@ -46,7 +46,7 @@ export default function ViewsCourses() {
     const ql = norm(q);
     const list = (allCourses || []).filter(c => {
       const prog = String(c.program || c.programcode || '').trim();
-      const trm = String(c.semester || c.term || '').trim();
+      const trm = String(c.term || '').trim();
       if (program && prog !== program) return false;
       if (term && trm !== term) return false;
       if (!ql) return true;
@@ -63,7 +63,7 @@ export default function ViewsCourses() {
         case 'title': return String(c.title || c.courseTitle || '');
         case 'program': return String(c.program || c.programcode || '');
         case 'faculty': return String(c.facultyName || c.faculty || '');
-        case 'term': return String(c.semester || c.term || '');
+        case 'term': return String(c.term || '');
         case 'time': return String(c.schedule || c.time || '');
         default: return String(c.code || c.courseName || '');
       }
@@ -93,7 +93,7 @@ export default function ViewsCourses() {
 
   const opts = useMemo(() => {
     const terms = new Set(); const progs = new Set();
-    (allCourses || []).forEach(c => { const t = String(c.semester || c.term || '').trim(); if (t) terms.add(t); const p = String(c.program || c.programcode || '').trim(); if (p) progs.add(p); });
+    (allCourses || []).forEach(c => { const t = String(c.term || '').trim(); if (t) terms.add(t); const p = String(c.program || c.programcode || '').trim(); if (p) progs.add(p); });
     return { terms: Array.from(terms).sort(), programs: Array.from(progs).sort() };
   }, [allCourses]);
 
@@ -106,7 +106,7 @@ export default function ViewsCourses() {
       String(c.unit ?? c.hours ?? ''),
       c.program || c.programcode || '-',
       c.facultyName || c.faculty || '-',
-      c.semester || c.term || '-',
+      c.term || '-',
       c.schedule || c.time || '-',
       c.room || '-',
     ]);
@@ -191,7 +191,7 @@ export default function ViewsCourses() {
                 <Td isNumeric>{String(c.unit ?? c.hours ?? '')}</Td>
                 <Td>{c.program || c.programcode || '-'}</Td>
                 <Td>{c.facultyName || c.faculty || '-'}</Td>
-                <Td>{c.semester || c.term || '-'}</Td>
+                <Td>{c.term || '-'}</Td>
                 <Td>{c.schedule || c.time || '-'}</Td>
                 <Td>{c.room || '-'}</Td>
                 {isAdmin && !isPublic && (

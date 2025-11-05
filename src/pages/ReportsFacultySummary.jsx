@@ -42,7 +42,7 @@ export default function ReportsFacultySummary() {
   };
 
   const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
-  const termOf = (r) => String(r.semester || r.term || '').trim().toLowerCase();
+  const termOf = (r) => String(r.term || '').trim().toLowerCase();
   const timeKeyOf = (r) => {
     const s = String(r.scheduleKey || r.schedule || r.time || '').trim();
     const start = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : undefined;

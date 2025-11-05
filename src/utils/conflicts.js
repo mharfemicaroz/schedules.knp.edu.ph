@@ -34,7 +34,7 @@ export function expandedByF2FDay(rows){
     const facRaw = String(r.facultyName || r.faculty || r.instructor || '').trim();
     const fac = facRaw;
     const invalidFac = !fac || /^(unknown|unassigned|n\/?a|none|no\s*faculty|not\s*assigned|tba|\-)$/i.test(fac);
-    const term = r.semester || r.term || '';
+    const term = r.term || '';
     const tkey = r.scheduleKey || r.schedule || r.time || '';
     if (invalidFac || !term || !tkey) return;
     let days = (Array.isArray(r.f2fDays) ? r.f2fDays : parseF2FDays(r.f2fSched || r.f2fsched));
@@ -57,7 +57,7 @@ export function buildConflicts(rows) {
   };
   const key = (...parts) => parts.map(v => String(v ?? '')).join('|');
 
-  const termOf = (r) => r.semester || r.term || '';
+  const termOf = (r) => r.term || '';
   const timeKey = (r) => r.scheduleKey || r.schedule || r.time || '';
   const codeOf = (r) => r.code || r.courseName || '';
   const secOf = (r) => r.section || '';
@@ -150,7 +150,7 @@ export function buildCrossFacultyOverlaps(rows) {
   const key = (...parts) => parts.map(v => String(v ?? '')).join('|');
   const byTermDaySec = new Map();
   arrByDay.forEach(r => {
-    const k = key((r.semester || r.term || '').toLowerCase(), r._day || '', (r.section || '').toLowerCase());
+    const k = key((r.term || '').toLowerCase(), r._day || '', (r.section || '').toLowerCase());
     const a = byTermDaySec.get(k) || []; a.push(r); byTermDaySec.set(k, a);
   });
   byTermDaySec.forEach((arr, k) => {

@@ -68,7 +68,7 @@ export default function ChartsCourses({ courses }) {
   const byTermCourses = useMemo(() => {
     const m = new Map();
     (courses || []).forEach(c => {
-      const key = String(c.semester || c.term || 'N/A');
+      const key = String(c.term || 'N/A');
       m.set(key, (m.get(key) || 0) + 1);
     });
     return Array.from(m.entries()).map(([key, value]) => ({ key, value })).sort((a,b)=>b.value-a.value);
@@ -89,4 +89,3 @@ export default function ChartsCourses({ courses }) {
     </Grid>
   );
 }
-

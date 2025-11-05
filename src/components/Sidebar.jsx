@@ -50,7 +50,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
         return false;
       };
       const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
-      const termOf = (r) => String(r.semester || r.term || '').trim().toLowerCase();
+      const termOf = (r) => String(r.term || '').trim().toLowerCase();
       const timeStrOf = (r) => String(r.scheduleKey || r.schedule || r.time || '').trim();
       const timeKeyOf = (r) => {
         const s = timeStrOf(r);

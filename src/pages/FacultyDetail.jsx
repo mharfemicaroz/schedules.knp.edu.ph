@@ -120,7 +120,7 @@ export default function FacultyDetail() {
     const keyOf = (c) => [
       String(c.code || c.courseName || '').toUpperCase().trim(),
       String(c.section || '').toUpperCase().trim(),
-      String(c.semester || c.term || '').toUpperCase().trim(),
+      String(c.term || '').toUpperCase().trim(),
       String(c.schedule || c.time || '').toUpperCase().trim(),
     ].join('|');
     const map = new Map();
@@ -191,7 +191,7 @@ export default function FacultyDetail() {
     const order = ['1st', '2nd', 'Sem'];
     const buckets = new Map();
     (sortedCourses || []).forEach(c => {
-      const t = String(c.semester || c.term || '').trim() || 'N/A';
+      const t = String(c.term || '').trim() || 'N/A';
       const arr = buckets.get(t) || [];
       arr.push(c);
       buckets.set(t, arr);
@@ -219,7 +219,7 @@ export default function FacultyDetail() {
     };
 
     // Build a filtered set of rows where we exclude merged duplicates for THIS faculty only
-    const termOf = (r) => String(r.semester || r.term || '').trim().toLowerCase();
+    const termOf = (r) => String(r.term || '').trim().toLowerCase();
     const timeStrOf = (r) => String(r.scheduleKey || r.schedule || r.time || '').trim();
     const timeKeyOf = (r) => {
       const s = timeStrOf(r);
@@ -388,7 +388,7 @@ export default function FacultyDetail() {
     const buildRows = (c) => {
       if (viewMode === 'examination') {
         return [
-          c.semester || c.term || '—',
+          c.term || '—',
           c.code || '—',
           c.title || '—',
           c.section || '—',
@@ -400,7 +400,7 @@ export default function FacultyDetail() {
         ];
       }
       return [
-        c.semester || c.term || '—',
+        c.term || '—',
         c.code || '—',
         c.title || '—',
         c.section || '—',
@@ -795,6 +795,10 @@ function Stat({ label, value }) {
     </Box>
   );
 }
+
+
+
+
 
 
 

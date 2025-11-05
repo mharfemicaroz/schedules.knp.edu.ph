@@ -18,7 +18,7 @@ function useIndexes(courses) {
       if (idKey) { const a = byFac.get(idKey) || []; a.push(r); byFac.set(idKey, a); }
       if (nmKey) { const a = byFac.get(`nm:${nmKey}`) || []; a.push(r); byFac.set(`nm:${nmKey}`, a); }
       const sec = norm(r.section || '');
-      const term = String(r.semester || r.term || '').trim().toLowerCase();
+      const term = String(r.term || '').trim().toLowerCase();
       const k = `${sec}|${term}`;
       const arr = bySecTerm.get(k) || []; arr.push(r); bySecTerm.set(k, arr);
     });
@@ -30,7 +30,7 @@ function useFacultyStats(faculties, courses) {
   const indexes = useIndexes(courses);
   return useMemo(() => {
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
-    const termOf = (r) => String(r.semester || r.term || '').trim().toLowerCase();
+    const termOf = (r) => String(r.term || '').trim().toLowerCase();
     const timeKeyOf = (r) => {
       const s = String(r.scheduleKey || r.schedule || r.time || '').trim();
       const start = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : undefined;
@@ -69,7 +69,7 @@ function useFacultyStats(faculties, courses) {
 function isEligibleAssignment(schedule, faculty, indexes) {
   if (!schedule || !faculty) return false;
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
-  const termOf = (r) => String(r.semester || r.term || '').trim().toLowerCase();
+  const termOf = (r) => String(r.term || '').trim().toLowerCase();
   const timeStr = String(schedule.scheduleKey || schedule.schedule || schedule.time || '').trim();
   const t0 = parseTimeBlockToMinutes(timeStr);
   const term = termOf(schedule);
@@ -156,7 +156,7 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       code: schedule?.code || schedule?.courseName || '-',
       title: schedule?.title || schedule?.courseTitle || '-',
       section: schedule?.section || '-',
-      term: schedule?.semester || schedule?.term || '-',
+      term: schedule?.term || '-',
       time: schedule?.schedule || schedule?.time || '-',
       room: schedule?.room || '-',
     };
@@ -195,7 +195,7 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
     const sId = String(schedule?.id || '')
       + '|' + String(schedule?.code || schedule?.courseName || '')
       + '|' + String(schedule?.section || '')
-      + '|' + String(schedule?.semester || schedule?.term || '');
+      + '|' + String(schedule?.term || '');
     const fId = String(fac?.id || fac?.email || fac?.name || '');
     const r = seededRand(sId + '|' + fId);
     // return jitter in range [-A, +A]
@@ -214,7 +214,7 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
     const timeStr = String(schedule?.scheduleKey || schedule?.schedule || schedule?.time || '').trim();
     const tr = parseTimeBlockToMinutes(timeStr);
     const candMid = Number.isFinite(tr.start) && Number.isFinite(tr.end) ? (tr.start + tr.end)/2 : NaN;
-    const term = String(schedule?.semester || schedule?.term || '').trim().toLowerCase();
+    const term = String(schedule?.term || '').trim().toLowerCase();
     const candDays = (() => {
       const arr = parseF2FDays(schedule?.f2fDays || schedule?.f2fSched || schedule?.f2fsched || schedule?.day);
       return Array.isArray(arr) && arr.length ? arr : ['ANY'];
@@ -350,7 +350,7 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
         for (const r of rowsAll) {
           const rProgKey = String(r.programcode || r.program || r.program_code || r.programCode || '')
             .toLowerCase().replace(/[^a-z0-9]+/g,'').trim();
-          const rTerm = String(r.semester || r.term || '').trim().toLowerCase();
+          const rTerm = String(r.term || '').trim().toLowerCase();
           const rOrd = termOrder(rTerm);
           if (Number.isFinite(candTermOrder) && Number.isFinite(rOrd) && rOrd > candTermOrder) continue; // skip future terms
           let rec = 1;
@@ -390,13 +390,13 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       else if (reAny(rxProfession)) degreeScore = 0.75;
       else if (reAny(rxLicense)) degreeScore = 0.7;
       // Time proximity (same term)
-      const rows = rowsAll.filter(r => String(r.semester || r.term || '').trim().toLowerCase() === term);
+      const rows = rowsAll.filter(r => String(r.term || '').trim().toLowerCase() === term);
       // Statistical time preference with recency weighting and AM/PM bands; plus KDE smoothing
       const timePoints = [];
       if (rowsAll.length) {
         rowsAll.forEach(r => {
           // Recency weighting: ignore future terms, decay older ones
-          const rTerm = String(r.semester || r.term || '').trim().toLowerCase();
+          const rTerm = String(r.term || '').trim().toLowerCase();
           const rOrd = termOrder(rTerm);
           if (Number.isFinite(candTermOrder) && Number.isFinite(rOrd) && rOrd > candTermOrder) return; // skip future
           let rec = 1;

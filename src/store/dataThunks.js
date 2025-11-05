@@ -97,34 +97,35 @@ function transformSchedulesToFacultyDataset(schedules) {
         facultyData.loadReleaseUnits;
     }
     const tn = normalizeTimeBlock(schedule.time);
+    const p = schedule.prospectus || {};
     const course = {
       id: schedule.id,
       facultyId: schedule.facultyId || schedule.faculty_id || null,
-      courseName: schedule.courseName,
-      courseTitle: schedule.courseTitle,
-      unit: schedule.unit,
+      courseName: p.courseName || schedule.courseName,
+      courseTitle: p.courseTitle || schedule.courseTitle,
+      unit: (p.unit != null ? p.unit : schedule.unit),
       day: schedule.day,
       time: schedule.time,
       term: schedule.term,
       // New fields from backend
       schoolyear: schedule.sy || schedule.schoolYear || schedule.school_year || '',
-      semester: schedule.sem || schedule.term || '',
+      semester: (p.semester || schedule.sem || schedule.term || ''),
       block: schedule.block,
-      yearlevel: schedule.yearlevel,
+      yearlevel: p.yearlevel || schedule.yearlevel,
       instructor: schedule.instructor,
       faculty: schedule.faculty || facProfile.faculty,
       blockCode: schedule.blockCode,
-      dept: schedule.dept,
+      dept: p.dept || schedule.dept,
       room: schedule.room,
       session: schedule.session,
       // grades
       gradesSubmitted: schedule.gradesSubmitted ?? schedule.grades_submitted ?? null,
       gradesStatus: schedule.gradesStatus ?? schedule.grades_status ?? null,
       programcode: schedule.programcode,
-      semester: schedule.sem || schedule.term,
+      semester: (p.semester || schedule.sem || schedule.term),
       program: schedule.programcode,
-      code: schedule.courseName,
-      title: schedule.courseTitle,
+      code: p.courseName || schedule.courseName,
+      title: p.courseTitle || schedule.courseTitle,
       section: schedule.blockCode,
       f2fSched: schedule.f2fSched,
       schedule: String(schedule.time || "").trim(),
@@ -147,7 +148,7 @@ function transformSchedulesToFacultyDataset(schedules) {
       examRoom: schedule.examRoom,
     };
     facultyData.courses.push(course);
-    facultyData.stats.loadHours += schedule.unit || 0;
+    facultyData.stats.loadHours += (course.unit || 0);
     facultyData.stats.courseCount += 1;
   });
   facultyMap.forEach((faculty) => {

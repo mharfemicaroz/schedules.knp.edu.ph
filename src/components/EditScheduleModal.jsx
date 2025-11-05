@@ -94,7 +94,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
         examDay: schedule.examDay || '',
         examSession: schedule.examSession || '',
         examRoom: schedule.examRoom || '',
-        term: schedule.semester || schedule.term || '',
+        term: schedule.term || '',
         faculty: schedule.faculty || schedule.facultyName || '',
         courseName: schedule.code || schedule.courseName || '',
         courseTitle: schedule.title || schedule.courseTitle || '',
@@ -145,7 +145,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
     if (!isOpen || !schedule || viewMode === 'examination') return [];
     const cand = { ...schedule };
     if (form?.time != null) { cand.time = form.time; cand.schedule = form.time; cand.scheduleKey = form.time; }
-    if (form?.term != null) { cand.term = form.term; cand.semester = form.term; }
+    if (form?.term != null) { cand.term = form.term; }
     if (form?.room != null) cand.room = form.room;
     if (form?.session != null) cand.session = form.session;
     if (form?.f2fSched != null || form?.f2fsched != null) {
@@ -155,7 +155,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
     if (facultyId != null) cand.facultyId = facultyId;
     if (form?.faculty) { cand.faculty = form.faculty; cand.facultyName = form.faculty; }
 
-    const term = String(cand.semester || cand.term || '').trim().toLowerCase();
+    const term = String(cand.term || '').trim().toLowerCase();
     const timeStr = String(cand.scheduleKey || cand.schedule || cand.time || '').trim();
     const candDays = (Array.isArray(f2fDaysSel) && f2fDaysSel.length)
       ? f2fDaysSel
@@ -177,7 +177,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
       .filter(r => {
         const rFacObj = { id: r.facultyId || r.faculty_id, name: r.facultyName || r.faculty };
         const sameFac = sameFaculty({ id: cand.facultyId || cand.faculty_id, name: cand.facultyName || cand.faculty }, rFacObj);
-        const rTerm = String(r.semester || r.term || '').trim().toLowerCase();
+        const rTerm = String(r.term || '').trim().toLowerCase();
         const rTimeStr = String(r.scheduleKey || r.schedule || r.time || '').trim();
         const rr = parseTimeBlockToMinutes(rTimeStr);
         const rStart = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : rr.start;
@@ -210,7 +210,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
     if (candSecNorm) {
       for (const r of allCourses || []) {
         if (!r || String(r.id) === String(schedule.id)) continue;
-        const rTerm = String(r.semester || r.term || '').trim().toLowerCase();
+        const rTerm = String(r.term || '').trim().toLowerCase();
         if (!rTerm || rTerm !== candTerm) continue;
         if (normalizeName(r.section) !== candSecNorm) continue;
         const rFacObj = { id: r.facultyId || r.faculty_id, name: r.facultyName || r.faculty };
@@ -243,7 +243,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
     for (const r of allCourses || []) {
       if (!r || String(r.id) === String(schedule.id)) continue;
       const rFacObj = { id: r.facultyId || r.faculty_id, name: r.facultyName || r.faculty };
-      const rTerm0 = String(r.semester || r.term || '').trim().toLowerCase();
+      const rTerm0 = String(r.term || '').trim().toLowerCase();
       const rTime0 = String(r.scheduleKey || r.schedule || r.time || '').trim();
       const rr0 = parseTimeBlockToMinutes(rTime0);
       const rStart0 = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : rr0.start;
@@ -302,7 +302,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
 
       const nname = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const facKey = (r) => (r.facultyId != null ? `id:${r.facultyId}` : `nm:${nname(r.facultyName || r.faculty || r.instructor)}`);
-      const termOf = (r) => String(r.semester || r.term || '').trim().toLowerCase();
+      const termOf = (r) => String(r.term || '').trim().toLowerCase();
       const sectionOf = (r) => nname(r.section || r.block_code || '');
       const rangeOf = (r) => {
         if (Number.isFinite(r.timeStartMinutes) && Number.isFinite(r.timeEndMinutes)) return { start: r.timeStartMinutes, end: r.timeEndMinutes };
@@ -340,7 +340,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
 
       const cand = { ...schedule };
       if (form?.time) { cand.time = form.time; cand.schedule = form.time; cand.scheduleKey = form.time; }
-      if (form?.term) { cand.term = form.term; cand.semester = form.term; }
+      if (form?.term) { cand.term = form.term; }
       const myFac = facKey({ facultyId: cand.facultyId || cand.faculty_id, facultyName: cand.faculty || cand.facultyName });
       const myTerm = termOf(cand);
       const myRg = rangeOf(cand);

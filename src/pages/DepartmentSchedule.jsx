@@ -113,7 +113,7 @@ export default function DepartmentSchedule() {
         // Merge same course within the same block that only differ by room (and aggregate F2F days)
         const mergedMap = new Map();
         sorted.forEach((c) => {
-          const key = [c.code, c.semester || '', c.schedule || '', c.day || ''].join('|');
+          const key = [c.code, c.term || '', c.schedule || '', c.day || ''].join('|');
           const prev = mergedMap.get(key);
           if (prev) {
             const prevRooms = String(prev.room || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -185,9 +185,9 @@ export default function DepartmentSchedule() {
       g.blocks.forEach(b => {
         b.items.forEach(c => {
           if (viewMode === 'examination') {
-            rows.push([g.yl, b.block, c.semester, c.schedule || '—', c.code, c.title, String(c.unit ?? c.hours ?? ''), c.room || '—', c.facultyName, c.examDay || '—', c.examSession || '—', c.examRoom || '—']);
+            rows.push([g.yl, b.block, c.term, c.schedule || '—', c.code, c.title, String(c.unit ?? c.hours ?? ''), c.room || '—', c.facultyName, c.examDay || '—', c.examSession || '—', c.examRoom || '—']);
           } else {
-            rows.push([g.yl, b.block, c.semester, c.schedule || '—', c.code, c.title, String(c.unit ?? c.hours ?? ''), c.room || '—', c.facultyName]);
+            rows.push([g.yl, b.block, c.term, c.schedule || '—', c.code, c.title, String(c.unit ?? c.hours ?? ''), c.room || '—', c.facultyName]);
           }
         });
       });
@@ -454,7 +454,7 @@ export default function DepartmentSchedule() {
                             />
                           </Td>
                         )}
-                        <Td>{c.semester}</Td>
+                        <Td>{c.term}</Td>
                         <Td>{c.schedule || '—'}</Td>
                         <Td>{c.code}</Td>
                         <Td maxW={{ base: '220px', md: '420px' }}><Text noOfLines={{ base: 2, md: 1 }}>{c.title}</Text></Td>

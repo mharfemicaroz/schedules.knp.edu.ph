@@ -56,7 +56,7 @@ export default function BlockSchedule() {
     for (const c of list) {
       const dayKey = dayFilter || c.day || '';
       const timeKey = c.scheduleKey || `${c.timeStartMinutes}-${c.timeEndMinutes}`;
-      const termKey = c.semester || c.term || '';
+      const termKey = c.term || '';
       const roomKey = c.room || '';
       const facultyKey = c.facultyName || c.faculty || '';
       const key = `${dayKey}|${timeKey}|${termKey}|${roomKey}|${facultyKey}`;
@@ -78,9 +78,9 @@ export default function BlockSchedule() {
     const data = rows.map(c => {
       if (viewMode === 'examination') {
         return [
-          c.semester,
-          c.schedule || '—',
-          c.program || '—',
+          c.term,
+          c.schedule || '-',
+          c.program || '-',
           c.code,
           c.title,
           String(c.unit ?? c.hours ?? ''),
@@ -92,9 +92,9 @@ export default function BlockSchedule() {
         ];
       } else {
         return [
-          c.semester,
-          c.schedule || '—',
-          c.program || '—',
+          c.term,
+          c.schedule || '-',
+          c.program || '-',
           c.code,
           c.title,
           String(c.unit ?? c.hours ?? ''),
@@ -192,7 +192,7 @@ export default function BlockSchedule() {
           <Tbody>
             {rows.map((c, i) => (
               <Tr key={`${block}-${c.facultyId}-${c.id}-${i}`}>
-                <Td>{c.semester}</Td>
+                <Td>{c.term}</Td>
                 <Td>{c.schedule || '—'}</Td>
                 <Td>{c.program || '—'}</Td>
                 <Td>{c.code}</Td>

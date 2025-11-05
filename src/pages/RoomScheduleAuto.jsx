@@ -163,12 +163,12 @@ export default function RoomScheduleAuto() {
   // Filter rows to current term if known
   const rowsTerm = useMemo(() => {
     if (!currentTermKey) return rows;
-    return rows.filter(r => termLabelOf(r.semester || r.term) === currentTermKey);
+    return rows.filter(r => termLabelOf(r.term) === currentTermKey);
   }, [rows, currentTermKey]);
 
   const byTerm = useMemo(() => {
     const m = new Map();
-    rowsTerm.forEach(r => { const k = termLabelOf(r.semester || r.term); const a = m.get(k) || []; a.push(r); m.set(k, a); });
+    rowsTerm.forEach(r => { const k = termLabelOf(r.term); const a = m.get(k) || []; a.push(r); m.set(k, a); });
     // Ensure 1st then 2nd then Others order
     const keys = Array.from(m.keys());
     keys.sort((a,b)=>{

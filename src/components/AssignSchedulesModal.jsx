@@ -77,7 +77,7 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
     const candStart = tn.start, candEnd = tn.end, candKey = tn.key;
     const candSec = norm(cand.block_code || cand.blockCode || cand.section);
     for (const r of facultyScheds) {
-      const rTerm = String(r.semester || r.term || '').trim().toLowerCase();
+      const rTerm = String(r.term || '').trim().toLowerCase();
       if (!rTerm || rTerm !== term) continue;
       const rStart = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : undefined;
       const rEnd = Number.isFinite(r.timeEndMinutes) ? r.timeEndMinutes : undefined;

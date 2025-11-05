@@ -66,7 +66,7 @@ export default function RoomSchedule() {
     for (const c of list) {
       const dayKey = filterDay || c.day || '';
       const timeKey = c.scheduleKey || `${c.timeStartMinutes}-${c.timeEndMinutes}`;
-      const termKey = c.semester || c.term || '';
+      const termKey = c.term || '';
       const blockKey = c.section || '';
       const facultyKey = c.facultyName || c.faculty || '';
       const key = `${dayKey}|${timeKey}|${termKey}|${blockKey}|${facultyKey}`;
@@ -93,7 +93,7 @@ export default function RoomSchedule() {
         return [
           c.schedule || '—',
           c.day || '—',
-          c.semester,
+          c.term,
           c.program || '—',
           c.code,
           c.title,
@@ -108,7 +108,7 @@ export default function RoomSchedule() {
         return [
           c.schedule || '—',
           c.day || '—',
-          c.semester,
+          c.term,
           c.program || '—',
           c.code,
           c.title,
@@ -216,7 +216,7 @@ export default function RoomSchedule() {
               <Tr key={`${c.facultyId}-${c.id}-${i}`}>
                 <Td>{c.schedule || '—'}</Td>
                 <Td>{c.day || '—'}</Td>
-                <Td>{c.semester}</Td>
+                <Td>{c.term}</Td>
                 <Td>{c.program || '—'}</Td>
                 <Td>{c.code}</Td>
                 <Td maxW="380px">{c.title}</Td>
@@ -269,3 +269,5 @@ export default function RoomSchedule() {
     </Box>
   );
 }
+
+
