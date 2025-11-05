@@ -3,7 +3,7 @@ import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGri
 import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiDownload, FiShare2, FiExternalLink, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
-import { loadAllSchedules } from '../store/dataThunks';
+import { loadAllSchedules, loadAcademicCalendar } from '../store/dataThunks';
 import { getCurrentWeekDays, DAY_CODES, formatDayLabel } from '../utils/week';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
 import { buildTable, printContent } from '../utils/printDesign';
@@ -47,6 +47,7 @@ const ROOM_SPLIT_THRESHOLD = 10;
 export default function RoomAttendance() {
   const dispatch = useDispatch();
   const all = useSelector(selectAllCourses);
+  const acadData = useSelector(s => s.data.acadData);
   const authUser = useSelector(s => s.auth.user);
   const border = useColorModeValue('gray.200','gray.700');
   const panel = useColorModeValue('white','gray.800');
@@ -91,14 +92,54 @@ export default function RoomAttendance() {
   const selectedDayCode = React.useMemo(() => { const wd = new Date(selectedDate).getDay(); const map = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; return map[wd] || 'Mon'; }, [selectedDate]);
   const selectedIso = React.useMemo(() => dateToISO(selectedDate), [selectedDate, dateToISO]);
 
-  // Term filter (All, 1st, 2nd, Sem)
+  // Ensure academic calendar is available for auto-term detection
+  React.useEffect(() => {
+    if (!acadData) { try { dispatch(loadAcademicCalendar()); } catch {} }
+  }, [acadData, dispatch]);
+
+  // Determine current term from academic calendar, based on selected date
+  const autoTerm = React.useMemo(() => {
+    try {
+      const cal = Array.isArray(acadData) ? acadData[0]?.academic_calendar : acadData?.academic_calendar;
+      if (!cal) return null;
+      const base = new Date(selectedDate); base.setHours(0,0,0,0);
+      const norm = (v) => {
+        if (!v) return null;
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      };
+      // First semester
+      const fs = cal.first_semester || {};
+      const ft = fs.first_term || {}, st = fs.second_term || {};
+      const ftS = norm(ft.start), ftE = norm(ft.end), stS = norm(st.start), stE = norm(st.end);
+      if (ftS && ftE && ftS <= base && base <= ftE) return '1st';
+      if (stS && stE && stS <= base && base <= stE) return '2nd';
+      // Second semester (fallback)
+      const ss = cal.second_semester || {};
+      const ft2 = ss.first_term || {}, st2 = ss.second_term || {};
+      const ft2S = norm(ft2.start), ft2E = norm(ft2.end), st2S = norm(st2.start), st2E = norm(st2.end);
+      if (ft2S && ft2E && ft2S <= base && base <= ft2E) return '1st';
+      if (st2S && st2E && st2S <= base && base <= st2E) return '2nd';
+      return null;
+    } catch { return null; }
+  }, [acadData, selectedDate]);
+
+  // Term filter (UI). If autoTerm is available, enforce it while always including Sem schedules.
   const [termFilter, setTermFilter] = React.useState('all');
-  // Term matcher based on selected filter
   function termMatches(t) {
-    const f = String(termFilter || 'all').toLowerCase();
-    if (f === 'all') return true;
     const s = String(t || '').toLowerCase().trim();
     if (!s) return false;
+    // Always include semester-long entries
+    if (/(^|\b)(sem|semester)(\b|$)/i.test(s)) return true;
+    // Enforce auto term when known
+    if (autoTerm) {
+      if (autoTerm.startsWith('1')) return /(^|\b)(1|first|1st)(\b|$)/i.test(s);
+      if (autoTerm.startsWith('2')) return /(^|\b)(2|second|2nd)(\b|$)/i.test(s);
+      return true;
+    }
+    // Fallback to manual selection
+    const f = String(termFilter || 'all').toLowerCase();
+    if (f === 'all') return true;
     if (f.startsWith('1')) return /(^|\b)(1|first|1st)(\b|$)/i.test(s);
     if (f.startsWith('2')) return /(^|\b)(2|second|2nd)(\b|$)/i.test(s);
     if (f.startsWith('sem')) return /(^|\b)(sem|semester)(\b|$)/i.test(s);
@@ -225,30 +266,34 @@ export default function RoomAttendance() {
       const v = String(s || '').toLowerCase();
       return v === 'present' ? 4 : v === 'late' ? 3 : v === 'excused' ? 2 : v === 'absent' ? 1 : 0;
     };
-    const statusByFaculty = new Map();
+    const statusByFacultyId = new Map();
+    const idToName = new Map();
     (all || []).forEach((c) => {
       const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
       if (!daysArr.includes(selectedDayCode)) return;
       if (!termMatches(c.term)) return;
       if (!withinSlot(c, slots[slotIndex])) return;
-      const fac = (c.faculty || c.instructor || '').trim();
-      if (!fac) return;
+      const fid = Number(c.facultyId || c.faculty_id);
+      if (!fid) return;
       const st = String(bySched[Number(c.id)] || '') || '';
       if (!st) return;
-      const cur = statusByFaculty.get(fac);
-      if (!cur || rank(st) > rank(cur)) statusByFaculty.set(fac, st);
+      const cur = statusByFacultyId.get(fid);
+      if (!cur || rank(st) > rank(cur)) statusByFacultyId.set(fid, st);
+      const name = (c.facultyName || c.faculty || c.instructor || '').trim();
+      if (name) idToName.set(fid, name);
     });
     const present = [], absent = [], late = [], excused = [];
-    statusByFaculty.forEach((st, fac) => {
+    statusByFacultyId.forEach((st, fid) => {
+      const label = idToName.get(fid) || String(fid);
       const v = String(st).toLowerCase();
-      if (v === 'present') present.push(fac);
-      else if (v === 'absent') absent.push(fac);
-      else if (v === 'late') late.push(fac);
-      else if (v === 'excused') excused.push(fac);
+      if (v === 'present') present.push(label);
+      else if (v === 'absent') absent.push(label);
+      else if (v === 'late') late.push(label);
+      else if (v === 'excused') excused.push(label);
     });
     present.sort(); absent.sort(); late.sort(); excused.sort();
     return { present, absent, late, excused };
-  }, [all, bySched, slotIndex, selectedDayCode, termFilter]);
+  }, [all, bySched, slotIndex, selectedDayCode, termFilter, autoTerm]);
 
   
 

@@ -134,6 +134,17 @@ export const selectStats = createSelector(selectFilteredFaculties, (filtered) =>
 
 export const selectAllCourses = createSelector(selectData, (data) => {
   const rows = [];
-  data.faculties.forEach(f => { (f.courses || []).forEach(c => rows.push({ ...c, facultyId: f.id, facultyName: f.name, department: f.department })); });
+  data.faculties.forEach(f => {
+    (f.courses || []).forEach(c => {
+      // Preserve the schedule-provided numeric facultyId when available
+      const fid = (c.facultyId != null ? c.facultyId : (c.faculty_id != null ? c.faculty_id : null));
+      rows.push({
+        ...c,
+        facultyId: fid,
+        facultyName: f.name,
+        department: f.department,
+      });
+    });
+  });
   return rows;
 });

@@ -22,6 +22,7 @@ import AdminGuestLogs from './pages/AdminGuestLogs';
 import AdminBlockSettings from './pages/AdminBlockSettings';
 import AdminAcademicCalendar from './pages/AdminAcademicCalendar';
 import AdminGradesSubmission from './pages/AdminGradesSubmission';
+import AdminProspectus from './pages/AdminProspectus';
 import ShareVisualMap from './pages/ShareVisualMap';
 import ReportsFacultySummary from './pages/ReportsFacultySummary';
 import Unauthorized from './pages/Unauthorized';
@@ -69,6 +70,7 @@ function App() {
               <Route path="/admin/attendance" element={<RequireRole roles={['admin','manager','checker']}><Attendance /></RequireRole>} />
               <Route path="/admin/room-attendance" element={<RequireRole roles={['admin','manager','checker']}><RoomAttendance /></RequireRole>} />
               <Route path="/admin/faculty" element={<RequireAdmin><AdminFaculty /></RequireAdmin>} />
+              <Route path="/admin/prospectus" element={<RequireAdmin><AdminProspectus /></RequireAdmin>} />
               <Route path="/admin/academic-calendar" element={<RequireAdmin><AdminAcademicCalendar /></RequireAdmin>} />
               <Route path="/admin/blocks" element={<RequireAdmin><AdminBlockSettings /></RequireAdmin>} />
               <Route path="/admin/grades-submission" element={<RequireRole roles={['admin','manager','registrar']}><AdminGradesSubmission /></RequireRole>} />

@@ -152,6 +152,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             {isAdmin && (
               <>
                 <NavItem to="/admin/faculty" icon={FiUsers} onClick={onNavigate}>Faculty</NavItem>
+                <NavItem to="/admin/prospectus" icon={FiBook} onClick={onNavigate}>Prospectus</NavItem>
                 <NavItem to="/admin/academic-calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>
                 <NavItem to="/admin/blocks" icon={FiSettings} onClick={onNavigate}>Block Settings</NavItem>
                 <NavItem to="/admin/users" icon={FiUser} onClick={onNavigate}>User Management</NavItem>

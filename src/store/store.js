@@ -5,6 +5,7 @@ import facultyReducer from './facultySlice';
 import uiReducer, { setError, setToast } from './uiSlice';
 import guestReducer from './guestSlice';
 import blocksReducer from './blockSlice';
+import prospectusReducer from './prospectusSlice';
 
 const toastMiddleware = storeAPI => next => action => {
   const result = next(action);
@@ -37,6 +38,12 @@ const toastMiddleware = storeAPI => next => action => {
       storeAPI.dispatch(setToast({ status: 'success', title: 'Block updated' }));
     } else if (t.startsWith('blocks/delete/')) {
       storeAPI.dispatch(setToast({ status: 'success', title: 'Block deleted' }));
+    } else if (t.startsWith('prospectus/create/')) {
+      storeAPI.dispatch(setToast({ status: 'success', title: 'Prospectus created' }));
+    } else if (t.startsWith('prospectus/update/')) {
+      storeAPI.dispatch(setToast({ status: 'success', title: 'Prospectus updated' }));
+    } else if (t.startsWith('prospectus/delete/')) {
+      storeAPI.dispatch(setToast({ status: 'success', title: 'Prospectus deleted' }));
     }
   }
   return result;
@@ -50,6 +57,7 @@ const store = configureStore({
     ui: uiReducer,
     guest: guestReducer,
     blocks: blocksReducer,
+    prospectus: prospectusReducer,
   },
   middleware: (getDefault) => getDefault().concat(toastMiddleware),
 });

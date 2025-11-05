@@ -6,6 +6,7 @@ class ApiService {
     this.baseURL = API_CONFIG.BASE_URL;
     this.schedulesPath = "/schedules";
     this.blocksPath = "/blocks";
+    this.prospectusPath = "/prospectus";
     this.attendancePath = "/attendance";
     this.authPath = "/auth";
     this.usersPath = "/users";
@@ -126,6 +127,61 @@ class ApiService {
 
   setAuthToken(token) {
     this.token = token || null;
+  }
+
+  // PROSPECTUS API
+  async getProspectus(params = {}) {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && v !== "") qs.append(k, v);
+    });
+    const url = `${this.baseURL}${this.prospectusPath}${qs.toString() ? `/?${qs.toString()}` : '/'}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async getProspectusStats() {
+    const url = `${this.baseURL}${this.prospectusPath}/stats`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async getProspectusByProgram(programcode) {
+    const url = `${this.baseURL}${this.prospectusPath}/program/${encodeURIComponent(programcode)}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async createProspectus(payload) {
+    const url = `${this.baseURL}${this.prospectusPath}/`;
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async bulkCreateProspectus(items) {
+    const url = `${this.baseURL}${this.prospectusPath}/bulk`;
+    const body = Array.isArray(items) ? items : { items };
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async updateProspectus(id, payload) {
+    const url = `${this.baseURL}${this.prospectusPath}/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async deleteProspectus(id) {
+    const url = `${this.baseURL}${this.prospectusPath}/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
   }
 
   // ATTENDANCE API
