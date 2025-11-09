@@ -16,14 +16,15 @@ import {
   Button,
   VStack,
   Link as ChakraLink,
+  Icon,
 } from '@chakra-ui/react';
-import { FiPrinter } from 'react-icons/fi';
+import { FiPrinter, FiAlertCircle } from 'react-icons/fi';
 // PDF download removed as requested
 import { useDispatch, useSelector } from 'react-redux';
 import { selectBlocks } from '../store/blockSlice';
 import { loadBlocksThunk } from '../store/blockThunks';
 import { getCurrentWeekDays } from '../utils/week';
-import { getExamDateSet } from '../utils/scheduleUtils';
+import { getExamDateSet, findDayAnnotations } from '../utils/scheduleUtils';
 import { Link as RouterLink } from 'react-router-dom';
 import { encodeShareBlock, encodeShareRoom } from '../utils/share';
 
@@ -69,6 +70,7 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
   const dispatch = useDispatch();
   const blocks = useSelector(selectBlocks);
   const acadData = useSelector(s => s.data.acadData);
+  const holidays = useSelector(s => s.data.holidays);
 
   const [sections, setSections] = React.useState([]);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -99,6 +101,15 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
     } catch {}
     return set;
   }, [acadData, weekDays]);
+  const dayAnnotations = React.useMemo(() => {
+    if (!acadData || !holidays) return {};
+    const ann = {};
+    weekDays.forEach(wd => {
+      const d = new Date(wd.date); d.setHours(0,0,0,0);
+      ann[wd.code] = findDayAnnotations(acadData, holidays, d);
+    });
+    return ann;
+  }, [acadData, holidays, weekDays]);
   const daysWithExams = React.useMemo(() => {
     const s = new Set();
     (blocks || []).forEach(b => { const d = String(b.examDay || '').trim(); if (d) s.add(d); });
@@ -326,6 +337,9 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
                 {t.mode === 'exam' && (
                   <Badge size="sm" colorScheme="green" variant="subtle">Exam</Badge>
                 )}
+                {dayAnnotations[t.day]?.holiday && (
+                  <Badge size="sm" colorScheme="red" variant="subtle">Holiday</Badge>
+                )}
               </HStack>
               <HStack>
                 <Badge colorScheme="purple" variant="subtle">Rooms: {t.rooms.length}</Badge>
@@ -334,6 +348,25 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
                 </Badge>
               </HStack>
             </HStack>
+            {/* Holiday panel and early return */}
+            {dayAnnotations[t.day]?.holiday ? (
+              <Box p={6} bg="red.50" borderWidth="1px" borderColor="red.200" rounded="xl">
+                <HStack align="start" spacing={4}>
+                  <Icon as={FiAlertCircle} color="red.500" boxSize={6} mt={1} />
+                  <Box>
+                    <Text fontWeight="800" fontSize="lg" color="red.700" mb={1}>{dayAnnotations[t.day].holiday.name}</Text>
+                    <HStack spacing={3} mb={2}>
+                      <Badge colorScheme="red" variant="subtle">Holiday</Badge>
+                      {dayAnnotations[t.day].holiday.type && (
+                        <Badge colorScheme="red" variant="outline">{dayAnnotations[t.day].holiday.type}</Badge>
+                      )}
+                      <Badge colorScheme="gray" variant="subtle">No Classes</Badge>
+                    </HStack>
+                    <Text fontSize="sm" color="red.700">Classes are not displayed on official holidays to avoid confusion.</Text>
+                  </Box>
+                </HStack>
+              </Box>
+            ) : (
             <VStack align="stretch" spacing={3}>
               {t.rooms.map((r) => {
                 const mM = t.matrix['Morning']?.get(r) || new Map();
@@ -413,6 +446,7 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
                 );
               })}
             </VStack>
+            )}
           </Box>
         ))}
       </Box>
@@ -432,6 +466,9 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
                       {t.mode === 'exam' && (
                         <Badge size="sm" colorScheme="green" variant="subtle" rounded="full">Exam</Badge>
                       )}
+                      {dayAnnotations[t.day]?.holiday && (
+                        <Badge size="sm" colorScheme="red" variant="subtle" rounded="full">Holiday</Badge>
+                      )}
                     </HStack>
                   <HStack color={subtle} fontSize="sm">
                       <Badge colorScheme="purple" variant="subtle" rounded="full">Rooms: {t.rooms.length}</Badge>
@@ -442,17 +479,35 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
                     </HStack>
                   </HStack>
                 </Box>
-
-                {roomParts.map((roomsSlice, partIdx) => (
-                  <Box key={`${t.day}-part-${partIdx}`}>
-                    {roomParts.length > 1 && (
-                      <Box px={4} py={2} bg={useColorModeValue('white','gray.900')} borderTopWidth={partIdx===0? '0':'1px'} borderColor={border}>
-                        <Text fontSize="sm" color={subtle}>Rooms {partIdx+1} of {roomParts.length}</Text>
+                {dayAnnotations[t.day]?.holiday ? (
+                  <Box p={6} bg="red.50" borderTopWidth="1px" borderColor="red.200" roundedBottom="xl">
+                    <HStack align="start" spacing={4}>
+                      <Icon as={FiAlertCircle} color="red.500" boxSize={6} mt={1} />
+                      <Box>
+                        <Text fontWeight="800" fontSize="lg" color="red.700" mb={1}>{dayAnnotations[t.day].holiday.name}</Text>
+                        <HStack spacing={3} mb={2}>
+                          <Badge colorScheme="red" variant="subtle">Holiday</Badge>
+                          {dayAnnotations[t.day].holiday.type && (
+                            <Badge colorScheme="red" variant="outline">{dayAnnotations[t.day].holiday.type}</Badge>
+                          )}
+                          <Badge colorScheme="gray" variant="subtle">No Classes</Badge>
+                        </HStack>
+                        <Text fontSize="sm" color="red.700">Schedules are hidden on holidays for clarity.</Text>
                       </Box>
-                    )}
-                    <TableForRooms day={t.day} rooms={roomsSlice} matrix={t.matrix} indexLabel={partIdx+1} />
+                    </HStack>
                   </Box>
-                ))}
+                ) : (
+                  roomParts.map((roomsSlice, partIdx) => (
+                    <Box key={`${t.day}-part-${partIdx}`}>
+                      {roomParts.length > 1 && (
+                        <Box px={4} py={2} bg={useColorModeValue('white','gray.900')} borderTopWidth={partIdx===0? '0':'1px'} borderColor={border}>
+                          <Text fontSize="sm" color={subtle}>Rooms {partIdx+1} of {roomParts.length}</Text>
+                        </Box>
+                      )}
+                      <TableForRooms day={t.day} rooms={roomsSlice} matrix={t.matrix} indexLabel={partIdx+1} />
+                    </Box>
+                  ))
+                )}
 
                 {/* Page break between days for print */}
                 <Box h="1px" className="print-break" />

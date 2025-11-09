@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Heading, HStack, VStack, Button, Input, FormControl, FormLabel, SimpleGrid, Table, Thead, Tr, Th, Tbody, Td, IconButton, useColorModeValue, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Text, Select, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Tag, TagLabel, Divider, Tabs, TabList, Tab, TabPanels, TabPanel } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Button, Input, FormControl, FormLabel, SimpleGrid, Table, Thead, Tr, Th, Tbody, Td, IconButton, useColorModeValue, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Text, Select, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Tag, TagLabel, Divider, Tabs, TabList, Tab, TabPanels, TabPanel, Alert, AlertIcon, Tooltip, Badge } from '@chakra-ui/react';
 import api from '../services/apiService';
 import { FiSave, FiRefreshCw, FiPlus, FiTrash, FiEdit } from 'react-icons/fi';
 
@@ -19,6 +19,32 @@ function ensureCalendarShape(cal, sy) {
     out.summer.term = fixTerm(out.summer.term);
     return out;
   } catch { return base; }
+}
+
+// Helpers: consistent date parsing and formatting
+function toISODate(val) {
+  if (!val) return '';
+  const d = new Date(val);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function fmtDisplay(val) {
+  if (!val) return '';
+  const d = new Date(val);
+  if (Number.isNaN(d.getTime())) return val;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function fmtMaybeRange(v) {
+  if (!v) return '';
+  if (typeof v === 'string' && v.includes(' - ')) {
+    const [a, b] = v.split(' - ').map(s => s.trim());
+    return `${fmtDisplay(a)} - ${fmtDisplay(b)}`;
+  }
+  if (Array.isArray(v)) return v.map(fmtDisplay).join(', ');
+  return fmtDisplay(v);
 }
 
 function ActivityModal({ isOpen, onClose, onSave, initial }) {
@@ -165,7 +191,7 @@ function TermEditor({ title, term, onChange }) {
                 <SimpleGrid columns={2} spacing={3}>
                   <Box>
                     <Text fontSize="xs" color={muted}>Date / Range</Text>
-                    <Text>{a.date_range ? a.date_range : Array.isArray(a.date) ? a.date.join(', ') : (a.date || '')}</Text>
+                    <Text>{a.date_range ? fmtMaybeRange(a.date_range) : Array.isArray(a.date) ? fmtMaybeRange(a.date) : fmtMaybeRange(a.date)}</Text>
                   </Box>
                   <Box>
                     <Text fontSize="xs" color={muted}>Mode</Text>
@@ -201,7 +227,7 @@ function TermEditor({ title, term, onChange }) {
             <Tr key={idx}>
               <Td><Text fontWeight="600">{a.event}</Text></Td>
               <Td>
-                {a.date_range ? a.date_range : Array.isArray(a.date) ? a.date.join(', ') : (a.date || '')}
+                {a.date_range ? fmtMaybeRange(a.date_range) : Array.isArray(a.date) ? fmtMaybeRange(a.date) : fmtMaybeRange(a.date)}
               </Td>
               <Td>{a.mode || '-'}</Td>
               <Td>{a.type || '-'}</Td>
@@ -233,6 +259,7 @@ export default function AdminAcademicCalendar() {
   const [busy, setBusy] = React.useState(false);
   const delDisc = useDisclosure();
   const cancelRef = React.useRef();
+  const todayISO = React.useMemo(() => toISODate(new Date()), []);
 
   const loadCalendar = async () => {
     const res = await api.getAcademicCalendar({ school_year: schoolYear });
@@ -256,11 +283,11 @@ export default function AdminAcademicCalendar() {
     } finally { setBusy(false); }
   };
 
-  const addHoliday = async () => {
-    const last = holidays[holidays.length - 1];
-    const item = { year: holYear, date: last?.date || `${holYear}-01-01`, name: 'New Holiday', type: 'Regular Holiday' };
-    await api.addHoliday(item);
-    await loadHolidays();
+  // Add a local holiday row; persist with Save
+  const addHoliday = () => {
+    const baseDate = `${holYear}-${String((new Date()).getMonth() + 1).padStart(2, '0')}-${String((new Date()).getDate()).padStart(2, '0')}`;
+    const item = { year: holYear, date: toISODate(baseDate) || `${holYear}-01-01`, name: '', type: '' };
+    setHolidays((list) => [...list, item]);
   };
   const saveHolidays = async () => {
     await api.replaceHolidays(holYear, holidays);
@@ -273,12 +300,30 @@ export default function AdminAcademicCalendar() {
   };
 
   const setHoliday = (idx, key, val) => {
-    setHolidays((list) => list.map((h, i) => (i === idx ? { ...h, [key]: val } : h)));
+    setHolidays((list) => list.map((h, i) => {
+      if (i !== idx) return h;
+      if (key === 'date') {
+        const normalized = toISODate(val);
+        return { ...h, date: normalized };
+      }
+      return { ...h, [key]: val };
+    }));
   };
+
+  const invalids = React.useMemo(() => {
+    const errs = [];
+    holidays.forEach((h, i) => {
+      if (!h.date || !toISODate(h.date)) errs.push(`Row ${i + 1}: invalid date`);
+      if (!h.name || !String(h.name).trim()) errs.push(`Row ${i + 1}: name is required`);
+      // keep informational badge if date year differs
+    });
+    return errs;
+  }, [holidays]);
 
   return (
     <Box px={{ base: 2, md: 4 }} py={4}>
-      <Heading size="md" mb={4}>Academic Calendar Settings</Heading>
+      <Heading size="md" mb={1}>Academic Calendar Settings</Heading>
+      <Text color={muted} mb={4}>Organize semester terms, activities, and manage public holidays with consistent date formatting.</Text>
       <Tabs colorScheme="brand" variant="enclosed-colored">
         <TabList>
           <Tab>Calendar</Tab>
@@ -327,16 +372,24 @@ export default function AdminAcademicCalendar() {
                 <Heading size="sm">Holidays</Heading>
                 <HStack>
                   <Button leftIcon={<FiRefreshCw />} onClick={loadHolidays} variant="outline" size="sm">Reload</Button>
-                  <Button leftIcon={<FiSave />} onClick={saveHolidays} colorScheme="blue" size="sm">Save</Button>
+                  <Tooltip label={invalids.length ? 'Fix errors before saving' : 'Save holidays for selected year'}>
+                    <Button leftIcon={<FiSave />} onClick={saveHolidays} colorScheme="blue" size="sm" isDisabled={invalids.length > 0}>Save</Button>
+                  </Tooltip>
                   <Button leftIcon={<FiTrash />} onClick={delDisc.onOpen} colorScheme="red" variant="outline" size="sm">Clear Year</Button>
                 </HStack>
               </HStack>
-              <HStack mb={3}>
+              {invalids.length > 0 && (
+                <Alert status="warning" mb={3} rounded="md">
+                  <AlertIcon />
+                  Some entries have issues. Please review fields below.
+                </Alert>
+              )}
+              <HStack mb={3} spacing={3} align="end">
                 <FormControl maxW={{ base: '100%', md: '220px' }}>
                   <FormLabel>Year</FormLabel>
                   <Input type="number" value={holYear} onChange={(e)=>setHolYear(parseInt(e.target.value||new Date().getFullYear(),10))} />
                 </FormControl>
-                <Button leftIcon={<FiPlus />} onClick={addHoliday} size="sm">Add Holiday</Button>
+                <Button leftIcon={<FiPlus />} onClick={addHoliday} size="sm" colorScheme="brand">Add Holiday</Button>
               </HStack>
               {/* Mobile cards for holidays */}
               <Box display={{ base: 'block', md: 'none' }}>
@@ -363,7 +416,8 @@ export default function AdminAcademicCalendar() {
                             </Select>
                           </Box>
                         </SimpleGrid>
-                        <HStack justify="flex-end">
+                        <HStack justify="space-between" align="center">
+                          <Badge colorScheme={(h.date || '').startsWith(String(holYear)) ? 'green' : 'orange'}>{(h.date || '').startsWith(String(holYear)) ? 'Year OK' : 'Date not in selected year'}</Badge>
                           <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="outline" onClick={()=>setHolidays(list=>list.filter((_,i)=>i!==idx))} />
                         </HStack>
                       </VStack>
@@ -385,7 +439,14 @@ export default function AdminAcademicCalendar() {
                   <Tbody>
                     {holidays.map((h, idx) => (
                       <Tr key={`${h.date}-${idx}`}>
-                        <Td><Input type="date" value={h.date || ''} onChange={(e)=>setHoliday(idx, 'date', e.target.value)} /></Td>
+                        <Td>
+                          <HStack>
+                            <Input type="date" value={h.date || ''} onChange={(e)=>setHoliday(idx, 'date', e.target.value)} />
+                            <Badge colorScheme={(h.date || '').startsWith(String(holYear)) ? 'green' : 'orange'} display={{ base: 'none', lg: 'inline-flex' }}>
+                              {(h.date || '').startsWith(String(holYear)) ? 'Year OK' : 'Different year'}
+                            </Badge>
+                          </HStack>
+                        </Td>
                         <Td><Input value={h.name || ''} onChange={(e)=>setHoliday(idx, 'name', e.target.value)} placeholder="New Year's Day" /></Td>
                         <Td>
                           <Select value={h.type || ''} onChange={(e)=>setHoliday(idx, 'type', e.target.value)}>

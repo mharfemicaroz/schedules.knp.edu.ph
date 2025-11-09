@@ -588,16 +588,6 @@ export default function VisualMap() {
 
           {/* No manual exam toggle; no exam-fallback banner */}
 
-          {dayAnnotations[t.day]?.holiday && (
-            <Box p={4} mb={4} bg="red.50" borderWidth="1px" borderColor="red.200" rounded="md" display="flex" alignItems="center" gap={3}>
-              <Icon as={FiAlertCircle} color="red.500" boxSize={5} />
-              <Box>
-                <Text fontWeight="700" color="red.600">{dayAnnotations[t.day].holiday.name}</Text>
-                <Text fontSize="sm" color="red.600">{dayAnnotations[t.day].holiday.type}</Text>
-              </Box>
-            </Box>
-          )}
-
           {/* {dayAnnotations[t.day]?.events?.length > 0 && (
             <Box p={4} mb={4} bg="purple.50" borderWidth="1px" borderColor="purple.200" rounded="md">
               {dayAnnotations[t.day].events.map((evt, idx) => (
@@ -609,8 +599,24 @@ export default function VisualMap() {
               ))}
             </Box>
           )} */}
-
-          {dayAnnotations[t.day]?.mode === 'no_class' ? (
+          {dayAnnotations[t.day]?.holiday ? (
+            <Box p={6} bg="red.50" borderWidth="1px" borderColor="red.200" rounded="xl" mb={6}>
+              <HStack align="start" spacing={4}>
+                <Icon as={FiAlertCircle} color="red.500" boxSize={6} mt={1} />
+                <Box>
+                  <Text fontWeight="800" fontSize="lg" color="red.700" mb={1}>{dayAnnotations[t.day].holiday.name}</Text>
+                  <HStack spacing={3} mb={2}>
+                    <Badge colorScheme="red" variant="subtle">Holiday</Badge>
+                    {dayAnnotations[t.day].holiday.type && (
+                      <Badge colorScheme="red" variant="outline">{dayAnnotations[t.day].holiday.type}</Badge>
+                    )}
+                    <Badge colorScheme="gray" variant="subtle">No Classes</Badge>
+                  </HStack>
+                  <Text fontSize="sm" color="red.700">Classes are not displayed on official holidays to avoid confusion.</Text>
+                </Box>
+              </HStack>
+            </Box>
+          ) : dayAnnotations[t.day]?.mode === 'no_class' ? (
             <Box p={8} bg={cellBg} borderWidth="1px" borderColor={border} rounded="xl" mb={4} textAlign="center" color={subtle}>
               <Text fontWeight="700" fontSize="lg" mb={2}>No Classes Today</Text>
               <Text fontSize="md">The schedule for this day is disabled due to a no-class event.</Text>

@@ -327,9 +327,11 @@ export function getInitialToggleState(
 function toYMD(date) {
   const d = new Date(date);
   if (isNaN(d.getTime())) return null;
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const da = String(d.getUTCDate()).padStart(2, '0');
+  // Use local year-month-day to avoid off-by-one issues when comparing
+  // with ISO strings (YYYY-MM-DD) that are implicitly local dates.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${da}`;
 }
 
