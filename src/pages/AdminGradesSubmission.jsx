@@ -4,6 +4,8 @@ import { useSelector, useDispatch } from 'react-redux';
 import FacultySelect from '../components/FacultySelect';
 import Pagination from '../components/Pagination';
 import { selectAllCourses } from '../store/dataSlice';
+import { selectAllFaculty } from '../store/facultySlice';
+import { loadFacultiesThunk } from '../store/facultyThunks';
 import { loadAllSchedules, loadAcademicCalendar } from '../store/dataThunks';
 import { FiEdit, FiChevronUp, FiChevronDown, FiX } from 'react-icons/fi';
 import { updateScheduleThunk } from '../store/dataThunks';
@@ -58,7 +60,9 @@ export default function AdminGradesSubmission() {
   const allCourses = useSelector(selectAllCourses);
   const acadData = useSelector(s => s.data.acadData);
   const loadingData = useSelector(s => s.data.loading);
-  const facultyList = useSelector(s => Array.isArray(s.data.faculties) ? s.data.faculties : []);
+  // Source faculty profiles from Faculty API (not schedule-derived),
+  // so department filtering uses faculty.dept as the source of truth
+  const facultyList = useSelector(selectAllFaculty);
   const authUser = useSelector(s => s.auth.user);
   const roleStr = String(authUser?.role || '').toLowerCase();
   const canEditDate = roleStr === 'admin' || roleStr === 'manager';
@@ -88,6 +92,8 @@ export default function AdminGradesSubmission() {
     if (!acadData) dispatch(loadAcademicCalendar());
     // schedules are loaded in App, but safe to refresh lightweight
     if (!allCourses || allCourses.length === 0) dispatch(loadAllSchedules());
+    // ensure we have up-to-date faculty profiles for dept/employment filters
+    dispatch(loadFacultiesThunk({ limit: 100000 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -114,8 +120,10 @@ export default function AdminGradesSubmission() {
     const map = new Map();
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     (facultyList || []).forEach(f => {
-      const key = norm(f.name || f.faculty);
-      if (key) map.set(key, f);
+      const nameKey = norm(f.name || f.faculty);
+      if (nameKey) map.set(nameKey, f);
+      // Also index by ID as string for potential lookups
+      if (f.id != null) map.set(String(f.id), f);
     });
     return map;
   }, [facultyList]);
@@ -139,9 +147,9 @@ export default function AdminGradesSubmission() {
         if (!termMap.has(t)) termMap.set(t, []);
         termMap.get(t).push(it);
       });
-      // Pull department and employment from faculty profile where possible
+      // Pull department and employment from Faculty API profile (dept as source of truth)
       const prof = profileMap.get(norm(faculty));
-      const dept = prof?.department || prof?.dept || '';
+      const dept = prof?.dept ?? prof?.department ?? '';
       const employment = prof?.employment || '';
       const terms = Array.from(termMap.entries()).map(([term, tItems]) => {
         const s = tItems.reduce((acc, it) => acc + (parseDate(it.gradesSubmitted) ? 1 : 0), 0);
@@ -155,11 +163,11 @@ export default function AdminGradesSubmission() {
     return arr;
   }, [rows]);
 
-  // Build filter option lists from faculty profiles
+  // Build filter option lists from Faculty API profiles
   const deptOptions = React.useMemo(() => {
     const set = new Set();
     (facultyList || []).forEach(f => {
-      const d = String(f.department || f.dept || '').trim();
+      const d = String(f.dept ?? f.department ?? '').trim();
       if (d) set.add(d);
     });
     return Array.from(set).sort((a,b)=>a.localeCompare(b));
@@ -391,7 +399,7 @@ export default function AdminGradesSubmission() {
 
 
 
-      <Accordion allowMultiple isLazy index={expanded} onChange={(idx) => setExpanded(Array.isArray(idx) ? idx : [idx])}>
+      <Accordion allowMultiple index={expanded} onChange={(idx) => setExpanded(Array.isArray(idx) ? idx : [idx])}>
         {pagedFacultyGroups.map((g, idx) => (
           <AccordionItem key={g.faculty} border="none" mb={3}>
             <h2>

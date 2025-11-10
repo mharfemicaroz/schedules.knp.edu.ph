@@ -603,6 +603,21 @@ class ApiService {
     return await res.json();
   }
 
+  // SETTINGS: Current SY/Sem for schedules view & loading
+  async getSettings() {
+    const url = `${this.baseURL}/settings/`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async updateSettings(patch) {
+    const url = `${this.baseURL}/settings/`;
+    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(patch || {}) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   // AUTH API
   async login(identifier, password) {
     return this.requestAbs(`${this.authPath}/login`, {

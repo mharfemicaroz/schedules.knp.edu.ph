@@ -40,6 +40,7 @@ import LoginModal from './LoginModal';
 import ChangePasswordModal from './ChangePasswordModal';
 import ProfileModal from './ProfileModal';
 import { Badge } from '@chakra-ui/react';
+import { selectSettings } from '../store/settingsSlice';
 import { loginThunk, changePasswordThunk, updateProfileThunk, logoutThunk } from '../store/authThunks';
 import apiService from '../services/apiService';
 import { useDispatch as useRDispatch, useSelector as useRSelector } from 'react-redux';
@@ -51,6 +52,18 @@ function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, 
   const { colorMode, toggleColorMode } = useColorMode();
   const bg = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
+  const settings = useSelector(selectSettings);
+  const sy = settings?.schedulesView?.school_year || '';
+  const semRaw = settings?.schedulesView?.semester || '';
+  const formatSem = (s) => {
+    const v = String(s || '').toLowerCase();
+    if (!v) return '';
+    if (v.startsWith('1')) return '1st Semester';
+    if (v.startsWith('2')) return '2nd Semester';
+    return s; // Summer or custom
+  };
+  const sem = formatSem(semRaw);
+  const headerLine = sy || sem ? `Course Schedules SY ${sy || '—'}, ${sem || '—'}` : 'Course Schedules';
   return (
     <Flex
       as="header"
@@ -77,7 +90,7 @@ function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, 
         
         <Box>
           <Text fontWeight="800" fontSize={{ base: 'sm', md: 'md' }} noOfLines={1}>
-            Course Schedules SY 2025-2026, 1st Semester
+            {headerLine}
           </Text>
           <Text fontSize="xs" color={useColorModeValue('gray.600','gray.400')} display={{ base: 'none', md: 'block' }}>
             Office of the Vice President of Academic Affairs
@@ -125,6 +138,18 @@ export default function Layout({ children }) {
   const bg = useColorModeValue('gray.50', 'gray.900');
   const loading = useSelector(s => s.data.loading);
   const loc = useLocation();
+  const settingsAll = useSelector(selectSettings);
+  const sy2 = settingsAll?.schedulesView?.school_year || '';
+  const sem2raw = settingsAll?.schedulesView?.semester || '';
+  const fmtSem2 = (s) => {
+    const v = String(s || '').toLowerCase();
+    if (!v) return '';
+    if (v.startsWith('1')) return '1st Semester';
+    if (v.startsWith('2')) return '2nd Semester';
+    return s;
+  };
+  const sem2 = fmtSem2(sem2raw);
+  const sharedHeaderSecondary = sy2 || sem2 ? `Course Schedules SY ${sy2 || '—'}, ${sem2 || '—'}` : 'Shared View';
   // Build current route string consistently
   const getCurrentRoute = React.useCallback(() => {
     try {
@@ -363,7 +388,7 @@ export default function Layout({ children }) {
                     <VStack align="start" spacing={0}>
                       <Text fontWeight="800" fontSize={{ base: 'sm', md: 'md' }}>Kolehiyo ng Pantukan</Text>
                       <Text fontSize={{ base: 'xs', md: 'sm' }} color={sharedHeaderTextPrimary}>Office of the Vice President of Academic Affairs</Text>
-                      <Text fontSize={{ base: 'xs', md: 'xs' }} color={sharedHeaderTextSecondary}>Shared View</Text>
+                      <Text fontSize={{ base: 'xs', md: 'xs' }} color={sharedHeaderTextSecondary}>{sharedHeaderSecondary}</Text>
                     </VStack>
                   </HStack>
                 </HStack>
@@ -421,10 +446,10 @@ export default function Layout({ children }) {
         <Box
           as={motion.aside}
           display={{ base: 'none', md: 'block' }}
-          style={{ width: sidebarVisible ? 280 : 0 }}
-          initial={{ x: -280, opacity: 0 }}
-          animate={{ x: sidebarVisible ? 0 : -280, opacity: sidebarVisible ? 1 : 0 }}
-          exit={{ x: -280, opacity: 0 }}
+          style={{ width: sidebarVisible ? 420 : 0 }}
+          initial={{ x: -420, opacity: 0 }}
+          animate={{ x: sidebarVisible ? 0 : -420, opacity: sidebarVisible ? 1 : 0 }}
+          exit={{ x: -420, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 260, damping: 22, bounce: 0.3 }}
           overflow="hidden"
         >

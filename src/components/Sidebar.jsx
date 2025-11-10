@@ -5,9 +5,10 @@ import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar, FiUserX, FiFile
 import { useSelector } from 'react-redux';
 import { FiAlertTriangle } from 'react-icons/fi';
 import { selectAllCourses } from '../store/dataSlice';
+import { selectSettings } from '../store/settingsSlice';
 import { buildConflicts, buildCrossFacultyOverlaps, parseTimeBlockToMinutes } from '../utils/conflicts';
 
-function NavItem({ to, icon, children, onClick, badgeCount }) {
+function NavItem({ to, icon, children, onClick, badgeCount, chipLabel }) {
   const { pathname } = useLocation();
   const active = pathname === to;
   const color = useColorModeValue(active ? 'brand.700' : 'gray.600', active ? 'brand.200' : 'gray.300');
@@ -15,10 +16,19 @@ function NavItem({ to, icon, children, onClick, badgeCount }) {
   return (
     <HStack as={NavLink} to={to} spacing={3} px={3} py={2} rounded="md" cursor="pointer" _hover={{ bg: useColorModeValue('gray.100','whiteAlpha.100') }} bg={bg} color={color} w="full" style={{ textDecoration: 'none' }} onClick={onClick}>
       <Icon as={icon} />
-      <Text fontWeight={active ? '700' : '500'}>{children}</Text>
-      {typeof badgeCount === 'number' && badgeCount > 0 && (
-        <Badge colorScheme="red" ml="auto" fontSize="0.65rem" rounded="full" px={2}>{badgeCount}</Badge>
-      )}
+      <Box flex="1" minW={0}>
+        <Text fontWeight={active ? '700' : '500'} noOfLines={1}>{children}</Text>
+        {(chipLabel || (typeof badgeCount === 'number' && badgeCount > 0)) && (
+          <HStack mt={1} spacing={2} align="center">
+            {chipLabel && (
+              <Badge colorScheme="purple" fontSize="0.6rem" rounded="full" px={2} whiteSpace="nowrap" flexShrink={0}>{chipLabel}</Badge>
+            )}
+            {typeof badgeCount === 'number' && badgeCount > 0 && (
+              <Badge colorScheme="red" fontSize="0.65rem" rounded="full" px={2} flexShrink={0}>{badgeCount}</Badge>
+            )}
+          </HStack>
+        )}
+      </Box>
     </HStack>
   );
 }
@@ -114,8 +124,17 @@ export default function Sidebar({ mobile = false, onNavigate }) {
     } catch { return 0; }
   }, [raw]);
 
+  // Settings chip (current SY • Sem)
+  const settings = useSelector(selectSettings);
+  const chip = React.useMemo(() => {
+    const sy = settings?.schedulesView?.school_year || '';
+    const sem = settings?.schedulesView?.semester || '';
+    if (!sy && !sem) return '';
+    return `${sy || '—'} • ${sem || '—'}`;
+  }, [settings]);
+
   return (
-    <Box as="nav" w={mobile ? '100%' : { base: '60px', md: '280px' }} h={mobile ? 'auto' : '100%'} display={mobile ? 'block' : { base: 'none', md: 'block' }} borderRightWidth={mobile ? '0' : '1px'} borderColor={border} bg={bg} px={4} py={6} overflowY={mobile ? 'visible' : 'auto'}>
+    <Box as="nav" w={mobile ? '100%' : { base: '60px', md: '360px', lg: '420px' }} h={mobile ? 'auto' : '100%'} display={mobile ? 'block' : { base: 'none', md: 'block' }} borderRightWidth={mobile ? '0' : '1px'} borderColor={border} bg={bg} px={4} py={6} overflowY={mobile ? 'visible' : 'auto'}>
       <VStack align="stretch" spacing={2}>
         <HStack px={2} mb={4} spacing={3}>
           <Image src="/logo.png" alt="Logo" boxSize="28px" rounded="md" />
@@ -123,12 +142,18 @@ export default function Sidebar({ mobile = false, onNavigate }) {
         </HStack>
 
         {/* Overview section - always visible */}
-        <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mb={1}>Overview</Text>
+        <HStack px={2} mb={1} spacing={2}>
+          <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')}>Overview</Text>
+          {chip && <Badge colorScheme="purple" fontSize="0.6rem" rounded="full" px={2}>{chip}</Badge>}
+        </HStack>
         <NavItem to="/" icon={FiGrid} onClick={onNavigate}>Classroom Assigment</NavItem>
         <NavItem to="/overview/calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>
 
         {/* Views */}
-        <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Views</Text>
+        <HStack px={2} mt={4} mb={1} spacing={2}>
+          <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')}>Views</Text>
+          {chip && <Badge colorScheme="purple" fontSize="0.6rem" rounded="full" px={2}>{chip}</Badge>}
+        </HStack>
         {(isAdmin || isUser) && <NavItem to="/views/faculty" icon={FiUsers} onClick={onNavigate}>By Faculty</NavItem>}
         {(isAdmin || isUser) && <NavItem to="/views/courses" icon={FiBook} onClick={onNavigate}>By Courses</NavItem>}
         <NavItem to="/views/departments" icon={FiLayers} onClick={onNavigate}>By Department</NavItem>
@@ -136,7 +161,10 @@ export default function Sidebar({ mobile = false, onNavigate }) {
         {(isAdmin || isUser) && <NavItem to="/views/session" icon={FiSun} onClick={onNavigate}>By Session</NavItem>}
         {(isAdmin || isUser) && (
           <>
-            <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Reports</Text>
+            <HStack px={2} mt={4} mb={1} spacing={2}>
+              <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')}>Reports</Text>
+              {chip && <Badge colorScheme="purple" fontSize="0.6rem" rounded="full" px={2}>{chip}</Badge>}
+            </HStack>
             <NavItem to="/reports/faculty-summary" icon={FiFileText} onClick={onNavigate}>Faculty Summary</NavItem>
           </>
         )}
@@ -144,10 +172,10 @@ export default function Sidebar({ mobile = false, onNavigate }) {
           <>
             <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Admin</Text>
             {(isAdmin || isChecker) && (
-              <NavItem to="/admin/attendance" icon={FiCheckSquare} onClick={onNavigate}>Attendance</NavItem>
+              <NavItem to="/admin/attendance" icon={FiCheckSquare} onClick={onNavigate} chipLabel={chip}>Attendance</NavItem>
             )}
             {(isAdmin || isRegistrar) && (
-              <NavItem to="/admin/grades-submission" icon={FiFileText} onClick={onNavigate}>Grades Submission</NavItem>
+              <NavItem to="/admin/grades-submission" icon={FiFileText} onClick={onNavigate} chipLabel={chip}>Grades Submission</NavItem>
             )}
             {isAdmin && (
               <>
@@ -155,10 +183,11 @@ export default function Sidebar({ mobile = false, onNavigate }) {
                 <NavItem to="/admin/prospectus" icon={FiBook} onClick={onNavigate}>Prospectus</NavItem>
                 <NavItem to="/admin/academic-calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>
                 <NavItem to="/admin/blocks" icon={FiSettings} onClick={onNavigate}>Block Settings</NavItem>
+                <NavItem to="/admin/settings" icon={FiSettings} onClick={onNavigate}>System Settings</NavItem>
                 <NavItem to="/admin/users" icon={FiUser} onClick={onNavigate}>User Management</NavItem>
                 <NavItem to="/admin/guest-logs" icon={FiActivity} onClick={onNavigate}>Guest Logs</NavItem>
-                <NavItem to="/admin/conflicts" icon={FiAlertTriangle} onClick={onNavigate} badgeCount={conflictCount}>Conflict Schedules</NavItem>
-                <NavItem to="/admin/unassigned" icon={FiUserX} onClick={onNavigate} badgeCount={unassignedCount}>Unassigned Schedules</NavItem>
+                <NavItem to="/admin/conflicts" icon={FiAlertTriangle} onClick={onNavigate} badgeCount={conflictCount} chipLabel={chip}>Conflict Schedules</NavItem>
+                <NavItem to="/admin/unassigned" icon={FiUserX} onClick={onNavigate} badgeCount={unassignedCount} chipLabel={chip}>Unassigned Schedules</NavItem>
               </>
             )}
           </>

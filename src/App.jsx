@@ -23,6 +23,7 @@ import AdminBlockSettings from './pages/AdminBlockSettings';
 import AdminAcademicCalendar from './pages/AdminAcademicCalendar';
 import AdminGradesSubmission from './pages/AdminGradesSubmission';
 import AdminProspectus from './pages/AdminProspectus';
+import AdminSettings from './pages/AdminSettings';
 import ShareVisualMap from './pages/ShareVisualMap';
 import ReportsFacultySummary from './pages/ReportsFacultySummary';
 import Unauthorized from './pages/Unauthorized';
@@ -35,6 +36,7 @@ import RoomAttendance from './pages/RoomAttendance';
 // VisitorProvider removed
 import { useDispatch, useSelector } from 'react-redux';
 import { loadAllSchedules, loadAcademicCalendar, loadHolidaysThunk } from './store/dataThunks';
+import { loadSettingsThunk } from './store/settingsThunks';
 // import { checkRoleThunk } from './store/authThunks';
 import GlobalToaster from './components/GlobalToaster';
 
@@ -44,6 +46,7 @@ function App() {
   // const user = useSelector(s => s.auth.user);
 
   useEffect(() => {
+    dispatch(loadSettingsThunk());
     dispatch(loadAllSchedules());
     dispatch(loadAcademicCalendar());
     dispatch(loadHolidaysThunk(2025));
@@ -72,6 +75,7 @@ function App() {
               <Route path="/admin/faculty" element={<RequireAdmin><AdminFaculty /></RequireAdmin>} />
               <Route path="/admin/prospectus" element={<RequireAdmin><AdminProspectus /></RequireAdmin>} />
               <Route path="/admin/academic-calendar" element={<RequireAdmin><AdminAcademicCalendar /></RequireAdmin>} />
+              <Route path="/admin/settings" element={<RequireAdmin><AdminSettings /></RequireAdmin>} />
               <Route path="/admin/blocks" element={<RequireAdmin><AdminBlockSettings /></RequireAdmin>} />
               <Route path="/admin/grades-submission" element={<RequireRole roles={['admin','manager','registrar']}><AdminGradesSubmission /></RequireRole>} />
               <Route path="/admin/v2/grades-submission" element={<RequireRole roles={['admin','manager','registrar']}><AdminGradesSubmission /></RequireRole>} />

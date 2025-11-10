@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import authReducer from './authSlice';
 import dataReducer from './dataSlice';
 import facultyReducer from './facultySlice';
+import settingsReducer from './settingsSlice';
 import uiReducer, { setError, setToast } from './uiSlice';
 import guestReducer from './guestSlice';
 import blocksReducer from './blockSlice';
@@ -54,6 +55,7 @@ const store = configureStore({
     auth: authReducer,
     data: dataReducer,
     faculty: facultyReducer,
+    settings: settingsReducer,
     ui: uiReducer,
     guest: guestReducer,
     blocks: blocksReducer,

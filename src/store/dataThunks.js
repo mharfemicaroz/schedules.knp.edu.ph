@@ -168,8 +168,24 @@ function transformSchedulesToFacultyDataset(schedules) {
   };
 }
 
-export const loadAllSchedules = createAsyncThunk("data/loadAll", async () => {
-  const schedulesResponse = await apiService.getAllSchedules();
+export const loadAllSchedules = createAsyncThunk("data/loadAll", async (_, { getState }) => {
+  // Respect System Settings: schedulesView.school_year + semester
+  let sy, sem;
+  try {
+    const st = getState()?.settings?.data?.schedulesView;
+    sy = st?.school_year || undefined;
+    sem = st?.semester || undefined;
+    if (!sy || !sem) {
+      // Fallback: fetch settings directly if store not yet populated
+      const s = await apiService.getSettings();
+      sy = s?.schedulesView?.school_year || sy;
+      sem = s?.schedulesView?.semester || sem;
+    }
+  } catch {}
+  const params = {};
+  if (sy) params.sy = sy;
+  if (sem) params.sem = sem;
+  const schedulesResponse = await apiService.getAllSchedules(params);
   const schedules = schedulesResponse.data || schedulesResponse;
   return {
     raw: schedules,

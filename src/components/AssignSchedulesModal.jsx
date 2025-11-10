@@ -8,6 +8,7 @@ import { FiRefreshCw, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { getTimeOptions } from '../utils/timeOptions';
 import apiService from '../services/apiService';
+import { selectSettings } from '../store/settingsSlice';
 import Pagination from './Pagination';
 import useFaculties from '../hooks/useFaculties';
 import { updateScheduleThunk, loadAllSchedules } from '../store/dataThunks';
@@ -43,6 +44,7 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
   const [strictMode, setStrictMode] = React.useState(false);
 
   const [loading, setLoading] = React.useState(false);
+  const settings = useSelector(selectSettings);
   const [rows, setRows] = React.useState([]);
   const [selected, setSelected] = React.useState(new Set());
   const [page, setPage] = React.useState(1);
@@ -100,6 +102,11 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
       if (program) filters.programcode = program;
       if (term) filters.term = term;
       if (time) filters.time = time;
+      // Enforce view filters from settings
+      const sy = settings?.schedulesView?.school_year;
+      const sem = settings?.schedulesView?.semester;
+      if (sy) filters.sy = sy;
+      if (sem) filters.sem = sem;
       const res = await apiService.getAllSchedules(filters);
       const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
       // derive program options from fetched list
