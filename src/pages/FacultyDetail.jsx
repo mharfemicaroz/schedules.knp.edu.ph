@@ -693,7 +693,7 @@ export default function FacultyDetail() {
                         <Td textAlign="right">
                           <HStack justify="end" spacing={1}>
                             <Button size="sm" colorScheme="blue" variant="solid" onClick={() => { setSelected(c); assignFacDisc.onOpen(); }}>Assign</Button>
-                            <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} />
+                            <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} isDisabled={(function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock)} />
                             <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />
                           </HStack>
                         </Td>

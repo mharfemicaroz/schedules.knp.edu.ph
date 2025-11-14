@@ -146,6 +146,11 @@ function transformSchedulesToFacultyDataset(schedules) {
       examDay: schedule.examDay,
       examSession: schedule.examSession,
       examRoom: schedule.examRoom,
+      // access control / audit
+      lock: schedule.lock ?? schedule.is_locked ?? schedule.locked ?? null,
+      user_id_created: schedule.user_id_created ?? schedule.created_by ?? null,
+      user_id_lastmodified:
+        schedule.user_id_lastmodified ?? schedule.last_modified_by ?? null,
     };
     facultyData.courses.push(course);
     facultyData.stats.loadHours += (course.unit || 0);
@@ -169,7 +174,7 @@ function transformSchedulesToFacultyDataset(schedules) {
 }
 
 export const loadAllSchedules = createAsyncThunk("data/loadAll", async (_, { getState }) => {
-  // Respect System Settings: schedulesView.school_year + semester
+  // View mode must respect System Settings: Schedules View Defaults (schedulesView)
   let sy, sem;
   try {
     const st = getState()?.settings?.data?.schedulesView;
@@ -220,8 +225,14 @@ export const loadHolidaysThunk = createAsyncThunk(
 
 export const updateScheduleThunk = createAsyncThunk(
   "data/updateSchedule",
-  async ({ id, changes }) => {
-    const res = await apiService.updateSchedule(id, changes);
+  async ({ id, changes }, { getState }) => {
+    const state = getState && getState();
+    const uid = state?.auth?.user?.id;
+    const payload = { ...(changes || {}) };
+    if (uid != null && payload.user_id_lastmodified == null) {
+      payload.user_id_lastmodified = uid;
+    }
+    const res = await apiService.updateSchedule(id, payload);
     return { id, changes, data: res?.data || res };
   }
 );

@@ -1,5 +1,6 @@
 // API Service for seamless integration with backend endpoints
 import API_CONFIG from "../config/apiConfig";
+// Note: avoid importing the Redux store here to prevent circular deps.
 
 class ApiService {
   constructor() {
@@ -11,6 +12,101 @@ class ApiService {
     this.authPath = "/auth";
     this.usersPath = "/users";
     this.token = null;
+    this._didAutoLogout = false;
+    this.onUnauthorized = null; // optional callback set from app bootstrap
+    this._refreshing = null; // in-flight refresh promise
+
+    // One-time global fetch interceptor to auto-logout on invalid/expired tokens
+    try {
+      if (typeof window !== 'undefined' && !window.__apiFetchPatched) {
+        window.__apiFetchPatched = true;
+        const origFetch = window.fetch.bind(window);
+        window.fetch = async (...args) => {
+          const res = await origFetch(...args);
+          try {
+            const url = String(args && args[0] || '');
+            const isAuthUrl = url.indexOf(this.baseURL + this.authPath) === 0;
+            if ((res.status === 401) && !isAuthUrl && !this._didAutoLogout) {
+              this._didAutoLogout = true;
+              this.token = null;
+              if (typeof this.onUnauthorized === 'function') {
+                try { this.onUnauthorized(); } catch {}
+              } else {
+                // Fallback: best-effort local clear
+                try {
+                  localStorage.removeItem('auth:accessToken');
+                  localStorage.removeItem('auth:refreshToken');
+                  localStorage.removeItem('auth:user');
+                } catch {}
+              }
+            }
+          } catch {}
+          return res;
+        };
+      }
+    } catch {}
+  }
+
+  // Centralized fetch wrapper with 401 auto-logout
+  async _fetch(url, options = {}, retry = true) {
+    const res = await fetch(url, options);
+    try {
+      if (res.status === 401) {
+        const isAuthUrl = typeof url === 'string' && url.indexOf(this.baseURL + this.authPath) === 0;
+        if (!isAuthUrl && retry) {
+          const ok = await this._ensureFreshAccessToken();
+          if (ok) {
+            const nextOpts = { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${this.token}` } };
+            return await this._fetch(url, nextOpts, false);
+          }
+        }
+        // fallthrough: unauthorized and cannot refresh
+        if (!this._didAutoLogout) {
+          this._didAutoLogout = true;
+          this.token = null;
+          if (typeof this.onUnauthorized === 'function') {
+            try { this.onUnauthorized(); } catch {}
+          } else {
+            try {
+              localStorage.removeItem('auth:accessToken');
+              localStorage.removeItem('auth:refreshToken');
+              localStorage.removeItem('auth:user');
+            } catch {}
+          }
+        }
+      }
+    } catch {}
+    return res;
+  }
+
+  async _ensureFreshAccessToken() {
+    try {
+      const storedRefresh = typeof localStorage !== 'undefined' ? localStorage.getItem('auth:refreshToken') : null;
+      if (!storedRefresh) return false;
+      // Deduplicate concurrent refresh calls
+      if (!this._refreshing) {
+        this._refreshing = (async () => {
+          try {
+            const res = await this.refreshToken(storedRefresh);
+            const newAccess = res.accessToken || res.token;
+            const newRefresh = res.refreshToken || storedRefresh;
+            if (!newAccess) return false;
+            this.setAuthToken(newAccess);
+            try { localStorage.setItem('auth:accessToken', newAccess); } catch {}
+            if (newRefresh) { try { localStorage.setItem('auth:refreshToken', newRefresh); } catch {} }
+            return true;
+          } catch {
+            return false;
+          } finally {
+            // small delay to avoid immediate reuse
+            const p = this._refreshing; this._refreshing = null; void p;
+          }
+        })();
+      }
+      return await this._refreshing;
+    } catch {
+      return false;
+    }
   }
 
   // Helper method for making API requests
@@ -27,7 +123,7 @@ class ApiService {
     };
 
     try {
-      const response = await fetch(url, config);
+      const response = await this._fetch(url, config);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -40,6 +136,32 @@ class ApiService {
     }
   }
 
+  // SCHEDULES helpers
+  async checkScheduleConflict(id, payload) {
+    const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/check`;
+    const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload || {}) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async getScheduleSuggestions(id, payload, { maxDepth } = {}) {
+    const search = new URLSearchParams();
+    if (maxDepth != null) search.set('maxDepth', String(maxDepth));
+    const qs = search.toString();
+    const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/suggestions${qs ? `?${qs}` : ''}`;
+    const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload || {}) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  // POST /api/schedules/:id/resolve - Resolve double-book by deleting conflicting row and saving candidate
+  async resolveSchedule(id, payload) {
+    const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/resolve`;
+    const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload || {}) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   // BLOCKS API
   async getBlocks(params = {}) {
     const qs = new URLSearchParams();
@@ -47,28 +169,28 @@ class ApiService {
       if (v !== null && v !== undefined && v !== "") qs.append(k, v);
     });
     const url = `${this.baseURL}${this.blocksPath}${qs.toString() ? `/?${qs.toString()}` : '/'}`;
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
 
   async getBlockStats() {
     const url = `${this.baseURL}${this.blocksPath}/stats`;
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
 
   async getBlockById(id) {
     const url = `${this.baseURL}${this.blocksPath}/${id}`;
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
 
   async getBlockByCode(code) {
     const url = `${this.baseURL}${this.blocksPath}/code/${encodeURIComponent(code)}`;
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
@@ -82,7 +204,7 @@ class ApiService {
 
   async createBlock(payload) {
     const url = `${this.baseURL}${this.blocksPath}/`;
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload) });
+    const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload) });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
@@ -90,21 +212,21 @@ class ApiService {
   async bulkCreateBlocks(items) {
     const url = `${this.baseURL}${this.blocksPath}/bulk`;
     const body = Array.isArray(items) ? items : { items };
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
 
   async updateBlock(id, payload) {
     const url = `${this.baseURL}${this.blocksPath}/${id}`;
-    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const res = await this._fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
 
   async deleteBlock(id) {
     const url = `${this.baseURL}${this.blocksPath}/${id}`;
-    const res = await fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
+    const res = await this._fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
@@ -120,13 +242,19 @@ class ApiService {
       },
       ...options,
     };
-    const res = await fetch(url, config);
+    const res = await this._fetch(url, config);
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
 
   setAuthToken(token) {
     this.token = token || null;
+    // Allow future unauthorized detection after a fresh login
+    if (this.token) this._didAutoLogout = false;
+  }
+
+  setUnauthorizedHandler(fn) {
+    this.onUnauthorized = typeof fn === 'function' ? fn : null;
   }
 
   // PROSPECTUS API
@@ -417,6 +545,13 @@ class ApiService {
       method: "PUT",
       body: JSON.stringify(payload),
     });
+  }
+
+  async swapSchedules(id, targetId) {
+    const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/swap`;
+    const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify({ targetId }) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
   }
 
   // DELETE /api/schedules/:id - Delete schedule

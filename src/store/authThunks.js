@@ -1,6 +1,7 @@
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import apiService from '../services/apiService';
 import { setTokens, setUser, setBusy, logout as logoutAction } from './authSlice';
+import { loadSettingsThunk } from './settingsThunks';
 
 export const loginThunk = createAsyncThunk('auth/login', async ({ identifier, password }, { dispatch }) => {
   dispatch(setBusy(true));
@@ -15,6 +16,8 @@ export const loginThunk = createAsyncThunk('auth/login', async ({ identifier, pa
     if (refreshToken) localStorage.setItem('auth:refreshToken', refreshToken); else localStorage.removeItem('auth:refreshToken');
     if (userdata) localStorage.setItem('auth:user', JSON.stringify(userdata)); else localStorage.removeItem('auth:user');
     apiService.setAuthToken(accessToken);
+    // Immediately load system settings now that we are authenticated
+    try { await dispatch(loadSettingsThunk()).unwrap(); } catch {}
     // Only check role for admins/managers; skip for non-admin users
     try {
       const role = String(userdata?.role || '').toLowerCase();

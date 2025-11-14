@@ -9,7 +9,9 @@ import {
   Text,
   VStack,
   HStack,
+  Badge,
   useColorModeValue,
+  Tooltip,
 } from '@chakra-ui/react';
 import { FiChevronDown, FiX } from 'react-icons/fi';
 import useFaculties from '../hooks/useFaculties';
@@ -23,10 +25,15 @@ export default function FacultySelect({
   autoFocus = false,
   maxHeight = '220px',
   allowClear = false,
+  options: optionsOverride,
+  loading: loadingOverride,
 }) {
-  const { data: options, loading } = useFaculties();
+  const { data: fetched, loading: loadingHook } = useFaculties();
+  const options = optionsOverride || fetched;
+  const loading = (typeof loadingOverride === 'boolean') ? loadingOverride : (!optionsOverride && loadingHook);
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
+  const [selectedText, setSelectedText] = React.useState('');
   const inputRef = React.useRef(null);
   const listRef = React.useRef(null);
   const bg = useColorModeValue('white', 'gray.800');
@@ -40,6 +47,18 @@ export default function FacultySelect({
     if (!q) return base;
     return base.filter(o => o.label.toLowerCase().includes(q));
   }, [options, query]);
+
+  const renderParts = (p) => {
+    if (!p) return null;
+    const fmt = (x) => (typeof x === 'number' ? x.toFixed(2) : '-');
+    return (
+      <VStack align="start" spacing={0} p={1}>
+        <Text fontSize="xs">Dept: {fmt(p.dept)} | Emp: {fmt(p.employment)} | Deg: {fmt(p.degree)}</Text>
+        <Text fontSize="xs">Time: {fmt(p.time)} | Load: {fmt(p.load)} | Over: {fmt(p.overload)}</Text>
+        <Text fontSize="xs">Exp: {fmt(p.termExp)} | Match: {fmt(p.match)}</Text>
+      </VStack>
+    );
+  };
 
   React.useEffect(() => {
     if (open && inputRef.current) inputRef.current.focus();
@@ -57,24 +76,25 @@ export default function FacultySelect({
   }, [open, value, filtered]);
 
   const commit = (val, id) => {
-    onChange?.(val);
+    // set id first, then name, so parents that batch state prefer having both
     onChangeId?.(id);
+    onChange?.(val);
+    setSelectedText(String(val || ''));
     setOpen(false);
   };
 
-  const selectedLabel = React.useMemo(() => {
-    if (!value) return '';
-    const found = (options || []).find(o => o.value === value);
-    return found ? found.label : value;
-  }, [value, options]);
+  // Sync local display value when prop changes
+  React.useEffect(() => {
+    setSelectedText(String(value || ''));
+  }, [value]);
 
-  const hasSelection = Boolean(selectedLabel);
+  const hasSelection = Boolean(selectedText);
 
   const onKeyDown = (e) => {
     if (!open) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, filtered.length - 1)); scrollIntoView(activeIndex + 1); }
     if (e.key === 'ArrowUp')   { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, 0)); scrollIntoView(activeIndex - 1); }
-    if (e.key === 'Enter')     { e.preventDefault(); const item = filtered[activeIndex]; if (item) commit(item.value); }
+    if (e.key === 'Enter')     { e.preventDefault(); const item = filtered[activeIndex]; if (item) commit(item.label, item.id); }
     if (e.key === 'Escape')    { e.preventDefault(); setOpen(false); }
   };
 
@@ -104,27 +124,28 @@ export default function FacultySelect({
         bg={bg}
         cursor={disabled ? 'not-allowed' : 'pointer'}
       >
-        <Text noOfLines={1} color={selectedLabel ? undefined : 'gray.500'}>
-          {selectedLabel || placeholder}
+        <Text noOfLines={1} color={selectedText ? undefined : 'gray.500'}>
+          {selectedText || placeholder}
         </Text>
         <HStack spacing={1}>
-          {allowClear && hasSelection && (
+          {allowClear && hasSelection && !disabled && (
             <IconButton
               aria-label="Clear selection"
               icon={<FiX />}
               size="xs"
               variant="ghost"
-              onClick={(e) => { e.stopPropagation(); commit('', null); }}
+              isDisabled={disabled}
+              onClick={(e) => { if (disabled) return; e.stopPropagation(); commit('', null); }}
             />
           )}
           <FiChevronDown />
         </HStack>
       </HStack>
 
-      {open && (
-        <Box position="absolute" top="100%" left={0} right={0} mt={1} bg={bg} borderWidth="1px" borderColor={border} rounded="md" zIndex={20} boxShadow="xl">
-          <VStack align="stretch" spacing={2} p={2}>
-            <InputGroup size="sm">
+              {open && (
+                <Box position="absolute" top="100%" left={0} right={0} mt={1} bg={bg} borderWidth="1px" borderColor={border} rounded="md" zIndex={20} boxShadow="xl">
+                  <VStack align="stretch" spacing={2} p={2}>
+                    <InputGroup size="sm">
               <Input
                 ref={inputRef}
                 value={query}
@@ -147,22 +168,33 @@ export default function FacultySelect({
                 (filtered.length === 0 ? (
                   <Text p={3} color="gray.500">No matches</Text>
                 ) : (
-                  filtered.map((opt, i) => (
-                    <HStack
-                      key={`${opt.id}-${opt.value}`}
-                      onMouseEnter={() => setActiveIndex(i)}
-                      onClick={() => commit(opt.value, opt.id)}
-                      spacing={2}
-                      px={3}
-                      py={2}
-                      _hover={{ bg: highlight }}
-                      bg={i === activeIndex ? highlight : 'transparent'}
-                      cursor="pointer"
-                    >
-                      <Text noOfLines={1}>{opt.label}</Text>
-                      {opt.dept && <Text ml="auto" color="gray.500" fontSize="xs">{opt.dept}</Text>}
-                    </HStack>
-                  ))
+                  filtered.map((opt, i) => {
+                    const s = typeof opt.score === 'number' ? opt.score : null;
+                    const color = s == null ? 'gray' : (s >= 9 ? 'green' : s >= 8 ? 'teal' : s >= 7 ? 'blue' : s >= 6 ? 'yellow' : s >= 4 ? 'orange' : 'red');
+                    return (
+                      <Tooltip key={`${opt.id}-${opt.value}`} placement="right" hasArrow label={renderParts(opt.parts)} openDelay={200}>
+                        <Box
+                          onMouseEnter={() => setActiveIndex(i)}
+                          onClick={() => commit(opt.label, opt.id)}
+                          px={3}
+                          py={2}
+                          _hover={{ bg: highlight }}
+                          bg={i === activeIndex ? highlight : 'transparent'}
+                          cursor="pointer"
+                        >
+                          <HStack justify="space-between" align="center" w="full">
+                            <VStack align="start" spacing={0} flex="1">
+                              <Text noOfLines={1}>{opt.label}</Text>
+                              {opt.dept && <Text color="gray.500" fontSize="xs" noOfLines={1}>{opt.dept}</Text>}
+                            </VStack>
+                            {s != null && (
+                              <Badge colorScheme={color} variant="subtle">{s.toFixed(2)}</Badge>
+                            )}
+                          </HStack>
+                        </Box>
+                      </Tooltip>
+                    );
+                  })
                 ))
               )}
             </Box>

@@ -39,6 +39,8 @@ export default function Sidebar({ mobile = false, onNavigate }) {
   const raw = useSelector(s => Array.isArray(s.data.raw) ? s.data.raw : []);
   const bg = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
+  // Call color mode hooks unconditionally to keep hook order stable
+  const sectionHeaderColor = useColorModeValue('gray.700','gray.300');
 
   const roleStr = String(authUser?.role || '').toLowerCase();
   const isAdmin = !!authUser && (roleStr === 'admin' || roleStr === 'manager');
@@ -134,7 +136,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
   }, [settings]);
 
   return (
-    <Box as="nav" w={mobile ? '100%' : { base: '60px', md: '360px', lg: '420px' }} h={mobile ? 'auto' : '100%'} display={mobile ? 'block' : { base: 'none', md: 'block' }} borderRightWidth={mobile ? '0' : '1px'} borderColor={border} bg={bg} px={4} py={6} overflowY={mobile ? 'visible' : 'auto'}>
+    <Box as="nav" w={mobile ? '100%' : { base: '60px', md: '280px', lg: '320px' }} h={mobile ? 'auto' : '100%'} display={mobile ? 'block' : { base: 'none', md: 'block' }} borderRightWidth={mobile ? '0' : '1px'} borderColor={border} bg={bg} px={4} py={6} overflowY={mobile ? 'visible' : 'auto'}>
       <VStack align="stretch" spacing={2}>
         <HStack px={2} mb={4} spacing={3}>
           <Image src="/logo.png" alt="Logo" boxSize="28px" rounded="md" />
@@ -143,7 +145,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
 
         {/* Overview section - always visible */}
         <HStack px={2} mb={1} spacing={2}>
-          <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')}>Overview</Text>
+          <Text fontSize="sm" fontWeight="700" color={sectionHeaderColor}>Overview</Text>
           {chip && <Badge colorScheme="purple" fontSize="0.6rem" rounded="full" px={2}>{chip}</Badge>}
         </HStack>
         <NavItem to="/" icon={FiGrid} onClick={onNavigate}>Classroom Assigment</NavItem>
@@ -151,7 +153,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
 
         {/* Views */}
         <HStack px={2} mt={4} mb={1} spacing={2}>
-          <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')}>Views</Text>
+          <Text fontSize="sm" fontWeight="700" color={sectionHeaderColor}>Views</Text>
           {chip && <Badge colorScheme="purple" fontSize="0.6rem" rounded="full" px={2}>{chip}</Badge>}
         </HStack>
         {(isAdmin || isUser) && <NavItem to="/views/faculty" icon={FiUsers} onClick={onNavigate}>By Faculty</NavItem>}
@@ -162,7 +164,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
         {(isAdmin || isUser) && (
           <>
             <HStack px={2} mt={4} mb={1} spacing={2}>
-              <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')}>Reports</Text>
+              <Text fontSize="sm" fontWeight="700" color={sectionHeaderColor}>Reports</Text>
               {chip && <Badge colorScheme="purple" fontSize="0.6rem" rounded="full" px={2}>{chip}</Badge>}
             </HStack>
             <NavItem to="/reports/faculty-summary" icon={FiFileText} onClick={onNavigate}>Faculty Summary</NavItem>
@@ -170,12 +172,28 @@ export default function Sidebar({ mobile = false, onNavigate }) {
         )}
         {(isAdmin || isChecker || isRegistrar) && (
           <>
-            <Text fontSize="sm" fontWeight="700" color={useColorModeValue('gray.700','gray.300')} px={2} mt={4} mb={1}>Admin</Text>
+            <Text fontSize="sm" fontWeight="700" color={sectionHeaderColor} px={2} mt={4} mb={1}>Admin</Text>
             {(isAdmin || isChecker) && (
               <NavItem to="/admin/attendance" icon={FiCheckSquare} onClick={onNavigate} chipLabel={chip}>Attendance</NavItem>
             )}
             {(isAdmin || isRegistrar) && (
               <NavItem to="/admin/grades-submission" icon={FiFileText} onClick={onNavigate} chipLabel={chip}>Grades Submission</NavItem>
+            )}
+            {(isAdmin || isRegistrar) && (
+              <NavItem
+                to="/admin/course-loading"
+                icon={FiLayers}
+                onClick={onNavigate}
+                chipLabel={(function(){
+                  try {
+                    const sy = (settings && settings.schedulesLoad && settings.schedulesLoad.school_year) || '';
+                    const sem = (settings && settings.schedulesLoad && settings.schedulesLoad.semester) || '';
+                    return (sy || sem) ? `${sy || '—'} · ${sem || '—'}` : '';
+                  } catch { return ''; }
+                })()}
+              >
+                Course Loading
+              </NavItem>
             )}
             {isAdmin && (
               <>

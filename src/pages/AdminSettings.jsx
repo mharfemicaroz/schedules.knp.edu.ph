@@ -3,6 +3,7 @@ import { Box, Heading, Text, HStack, VStack, SimpleGrid, Select, Button, useToas
 import apiService from '../services/apiService';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadAllSchedules } from '../store/dataThunks';
+import { loadSettingsThunk, updateSettingsThunk } from '../store/settingsThunks';
 
 const SEM_OPTS = [
   { value: '1st', label: '1st Semester' },
@@ -58,7 +59,7 @@ export default function AdminSettings() {
   const refresh = React.useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiService.getSettings();
+      const data = await dispatch(loadSettingsThunk()).unwrap();
       const base = { schedulesView: { school_year: '', semester: '' }, schedulesLoad: { school_year: '', semester: '' }, updatedAt: null };
       const merged = { ...base, ...(data || {}) };
       setOrig(merged);
@@ -68,7 +69,7 @@ export default function AdminSettings() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [dispatch, toast]);
 
   React.useEffect(() => { refresh(); }, [refresh]);
 
@@ -86,7 +87,7 @@ export default function AdminSettings() {
     try {
       setSaving(true);
       const payload = { schedulesView: form.schedulesView, schedulesLoad: form.schedulesLoad };
-      const data = await apiService.updateSettings(payload);
+      const data = await dispatch(updateSettingsThunk(payload)).unwrap();
       setOrig(data);
       setForm(data);
       toast({ title: 'Settings saved', status: 'success' });

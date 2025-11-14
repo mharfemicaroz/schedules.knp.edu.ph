@@ -74,6 +74,13 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
   const [suggNote, setSuggNote] = useState('');
   // Suggestion mode no longer needed; single suggestions flow
 
+  const isLocked = useMemo(() => {
+    const v = schedule?.lock;
+    if (typeof v === 'boolean') return v;
+    const s = String(v || '').trim().toLowerCase();
+    return s === 'yes' || s === 'true' || s === '1';
+  }, [schedule]);
+
   useEffect(() => {
     // Reset suggestions state on open/close or when switching schedule
     setSuggOpen(false);
@@ -133,11 +140,12 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
 
   const canSave = useMemo(() => {
     if (!schedule) return false;
+    if (isLocked) return false;
     if (viewMode === 'examination') {
       return Boolean(form.examDay || form.examSession || form.examRoom || isEditingCourse || hasFacultyChange);
     }
     return Boolean(form.day && form.time && form.room);
-  }, [form, schedule, viewMode, isEditingCourse, hasFacultyChange]);
+  }, [form, schedule, viewMode, isEditingCourse, hasFacultyChange, isLocked]);
 
   const update = (key) => (e) => setForm((s) => ({ ...s, [key]: e.target.value }));
 
@@ -638,6 +646,15 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
         <ModalHeader bg={headerBg} borderBottomWidth="1px">Edit Schedule</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
+          {isLocked && (
+            <Alert status="warning" mb={4}>
+              <AlertIcon />
+              <VStack align="start" spacing={0}>
+                <AlertTitle>Schedule is locked</AlertTitle>
+                <AlertDescription>Editing is disabled because this schedule is locked.</AlertDescription>
+              </VStack>
+            </Alert>
+          )}
           {schedule ? (
             <VStack align="stretch" spacing={4}>
               <HStack justify="space-between" align="center">
@@ -895,7 +912,7 @@ export default function EditScheduleModal({ isOpen, onClose, schedule, onSave, v
             <Button
               colorScheme="blue"
               onClick={handleSave}
-              isDisabled={!canSave || (preventSave && (viewMode !== 'examination') && (liveConflictGroups.length > 0))}
+              isDisabled={isLocked || !canSave || (preventSave && (viewMode !== 'examination') && (liveConflictGroups.length > 0))}
               isLoading={busy}
             >
               Save changes

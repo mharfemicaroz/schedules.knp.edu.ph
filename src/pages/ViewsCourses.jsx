@@ -197,7 +197,7 @@ export default function ViewsCourses() {
                 {isAdmin && !isPublic && (
                   <Td textAlign="right">
                     <HStack justify="end" spacing={1}>
-                      <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="ghost" onClick={() => { setSelected(c); setEditOpen(true); }} />
+                      <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="ghost" onClick={() => { setSelected(c); setEditOpen(true); }} isDisabled={(function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock)} />
                       <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => handleDelete(c.id)} />
                     </HStack>
                   </Td>

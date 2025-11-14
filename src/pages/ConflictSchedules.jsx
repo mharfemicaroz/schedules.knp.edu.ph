@@ -370,7 +370,7 @@ export default function ConflictSchedules() {
                             <Text as="span" fontSize="xs" color="gray.600">{c.code}/{c.section}</Text>
                             {isAdmin && (
                               <>
-                                <IconButton aria-label="Edit" icon={<FiEdit />} size="xs" variant="ghost" ml={1} onClick={() => { setSelected(c); editDisc.onOpen(); }} />
+                                <IconButton aria-label="Edit" icon={<FiEdit />} size="xs" variant="ghost" ml={1} onClick={() => { setSelected(c); editDisc.onOpen(); }} isDisabled={(function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock)} />
                                 <IconButton aria-label="Delete" icon={<FiTrash />} size="xs" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />
                               </>
                             )}
@@ -446,7 +446,7 @@ export default function ConflictSchedules() {
                         <WrapItem key={`${c.id}-${idx}`}>
                           <Badge variant="subtle" colorScheme="gray" px={2} py={1} rounded="md">
                             <Text as="span" fontSize="xs" color="gray.600">{c.code}/{c.section}</Text>
-                            <IconButton aria-label="Edit" icon={<FiEdit />} size="xs" variant="ghost" ml={1} onClick={() => { setSelected(c); editDisc.onOpen(); }} />
+                            <IconButton aria-label="Edit" icon={<FiEdit />} size="xs" variant="ghost" ml={1} onClick={() => { setSelected(c); editDisc.onOpen(); }} isDisabled={(function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock)} />
                             <IconButton aria-label="Delete" icon={<FiTrash />} size="xs" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />
                           </Badge>
                         </WrapItem>

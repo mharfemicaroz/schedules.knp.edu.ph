@@ -24,6 +24,7 @@ import AdminAcademicCalendar from './pages/AdminAcademicCalendar';
 import AdminGradesSubmission from './pages/AdminGradesSubmission';
 import AdminProspectus from './pages/AdminProspectus';
 import AdminSettings from './pages/AdminSettings';
+import CourseLoading from './pages/CourseLoading';
 import ShareVisualMap from './pages/ShareVisualMap';
 import ReportsFacultySummary from './pages/ReportsFacultySummary';
 import Unauthorized from './pages/Unauthorized';
@@ -43,15 +44,18 @@ import GlobalToaster from './components/GlobalToaster';
 function App() {
   const bg = useColorModeValue('gray.50', 'gray.900');
   const dispatch = useDispatch();
-  // const user = useSelector(s => s.auth.user);
+  const accessToken = useSelector(s => s.auth.accessToken);
 
   useEffect(() => {
-    dispatch(loadSettingsThunk());
+    // Only fetch settings when authenticated to avoid 401 pre-login
+    if (accessToken) {
+      dispatch(loadSettingsThunk());
+    }
     dispatch(loadAllSchedules());
     dispatch(loadAcademicCalendar());
     dispatch(loadHolidaysThunk(2025));
     // Per requirement: check role only on login (handled in loginThunk)
-  }, [dispatch]);
+  }, [dispatch, accessToken]);
   return (
         <Box bg={bg} minH="100vh">
           <Layout>
@@ -79,6 +83,7 @@ function App() {
               <Route path="/admin/blocks" element={<RequireAdmin><AdminBlockSettings /></RequireAdmin>} />
               <Route path="/admin/grades-submission" element={<RequireRole roles={['admin','manager','registrar']}><AdminGradesSubmission /></RequireRole>} />
               <Route path="/admin/v2/grades-submission" element={<RequireRole roles={['admin','manager','registrar']}><AdminGradesSubmission /></RequireRole>} />
+              <Route path="/admin/course-loading" element={<RequireRole roles={['admin','manager','registrar']}><CourseLoading /></RequireRole>} />
               <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
               <Route path="/admin/guest-logs" element={<RequireAdmin><AdminGuestLogs /></RequireAdmin>} />
               <Route path="/reports/faculty-summary" element={<RequireAuth><ReportsFacultySummary /></RequireAuth>} />

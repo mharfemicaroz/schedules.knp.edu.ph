@@ -243,7 +243,7 @@ export default function UnassignedSchedules() {
                 </SimpleGrid>
                 <HStack justify="flex-end" spacing={2}>
                   <Button size="sm" colorScheme="blue" onClick={()=>{ setSelected(r); assignDisc.onOpen(); }}>Assign</Button>
-                  <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="outline" onClick={() => { setSelected(r); editDisc.onOpen(); }} />
+                  <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="outline" onClick={() => { setSelected(r); editDisc.onOpen(); }} isDisabled={(function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(r.lock)} />
                   <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="outline" onClick={() => { setSelected(r); delDisc.onOpen(); }} />
                 </HStack>
               </VStack>
@@ -301,7 +301,7 @@ export default function UnassignedSchedules() {
                 <Td textAlign="right">
                   <HStack justify="end" spacing={1}>
                     <Button size="sm" colorScheme="blue" onClick={()=>{ setSelected(r); assignDisc.onOpen(); }}>Assign</Button>
-                    <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(r); editDisc.onOpen(); }} />
+                    <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(r); editDisc.onOpen(); }} isDisabled={(function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(r.lock)} />
                     <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => { setSelected(r); delDisc.onOpen(); }} />
                   </HStack>
                 </Td>
