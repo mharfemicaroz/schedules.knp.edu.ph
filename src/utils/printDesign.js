@@ -170,7 +170,7 @@ export function printContent(
         <div class='inst-lines'>
           <p class='inst-name'>Kolehiyo ng Pantukan</p>
           <p class='inst-office'>Office of the Vice President of Academic Affairs</p>
-          <p class='inst-app'>Course Schedules SY 2025-2026, 1st Semester</p>
+          <p class='inst-app'>Smart Academic Scheduler</p>
         </div>
       </div>
     </div>

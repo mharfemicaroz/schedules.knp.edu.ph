@@ -1,13 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Box, Heading, HStack, VStack, Button, Grid, GridItem, Input, Select, Text, Table, Thead, Tr, Th, Tbody, Td, useColorModeValue, IconButton } from '@chakra-ui/react';
-import { FiBookOpen, FiClock, FiTrendingUp, FiUsers, FiPrinter, FiEdit, FiTrash, FiShare2 } from 'react-icons/fi';
+import { Box, Heading, HStack, VStack, Button, Grid, GridItem, Input, Select, Text, Table, Thead, Tr, Th, Tbody, Td, useColorModeValue } from '@chakra-ui/react';
+import { FiBookOpen, FiClock, FiTrendingUp, FiUsers, FiPrinter, FiShare2 } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import StatCard from '../components/StatCard';
 import Pagination from '../components/Pagination';
 import ChartsCourses from '../components/ChartsCourses';
-import EditScheduleModal from '../components/EditScheduleModal';
-import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
+import { loadAllSchedules } from '../store/dataThunks';
 import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
 import { buildTable, printContent } from '../utils/printDesign';
@@ -33,7 +32,6 @@ export default function ViewsCourses() {
   const [sortKey, setSortKey] = useState('code'); // code | title | program | faculty | term | time
   const [sortDir, setSortDir] = useState('asc');
   const [selected, setSelected] = useState(null);
-  const [editOpen, setEditOpen] = useState(false);
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -114,21 +112,7 @@ export default function ViewsCourses() {
     printContent({ title: 'Courses', subtitle: 'Alphabetical view of courses', bodyHtml: table });
   };
 
-  async function handleSaveEdit(payload) {
-    if (!selected) return;
-    try {
-      await dispatch(updateScheduleThunk({ id: selected.id, changes: payload }));
-      setEditOpen(false);
-      setSelected(null);
-      dispatch(loadAllSchedules());
-    } catch {}
-  }
-  async function handleDelete(id) {
-    try {
-      await dispatch(deleteScheduleThunk(id));
-      dispatch(loadAllSchedules());
-    } catch {}
-  }
+  // Edit/Delete removed here; handled in Course Loading
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} />;
@@ -179,7 +163,6 @@ export default function ViewsCourses() {
               <Th onClick={()=>toggleSort('term')} cursor="pointer" userSelect="none">Term</Th>
               <Th onClick={()=>toggleSort('time')} cursor="pointer" userSelect="none">Time</Th>
               <Th>Room</Th>
-              {isAdmin && <Th textAlign="right">Actions</Th>}
             </Tr>
           </Thead>
           <Tbody>
@@ -194,14 +177,7 @@ export default function ViewsCourses() {
                 <Td>{c.term || '-'}</Td>
                 <Td>{c.schedule || c.time || '-'}</Td>
                 <Td>{c.room || '-'}</Td>
-                {isAdmin && !isPublic && (
-                  <Td textAlign="right">
-                    <HStack justify="end" spacing={1}>
-                      <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="ghost" onClick={() => { setSelected(c); setEditOpen(true); }} isDisabled={(function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock)} />
-                      <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => handleDelete(c.id)} />
-                    </HStack>
-                  </Td>
-                )}
+                {/* Actions removed: managed in Course Loading */}
               </Tr>
             ))}
           </Tbody>
@@ -214,13 +190,7 @@ export default function ViewsCourses() {
 
       <ChartsCourses courses={filtered} />
 
-      <EditScheduleModal
-        isOpen={editOpen}
-        onClose={() => { setEditOpen(false); setSelected(null); }}
-        schedule={selected}
-        onSave={handleSaveEdit}
-        viewMode={'regular'}
-      />
+      {/* Edit/Delete removed: handled in Course Loading */}
     </VStack>
   );
 }

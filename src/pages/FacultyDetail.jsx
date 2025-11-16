@@ -649,9 +649,7 @@ export default function FacultyDetail() {
           <Text color="gray.500" fontSize="sm" textAlign="center">
             This faculty has no {viewMode === 'examination' ? 'examination ' : ''}schedules yet.
           </Text>
-          {isAdmin && (
-            <Button colorScheme="blue" size="sm" onClick={assignDisc.onOpen}>Assign Schedules</Button>
-          )}
+          {/* Assign button removed: actions are managed in Course Loading */}
         </VStack>
       ) : termGroups.map(group => (
         <Box key={group.term}>
@@ -662,7 +660,7 @@ export default function FacultyDetail() {
             <Table size={{ base: 'sm', md: 'md' }}>
               <Thead>
                 <Tr>
-                  {(() => { const h = getTableHeaders(); if (isAdmin && !isPublic) h.push('Actions'); return h; })().map((header, index) => (
+                  {getTableHeaders().map((header, index) => (
                     <Th key={index}>{header}</Th>
                   ))}
                 </Tr>
@@ -689,15 +687,7 @@ export default function FacultyDetail() {
                           )}
                         </Td>
                       ))}
-                      {isAdmin && !isPublic && (
-                        <Td textAlign="right">
-                          <HStack justify="end" spacing={1}>
-                            <Button size="sm" colorScheme="blue" variant="solid" onClick={() => { setSelected(c); assignFacDisc.onOpen(); }}>Assign</Button>
-                            <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" colorScheme="yellow" variant="ghost" onClick={() => { setSelected(c); editDisc.onOpen(); }} isDisabled={(function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock)} />
-                            <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={() => { setSelected(c); delDisc.onOpen(); }} />
-                          </HStack>
-                        </Td>
-                      )}
+                {/* Actions column removed: managed in Course Loading */}
                     </Tr>
                   );
                 })}
@@ -710,32 +700,7 @@ export default function FacultyDetail() {
 
     </VStack>
     )}
-    <EditScheduleModal
-      isOpen={editDisc.isOpen}
-      onClose={() => { editDisc.onClose(); setSelected(null); }}
-      schedule={selected}
-      onSave={handleSaveEdit}
-      viewMode={viewMode}
-    />
-    {isAdmin && (
-      <AssignSchedulesModal isOpen={assignDisc.isOpen} onClose={assignDisc.onClose} currentFacultyName={f?.name} />
-    )}
-    {isAdmin && (
-      <AssignFacultyModal
-        isOpen={assignFacDisc.isOpen}
-        onClose={() => { assignFacDisc.onClose(); setSelected(null); }}
-        schedule={selected}
-        onAssign={async (fac) => {
-          if (!selected || !fac) return;
-          try {
-            await dispatch(updateScheduleThunk({ id: selected.id, changes: { facultyId: fac.id } }));
-            assignFacDisc.onClose();
-            setSelected(null);
-            dispatch(loadAllSchedules());
-          } catch {}
-        }}
-      />
-    )}
+    {/* Edit/Assign modals removed: handled in Course Loading */}
     <Modal isOpen={confDisc.isOpen} onClose={confDisc.onClose} size="4xl" isCentered>
       <ModalOverlay backdropFilter="blur(6px)" />
       <ModalContent>
@@ -769,20 +734,7 @@ export default function FacultyDetail() {
         </ModalFooter>
       </ModalContent>
     </Modal>
-    <AlertDialog isOpen={delDisc.isOpen} onClose={delDisc.onClose} leastDestructiveRef={cancelRef} isCentered>
-      <AlertDialogOverlay>
-        <AlertDialogContent>
-          <AlertDialogHeader>Delete schedule?</AlertDialogHeader>
-          <AlertDialogBody>
-            This action cannot be undone. Are you sure you want to delete <b>{selected?.code}</b> - {selected?.title}?
-          </AlertDialogBody>
-          <AlertDialogFooter>
-            <Button ref={cancelRef} onClick={delDisc.onClose} variant="ghost">Cancel</Button>
-            <Button colorScheme="red" onClick={confirmDelete} ml={3}>Delete</Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialogOverlay>
-    </AlertDialog>
+    {/* Delete dialog removed: handled in Course Loading */}
     </>
   );
 }

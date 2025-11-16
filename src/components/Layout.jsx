@@ -63,7 +63,7 @@ function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, 
     return s; // Summer or custom
   };
   const sem = formatSem(semRaw);
-  const headerLine = sy || sem ? `Course Schedules SY ${sy || '—'}, ${sem || '—'}` : 'Course Schedules';
+  const headerLine = 'Smart Academic Scheduler';
   return (
     <Flex
       as="header"
@@ -149,7 +149,7 @@ export default function Layout({ children }) {
     return s;
   };
   const sem2 = fmtSem2(sem2raw);
-  const sharedHeaderSecondary = sy2 || sem2 ? `Course Schedules SY ${sy2 || '—'}, ${sem2 || '—'}` : 'Shared View';
+  const sharedHeaderSecondary = sy2 || sem2 ? `Smart Academic Scheduler SY ${sy2 || '—'}, ${sem2 || '—'}` : 'Shared View';
   // Build current route string consistently
   const getCurrentRoute = React.useCallback(() => {
     try {

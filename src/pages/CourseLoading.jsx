@@ -101,6 +101,7 @@ function BlockList({ items, selectedId, onSelect, loading, onProgramChange }) {
     return arr.sort((a,b) => keyOf(a).localeCompare(keyOf(b)));
   }, [filtered]);
   return (
+    
     <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={bg} minH="calc(100vh - 210px)">
       <HStack spacing={2} flexWrap="wrap">
         <Select size="sm" placeholder="Program" value={prog} onChange={(e)=>{ const v=e.target.value; setProg(v); setYr(''); try { onProgramChange && onProgramChange(v); } catch {} }} maxW="180px">
@@ -561,6 +562,7 @@ export default function CourseLoading() {
   const settings = useSelector(selectSettings);
   const prospectus = useSelector(selectAllProspectus);
   const existing = useSelector(selectAllCourses);
+  const dataFaculties = useSelector(s => s.data.faculties);
   const authUser = useSelector(s => s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
   const canLoad = (role === 'admin' || role === 'manager' || role === 'registrar');
@@ -907,29 +909,93 @@ export default function CourseLoading() {
   const facCheckTimers = React.useRef(new Map());
   const fetchFacultySchedules = async (fac) => {
     if (!fac) return setFacultySchedules({ items: [], loading: false });
-    const name = fac.faculty || fac.name || fac.instructor || '';
-    if (!name) return setFacultySchedules({ items: [], loading: false });
     setFacultySchedules(prev => ({ ...prev, loading: true }));
     try {
       const sy = settingsLoad.school_year || '';
       const sem = settingsLoad.semester || '';
-      let url = `/instructor/${encodeURIComponent(name)}?_ts=${Date.now()}`;
-      if (sy) url += `&schoolyear=${encodeURIComponent(sy)}`;
-      if (sem) url += `&semester=${encodeURIComponent(sem)}`;
-      const res = await api.request(url);
-      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || []));
-      const termOrder = (t) => { const v=String(t||'').trim().toLowerCase(); if (v.startsWith('1')) return 1; if (v.startsWith('2')) return 2; if (v.startsWith('s')) return 3; return 9; };
+
+      const termOrder = (t) => {
+        const v = String(t || '').trim().toLowerCase();
+        if (v.startsWith('1')) return 1;
+        if (v.startsWith('2')) return 2;
+        if (v.startsWith('s')) return 3;
+        return 9;
+      };
       const parseKey = (r) => {
         const t = termOrder(r.term);
         const m = parseTimeBlockToMinutes(String(r.scheduleKey || r.schedule || r.time || '').trim());
         const start = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : (Number.isFinite(m.start) ? m.start : 99999);
         return [t, start, String(r.courseName || r.code || '').toLowerCase()];
       };
-      const sorted = (list || []).slice().sort((a,b) => {
+
+      let list = [];
+      // Fresh API fetch by facultyId if available
+      if (fac.id != null) {
+        try {
+          let url = `/?_ts=${Date.now()}&facultyId=${encodeURIComponent(fac.id)}`;
+          if (sy) url += `&schoolyear=${encodeURIComponent(sy)}`;
+          if (sem) url += `&semester=${encodeURIComponent(sem)}`;
+          const res = await api.request(url);
+          const items = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || []));
+          if (Array.isArray(items) && items.length) list = items;
+        } catch {}
+      }
+      // If still empty, fresh API by instructor name
+      if (!list.length) {
+        const name = fac.faculty || fac.name || fac.instructor || fac.full_name || '';
+        if (name) {
+          try {
+            let url = `/instructor/${encodeURIComponent(name)}?_ts=${Date.now()}`;
+            if (sy) url += `&schoolyear=${encodeURIComponent(sy)}`;
+            if (sem) url += `&semester=${encodeURIComponent(sem)}`;
+            const res = await api.request(url);
+            const items = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || []));
+            if (Array.isArray(items) && items.length) list = items;
+          } catch {}
+        }
+      }
+      // If still empty, try Redux data.faculties (same as FacultyDetail)
+      if (!list.length) {
+        try {
+          const normName = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const ref = fac?.id != null
+            ? (dataFaculties || []).find(x => String(x?.id) === String(fac.id))
+            : (dataFaculties || []).find(x => normName(x?.name || x?.faculty) === normName(fac?.name || fac?.faculty || fac?.instructor || fac?.full_name));
+          if (ref && Array.isArray(ref.courses)) list = ref.courses.slice();
+        } catch {}
+      }
+      // Last resort: derive from selectAllCourses by id or normalized name
+      if (!list.length) {
+        const norm = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const matchesId = fac?.id != null ? (allCourses || []).filter(s => String(s.facultyId ?? s.faculty_id ?? '') === String(fac.id)) : [];
+        let filtered = matchesId;
+        if (filtered.length === 0) {
+          const target = norm(fac.faculty || fac.name || fac.instructor || fac.full_name);
+          if (target) {
+            filtered = (allCourses || []).filter(s => {
+              const n = norm(s.facultyName || s.faculty || s.instructor || s.instructorName || s.full_name);
+              return !!n && n === target;
+            });
+          }
+        }
+        list = filtered;
+      }
+
+      // Optional SY/Semester filter for any source
+      if (list.length && (sy || sem)) {
+        list = list.filter(s => {
+          const syMatch = sy ? (String(s.sy || s.schoolyear || s.school_year || '').trim() === String(sy).trim()) : true;
+          const semMatch = sem ? (normalizeSem(s.sem || s.semester || s.term) === normalizeSem(sem)) : true;
+          return syMatch && semMatch;
+        });
+      }
+
+      const sorted = (list || []).slice().sort((a, b) => {
         const ka = parseKey(a), kb = parseKey(b);
-        for (let i=0;i<ka.length;i++){ if (ka[i]!==kb[i]) return ka[i]-kb[i]; }
+        for (let i = 0; i < ka.length; i++) { if (ka[i] !== kb[i]) return ka[i] - kb[i]; }
         return 0;
       });
+
       setFacultySchedules({ items: sorted, loading: false });
       setFacSelected(new Set());
       // Seed edit state for quick inline changes
@@ -2072,7 +2138,7 @@ export default function CourseLoading() {
   // --- render (unchanged) ---
   return (
     <VStack align="stretch" spacing={4}>
-      <HStack justify="space-between">
+      <HStack justify="space-between" align="center" position="sticky" top={0} zIndex={5} bg={panelBg} p={1} borderBottomWidth="1px" borderColor={border} rounded="md">
         <HStack>
           <Heading size="md">Course Loading</Heading>
           <HStack spacing={1} ml={3}>
@@ -2080,12 +2146,14 @@ export default function CourseLoading() {
             <Button size="sm" variant={viewMode==='faculty'?'solid':'ghost'} colorScheme="blue" onClick={()=>setViewMode('faculty')}>Faculty</Button>
           </HStack>
         </HStack>
-        <HStack>
-          <Badge colorScheme={readyToLoad ? 'green' : 'red'}>
-            Load SY {settingsLoad.school_year || '—'} / {settingsLoad.semester || '—'}
-          </Badge>
+        <HStack spacing={3}>
+          <Tooltip label="Current Schedules Load Defaults">
+            <Badge colorScheme={readyToLoad ? 'green' : 'red'}>
+              SY {settingsLoad.school_year || '—'} / {settingsLoad.semester || '—'}
+            </Badge>
+          </Tooltip>
           <Tooltip label={canLoad ? 'You can assign and save' : 'View-only: insufficient permissions'}>
-            <Badge>{canLoad ? 'Editable' : 'View-only'}</Badge>
+            <Badge colorScheme={canLoad ? 'blue' : 'gray'}>{canLoad ? 'Editable' : 'View-only'}</Badge>
           </Tooltip>
         </HStack>
       </HStack>
@@ -2093,15 +2161,27 @@ export default function CourseLoading() {
       <SimpleGrid columns={{ base: 1, lg: 5 }} gap={4} alignItems="start">
         <Box gridColumn={{ base: 'auto', lg: '1 / span 1' }} maxW={{ base: '100%', lg: '340px' }}>
           {viewMode === 'blocks' ? (
-            <BlockList
-              items={blocks}
-              selectedId={selectedBlock?.id}
-              onSelect={onSelectBlock}
-              loading={blocksLoading}
-              onProgramChange={()=>{ setSelectedBlock(null); setRows([]); setFreshCache([]); }}
-            />
+            <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg} position="sticky" top="64px" w="full">
+              <HStack justify="space-between" align="center">
+                <Heading size="sm">Blocks</Heading>
+                <Badge colorScheme="gray">{(blocks || []).length}</Badge>
+              </HStack>
+              <Box h="calc(100dvh - 240px)" overflowY="auto" w="full">
+                <BlockList
+                  items={blocks}
+                  selectedId={selectedBlock?.id}
+                  onSelect={onSelectBlock}
+                  loading={blocksLoading}
+                  onProgramChange={()=>{ setSelectedBlock(null); setRows([]); setFreshCache([]); }}
+                />
+              </Box>
+            </VStack>
           ) : (
             <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg} minH="calc(100vh - 210px)">
+              <HStack justify="space-between" align="center">
+                <Heading size="sm">Faculty</Heading>
+                <Badge colorScheme="gray">{(filteredFaculty||[]).length}</Badge>
+              </HStack>
               <HStack spacing={2} flexWrap="wrap">
                 <Input size="sm" placeholder="Search faculty" value={facQ} onChange={(e)=>setFacQ(e.target.value)} maxW="200px" />
                 <Select size="sm" placeholder="Department" value={facDeptFilter} onChange={(e)=>setFacDeptFilter(e.target.value)} maxW="180px">
