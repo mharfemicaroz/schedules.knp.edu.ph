@@ -948,39 +948,29 @@ export const buildFacultyScoreMap = ({
       kSlope = 8;
     const loadScore = 1 / (1 + Math.exp(kSlope * (loadRatio - rCenter)));
     const overloadScore = Math.max(0, 1 - (stat.overload || 0) / 6);
-    // Recency-weighted term experience: depth (exact) + breadth (related)
+    // Recency-weighted term experience: frequency in same term
+    // The intent is how often a faculty teaches in the same term (1st/2nd/Sem),
+    // not just the exact same course code. We weight recent years higher.
     const nowOrd = Number.isFinite(candTermOrder) ? candTermOrder : undefined;
-    let depth = 0;
-    const breadthSet = new Set();
+    let sumRecency = 0;
+    const uniqueCodes = new Set();
     rows.forEach((r) => {
-      const rOrd = termOrder(
-        String(r.term || "")
-          .trim()
-          .toLowerCase()
-      );
+      const rOrd = termOrder(String(r.term || "").trim().toLowerCase());
       const yearsBack =
         Number.isFinite(nowOrd) && Number.isFinite(rOrd)
           ? Math.max(0, Math.floor((nowOrd - rOrd) / 10))
           : 0;
       const rec = Math.pow(0.8, yearsBack);
-      const rCode = String(r.code || r.courseName || "")
+      sumRecency += rec;
+      const rCode = String(r.code || r.courseName || r.title || r.courseTitle || "")
         .trim()
         .toLowerCase();
-      const cCode = String(schedule?.code || schedule?.courseName || "")
-        .trim()
-        .toLowerCase();
-      if (rCode && cCode && rCode === cCode) depth += rec;
-      const rTags = extractTags(r);
-      const cTags = extractTags(schedule);
-      const rel = cosine(toVec(rTags), toVec(cTags));
-      if (rel >= 0.5)
-        breadthSet.add(
-          rCode || String(r.title || r.courseTitle || "").toLowerCase()
-        );
+      if (rCode) uniqueCodes.add(rCode);
     });
-    const expDepth = Math.min(1, depth / 6);
-    const expBreadth = Math.min(1, breadthSet.size / 8);
-    const expScore = 0.7 * expDepth + 0.3 * expBreadth;
+    // Normalize: ~6 recent loads in same term saturates depth, variety of ~6 codes saturates breadth
+    const expDepth = Math.min(1, sumRecency / 6);
+    const expBreadth = Math.min(1, uniqueCodes.size / 6);
+    const expScore = Math.min(1, 0.85 * expDepth + 0.15 * expBreadth);
     // Employment fairness: reduce slightly when overloaded
     if (loadRatio > 1) {
       empScore = Math.max(
