@@ -981,7 +981,7 @@ const scoreOf = useMemo(
                         <Text fontSize="sm" fontWeight="600">{r.key}</Text>
                         <Text fontSize="sm">{Number(r.val ?? 0).toFixed(2)}</Text>
                       </HStack>
-                      <Progress value={Math.max(0, Math.min(100, Number(r.val ?? 0) * 10))} size="sm" colorScheme="purple" borderRadius="md" />
+                      <Progress value={Math.max(0, Math.min(100, Number(r.val ?? 0) * 100))} size="sm" colorScheme="purple" borderRadius="md" />
                     </Box>
                   ));
                 })()}
