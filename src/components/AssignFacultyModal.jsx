@@ -3,6 +3,7 @@ import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, Modal
 import { FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
+import { selectSettings } from '../store/settingsSlice';
 import { selectAllFaculty, selectFacultyFilterOptions } from '../store/facultySlice';
 import { loadFacultiesThunk } from '../store/facultyThunks';
 import { buildConflicts, buildCrossFacultyOverlaps, parseF2FDays, parseTimeBlockToMinutes } from '../utils/conflicts';
@@ -104,6 +105,7 @@ function isEligibleAssignment(schedule, faculty, indexes) {
 export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign, schoolyear, semester }) {
   const dispatch = useDispatch();
   const allCourses = useSelector(selectAllCourses);
+  const settings = useSelector(selectSettings);
   const faculties = useSelector(selectAllFaculty);
   const opts = useSelector(selectFacultyFilterOptions);
   const loadingFac = useSelector(s => s.faculty.loading);
@@ -135,12 +137,12 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
   };
   const scopedCourses = useMemo(() => {
     let list = Array.isArray(allCourses) ? allCourses : [];
-    const sy = String(schoolyear || '').trim();
-    const sem = normalizeSem(semester);
+    const sy = String(schoolyear ?? (settings?.schedulesLoad?.school_year || '')).trim();
+    const sem = normalizeSem(semester ?? (settings?.schedulesLoad?.semester || ''));
     if (sy) list = list.filter(c => String(c.schoolyear || c.schoolYear || c.school_year || '') === sy);
     if (sem) list = list.filter(c => normalizeSem(c.semester || c.term || c.sem || '') === sem);
     return list;
-  }, [allCourses, schoolyear, semester]);
+  }, [allCourses, schoolyear, semester, settings]);
 
   // const stats = useFacultyStats(faculties, scopedCourses);
   // const indexes = useIndexes(scopedCourses);

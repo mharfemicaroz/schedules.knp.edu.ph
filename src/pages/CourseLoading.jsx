@@ -1,7 +1,7 @@
 // full component file - drop in place of your previous CourseLoading component
 import React from 'react';
 import {
-  Box, HStack, VStack, Heading, Text, Input, IconButton, Button, Select, Divider,
+  Box, HStack, VStack, Stack, Heading, Text, Input, IconButton, Button, Select, Divider,
   useColorModeValue, Spinner, Badge, Tag, Wrap, WrapItem, useToast, Checkbox,
   SimpleGrid, Tooltip,
   AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
@@ -144,281 +144,6 @@ function BlockList({ items, selectedId, onSelect, loading, onProgramChange }) {
   );
 }
 
-// function AssignmentRow({ row, faculties, schedulesSource, allCourses, blockCode, disabled, onChange, onToggle, onRequestLockChange, onRequestConflictInfo, onRequestSuggest, onRequestDelete, onRequestAssign, onRequestResolve, onRequestAddToSwap }) {
-//   const timeOpts = getTimeOptions();
-//   const dayOpts = ['MON-FRI','Mon','Tue','Wed','Thu','Fri','Sat','Sun','MWF','TTH','TBA'];
-//   const semOpts = ['1st','2nd','Sem'];
-//   const rowBorder = useColorModeValue('gray.100','gray.700');
-//   const mutedText = useColorModeValue('gray.600','gray.300');
-//   const isLocked = !!row?._locked || (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(row?.lock);
-//   const hasDoubleBooked = Array.isArray(row?._conflictDetails) && row._conflictDetails.some(d => String(d?.reason || '').toLowerCase().includes('double-booked: same faculty'));
-//   const normTerm = (v) => {
-//     const s = String(v || '').trim().toLowerCase();
-//     if (s.startsWith('1')) return '1st'; if (s.startsWith('2')) return '2nd'; if (s.startsWith('s')) return 'Sem'; return String(v||'');
-//   };
-//   const timeKey = (t) => normalizeTimeBlock(t || '')?.key || String(t||'').trim();
-//   const sectionOf = (s) => String(s?.section ?? s?.blockCode ?? '').trim().toLowerCase();
-//   const facultyKey = (s) => (s.facultyId != null ? `id:${s.facultyId}` : `nm:${String(s.instructor || s.faculty || '').toLowerCase().replace(/[^a-z0-9]/g,'')}`);
-//   const currFacKey = (row._facultyId != null ? `id:${row._facultyId}` : `nm:${String(row._faculty || '').toLowerCase().replace(/[^a-z0-9]/g,'')}`);
-//   const eligibleOptions = React.useMemo(() => {
-//     // If term/time not chosen yet, show full list
-//     if (!row?._term || !row?._time) return faculties || [];
-//     const sect = String(blockCode || '').trim().toLowerCase();
-//     const tKey = timeKey(row._time);
-//     const term = normTerm(row._term);
-//     const busy = new Set();
-//     for (const s of (schedulesSource || [])) {
-//       if (row._existingId && String(s.id) === String(row._existingId)) continue; // skip same row
-//       if (normTerm(s.term) !== term) continue;
-//       const sSect = sectionOf(s);
-//       if (sSect !== sect) continue; // we only constrain within same block
-//       const sKey = timeKey(s.schedule || s.time || '');
-//       if (!sKey || !tKey) continue;
-//       // consider exact same slot or overlapping ranges
-//       if (sKey === tKey) busy.add(facultyKey(s));
-//       else {
-//         const a = normalizeTimeBlock(sKey); const b = normalizeTimeBlock(tKey);
-//         if (a && b && Number.isFinite(a.start) && Number.isFinite(a.end) && Number.isFinite(b.start) && Number.isFinite(b.end)) {
-//           if (Math.max(a.start, b.start) < Math.min(a.end, b.end)) busy.add(facultyKey(s));
-//         }
-//       }
-//     }
-//     // Filter base list by excluding busy; always include current selection to avoid dropping it visually
-//     const base = faculties || [];
-//     const currentInList = base.find(o => (o.id != null ? `id:${o.id}` : `nm:${String(o.label||'').toLowerCase().replace(/[^a-z0-9]/g,'')}`) === currFacKey);
-//     const filtered = base.filter(o => {
-//       const key = (o.id != null ? `id:${o.id}` : `nm:${String(o.label||'').toLowerCase().replace(/[^a-z0-9]/g,'')}`);
-//       if (key === currFacKey) return true; // keep current selection even if busy
-//       return !busy.has(key);
-//     });
-//     // Compute scores aligned with AssignFacultyModal main factors (approximation)
-//     const seededRand = (seedStr) => {
-//       let h = 1779033703 ^ String(seedStr||'').length;
-//       for (let i=0;i<String(seedStr||'').length;i++) {
-//         h = Math.imul(h ^ String(seedStr).charCodeAt(i), 3432918353);
-//         h = (h << 13) | (h >>> 19);
-//       }
-//       h = Math.imul(h ^ (h >>> 16), 2246822507);
-//       h = Math.imul(h ^ (h >>> 13), 3266489909);
-//       h ^= h >>> 16;
-//       const t = h >>> 0;
-//       let x = t >>> 0;
-//       x = (x + 0x6D2B79F5) >>> 0;
-//       let r = Math.imul(x ^ (x >>> 15), 1 | x);
-//       r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
-//       return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-//     };
-//     const program = String(row.programcode || row.program || '').toLowerCase();
-//     const deptTarget = String(row.dept || '').toLowerCase();
-//     const statsByFac = new Map();
-//     const bandOf = (mid) => (Number.isFinite(mid) && mid < 12*60) ? 'AM' : (Number.isFinite(mid) && mid >= 17*60 ? 'EVE' : 'PM');
-//     for (const s of (schedulesSource || [])) {
-//       const key = facultyKey(s);
-//       if (!key) continue;
-//       const st = statsByFac.get(key) || { units: 0, courses: 0, byProgram: 0, timeMids: [], am:0, pm:0, eve:0 };
-//       st.units += Number(s.unit || 0) || 0;
-//       st.courses += 1;
-//       const progS = String(s.programcode || s.program || '').toLowerCase();
-//       if (progS && program && progS === program) st.byProgram += 1;
-//       const tStr = String(s.schedule || s.time || '').trim();
-//       const tr = parseTimeBlockToMinutes(tStr);
-//       if (Number.isFinite(tr.start) && Number.isFinite(tr.end)) {
-//         const mid = (tr.start + tr.end) / 2;
-//         st.timeMids.push(mid);
-//         const b = bandOf(mid);
-//         if (b==='AM') st.am++; else if (b==='PM') st.pm++; else st.eve++;
-//       }
-//       statsByFac.set(key, st);
-//     }
-//     // Helpers copied from AssignFacultyModal
-//     const tok = (s) => String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/).filter(Boolean);
-//     const normalizeTight = (s) => String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
-//     const simRatio = (a, b) => {
-//       a=String(a||''); b=String(b||''); if (!a && !b) return 1; if (!a||!b) return 0; const m=a.length, n=b.length; if (!m||!n) return 1; const dp=Array.from({length:m+1},()=>new Array(n+1).fill(0)); for(let i=0;i<=m;i++)dp[i][0]=i; for(let j=0;j<=n;j++)dp[0][j]=j; for(let i=1;i<=m;i++){ for(let j=1;j<=n;j++){ const cost=a.charCodeAt(i-1)===b.charCodeAt(j-1)?0:1; dp[i][j]=Math.min(dp[i-1][j]+1, dp[i][j-1]+1, dp[i-1][j-1]+cost); } } const d=dp[m][n]; return Math.max(0,1 - d/Math.max(m,n)); };
-//     const dice2Gram = (a,b) => { a=normalizeTight(a); b=normalizeTight(b); if (a===b) return 1; if (a.length<2||b.length<2) return simRatio(a,b); const grams=s=>{const arr=[]; for(let i=0;i<s.length-1;i++)arr.push(s.slice(i,i+2)); return arr;}; const aa=grams(a), bb=grams(b), set=new Set(aa); let inter=0; for(const g of bb) if(set.has(g)) inter++; return (2*inter)/(aa.length+bb.length); };
-//     const tokenFuzzyBestRatio = (candTokens, poolTokens) => {
-//       let best=0; for(const t of candTokens){ for(const p of poolTokens){ const r=simRatio(t,p); if (r>best) best=r; if (best>=1) return 1; } } return best; };
-
-//     const scored = filtered.map(o => {
-//       const key = (o.id != null ? `id:${o.id}` : `nm:${String(o.label||'').toLowerCase().replace(/[^a-z0-9]/g,'')}`);
-//       const st = statsByFac.get(key) || { units: 0, courses: 0, byProgram: 0, timeMids: [], am:0, pm:0, eve:0 };
-//       const release = Number(o.loadReleaseUnits || 0) || 0;
-//       const baseline = Math.max(0, 24 - release);
-//       const overload = Math.max(0, st.units - baseline);
-//       // Employment
-//       const emp = String(o.employment || '').toLowerCase();
-//       const empScore = emp.includes('full') ? 1 : emp.includes('part') ? 0.6 : 0.5;
-//       // Degree parsing (heuristic)
-//       const nameLabel = String(o.label || o.name || o.faculty || '').toUpperCase();
-//       const tokens = nameLabel.replace(/[^A-Z0-9\s\.]/g,' ').split(/[\s,]+/).filter(Boolean).map(t=>t.replace(/\.+/g,''));
-//       const docSet = new Set(['DR','PHD','PH.D','DPA','EDD']);
-//       const masSet = new Set(['MS','MA','MBA','MSC','M.SC','M.ED']);
-//       const licSet = new Set(['RN','LPT','LET','ENGR','ARCH','CPA']);
-//       let nDoc=0,nMas=0,nLic=0,nAtty=0,nCpa=0,nEng=0,nArx=0;
-//       tokens.forEach(tt=>{ const u=tt.toUpperCase(); if(docSet.has(u)) nDoc++; if(masSet.has(u)) nMas++; if(licSet.has(u)) nLic++; if(u==='ATTY'||u==='JD') nAtty++; if(u==='CPA') nCpa++; if(u==='ENGR') nEng++; if(u==='ARCH') nArx++; });
-//       let degreeScore = 0.4 + Math.min(0.9, nDoc*0.6) + (nAtty>0?0.5:0) + (nCpa>0?0.45:0) + Math.min(0.5, nMas*0.25) + Math.min(0.36, nLic*0.12) + Math.min(0.3, (nEng>0?0.15:0) + (nArx>0?0.15:0));
-//       degreeScore = Math.max(0, Math.min(1, degreeScore));
-//       // Time/session preference
-//       const candTr = parseTimeBlockToMinutes(String(row._time || '').trim());
-//       const candMid = (Number.isFinite(candTr.start) && Number.isFinite(candTr.end)) ? (candTr.start + candTr.end)/2 : NaN;
-//       let nearest=0.5, kdeBest=0.5, probBest=0.5, sessionMatch=0.5;
-//       const candBand = Number.isFinite(candMid)?bandOf(candMid):'AM';
-//       const totalSess = st.am + st.pm + st.eve;
-//       if (totalSess > 0) {
-//         const cnt = candBand==='AM'?st.am:(candBand==='PM'?st.pm:st.eve);
-//         sessionMatch = cnt / totalSess;
-//       }
-//       if (Number.isFinite(candMid) && st.timeMids.length) {
-//         const diffs = st.timeMids.map(m=>Math.abs(m-candMid));
-//         const minDiff = Math.min(...diffs);
-//         nearest = Math.max(0, 1 - (minDiff/240));
-//         // simple KDE approx against points
-//         let num=0,den=0; const sigma=60; st.timeMids.forEach(m=>{ const d=(candMid-m); const w=Math.exp(-(d*d)/(2*sigma*sigma)); num+=w; den+=1; });
-//         kdeBest = den>0 ? Math.max(0, Math.min(1, num/den)) : 0.5;
-//         // crude probability proxy by band
-//         probBest = sessionMatch;
-//       }
-//       // Build rowsAll similar to modal using global courses for this faculty
-//       const rowsAll = (allCourses||[]).filter(s=>{
-//         const k = (s.facultyId != null) ? `id:${s.facultyId}` : `nm:${String(s.faculty || s.instructor || s.facultyName || '').toLowerCase().replace(/[^a-z0-9]/g,'')}`;
-//         return k === key;
-//       });
-//       // Course match
-//       const candCode = String(row.course_name || row.courseName || row.code || '');
-//       const candTitle = String(row.course_title || row.courseTitle || row.title || '');
-//       const candCodeTokens = tok(candCode);
-//       const candTitleTokens = tok(candTitle);
-//       const candTokens = Array.from(new Set(candCodeTokens.concat(candTitleTokens)));
-//       const codeHasDigits = /\d/.test(candCode);
-//       let matchScore = 0.5;
-//       if (candTokens.length) {
-//         let best = 0;
-//         for (const r of rowsAll) {
-//           const rCodeTokens = tok(r.code || r.courseName || '');
-//           const rTitleTokens = tok(r.title || r.courseTitle || '');
-//           const rTokensAll = Array.from(new Set(rCodeTokens.concat(rTitleTokens)));
-//           if (!rTokensAll.length) continue;
-//           const rCodeJoined = normalizeTight(String(r.code || r.courseName || ''));
-//           const rTitleJoined = normalizeTight(String(r.title || r.courseTitle || ''));
-//           const rJoined = normalizeTight(`${String(r.code || r.courseName || '')} ${String(r.title || r.courseTitle || '')}`);
-//           const candCodeJoined = normalizeTight(candCode);
-//           if (candCodeJoined && rCodeJoined && candCodeJoined === rCodeJoined) { best = 1; break; }
-//           const codeTokenMatch = tokenFuzzyBestRatio(candCodeTokens, rCodeTokens.length ? rCodeTokens : rTokensAll);
-//           const titleTokenMatch = tokenFuzzyBestRatio(candTitleTokens, rTitleTokens.length ? rTitleTokens : rTokensAll);
-//           const tokenCodeW = codeHasDigits ? 0.88 : 0.82;
-//           const tokenTitleW = 1 - tokenCodeW;
-//           const tokenMatch = tokenCodeW * codeTokenMatch + tokenTitleW * titleTokenMatch;
-//           const codeDice = dice2Gram(candCodeJoined, rCodeJoined);
-//           const titleDice = dice2Gram(normalizeTight(candTitle), rTitleJoined);
-//           const charMatch = 0.8 * codeDice + 0.2 * titleDice;
-//           let combo = 0.75 * tokenMatch + 0.25 * charMatch;
-//           const codeNear = Math.max(simRatio(candCodeJoined, rCodeJoined), codeDice);
-//           if (codeNear >= 0.94) combo = Math.max(combo, 1.0);
-//           if (combo > best) best = combo;
-//           if (best >= 1) break;
-//         }
-//         const weakThresh = 0.5;
-//         if (best <= weakThresh) matchScore = 0.5; else { const scaled = (best - weakThresh) / (1 - weakThresh); matchScore = 0.5 + 0.5 * Math.max(0, Math.min(1, scaled)); }
-//       }
-//       const deptScore = (deptTarget && String(o.dept||'').toLowerCase()===deptTarget) ? 1 : 0;
-//       const progScore = Math.min(1, (st.byProgram || 0) / 5);
-//       const loadScore = Math.max(0, 1 - (st.units || 0) / Math.max(1, baseline || 24));
-//       const overScore = Math.max(0, 1 - (overload / 6));
-//       const timeScore = 0.4 * kdeBest + 0.25 * probBest + 0.2 * nearest + 0.15 * sessionMatch;
-//       const wDept=0.15, wEmp=0.05, wDeg=0.22, wTime=0.18, wLoad=0.10, wOver=0.04, wExp=0.08, wMatch=0.18;
-//       // Basic expScore approximation: number of rows seen in current set
-//       const rowsCount = (schedulesSource||[]).filter(s=>facultyKey(s)===key).length;
-//       const expScore = Math.min(1, rowsCount/8);
-//       const score01 = wDept*deptScore + wEmp*empScore + wDeg*degreeScore + wTime*timeScore + wLoad*loadScore + wOver*overScore + wExp*expScore + wMatch*matchScore;
-//       const sId = String(row?.id || row?._existingId || '')+'|'+String(row?.course_name||row?.courseName||'')+'|'+String(blockCode||'')+'|'+String(row?._term||'');
-//       const fId = (o.id != null ? String(o.id) : String(o.label||''));
-//       const jitter = (seededRand(sId+'|'+fId) * 0.06) - 0.03;
-//       const score = Math.max(1, Math.min(10, (score01 + jitter) * 10));
-//       return { ...o, score: Number(score.toFixed(2)), parts: { dept: deptScore, employment: empScore, degree: degreeScore, time: timeScore, load: loadScore, overload: overScore, termExp: expScore, match: matchScore } };
-//     });
-//     // Sort by score desc then label
-//     scored.sort((a,b) => {
-//       const da = (typeof a.score === 'number') ? a.score : -1;
-//       const db = (typeof b.score === 'number') ? b.score : -1;
-//       if (db !== da) return db - da;
-//       return String(a.label||'').localeCompare(String(b.label||''));
-//     });
-//     return scored;
-//   }, [faculties, schedulesSource, blockCode, row?._term, row?._time, row?._existingId, row?._facultyId, row?._faculty]);
-//   return (
-//     <HStack spacing={2} py={2} borderBottomWidth="1px" borderColor={rowBorder}>
-//       <Checkbox isChecked={!!row._selected} onChange={(e)=>onToggle(e.target.checked)} isDisabled={disabled} />
-//       <Box flex="1 1 auto">
-//         <Text fontWeight="600">{row.course_name || row.courseName} <Text as="span" fontWeight="400" color={mutedText}>({row.course_title || row.courseTitle})</Text></Text>
-//         <HStack spacing={3} fontSize="sm" color={mutedText}>
-//           <Text>Units: {row.unit ?? '-'}</Text>
-//           <Text>Year: {row.yearlevel ?? '-'}</Text>
-//           <Text>Sem: {row.semester ?? '-'}</Text>
-//         </HStack>
-//       </Box>
-//       {row._existingId && (
-//         row._locked ? (
-//           <Tooltip label="Locked. Click to unlock."><IconButton aria-label="Unlock" icon={<FiLock />} size="sm" colorScheme="red" variant="ghost" onClick={()=>onRequestLockChange(false)} /></Tooltip>
-//         ) : (
-//           <Tooltip label="Unlocked. Click to lock."><IconButton aria-label="Lock" icon={<FiLock />} size="sm" variant="ghost" onClick={()=>onRequestLockChange(true)} /></Tooltip>
-//         )
-//       )}
-//       <Select size="sm" value={row._term || ''} onChange={(e)=>onChange({ _term: e.target.value })} isDisabled={disabled || row._locked} maxW="130px">
-//         <option value="">Term</option>
-//         {semOpts.map(s => <option key={s} value={s}>{s}</option>)}
-//       </Select>
-//       <Select size="sm" value={row._day || 'MON-FRI'} onChange={(e)=>onChange({ _day: e.target.value })} isDisabled={disabled || row._locked} maxW="140px">
-//         {dayOpts.map(d => <option key={d} value={d}>{d}</option>)}
-//       </Select>
-//       <Select size="sm" value={row._time || ''} onChange={(e)=>onChange({ _time: e.target.value })} isDisabled={disabled || row._locked} maxW="160px">
-//         {timeOpts.map(t => <option key={t} value={t}>{t || 'Time'}</option>)}
-//       </Select>
-//       <Box minW="220px" maxW="260px">
-//         <FacultySelect
-//           value={row._faculty || ''}
-//           onChange={(name)=>onChange({ _faculty: name })}
-//           onChangeId={(fid)=>onChange({ _facultyId: fid })}
-//           options={eligibleOptions}
-//           allowClear
-//           disabled={disabled || row._locked}
-//           placeholder="Faculty"
-//         />
-//       </Box>
-//       <HStack spacing={1}>
-//         {row._checking ? (
-//           <HStack spacing={1}><Spinner size="xs" /><Text fontSize="xs" color={mutedText}>Checking...</Text></HStack>
-//         ) : (
-//           <Badge colorScheme={row._status === 'Assigned' ? 'green' : (row._status === 'Conflict' ? 'red' : 'gray')}>{row._status || 'Unassigned'}</Badge>
-//         )}
-//         {row._status === 'Conflict' && (
-//           <>
-//             <Tooltip label="Explain conflict"><IconButton aria-label="Conflict details" icon={<FiInfo />} size="xs" variant="ghost" onClick={onRequestConflictInfo} /></Tooltip>
-//             <Tooltip label="Suggestions"><IconButton aria-label="Suggestions" icon={<FiHelpCircle />} size="xs" variant="ghost" onClick={onRequestSuggest} /></Tooltip>
-//             {!isLocked && hasDoubleBooked && (
-//               <Tooltip label="Resolve by replacing conflicting schedule">
-//                 <Button size="xs" colorScheme="purple" variant="solid" onClick={onRequestResolve}>Resolve</Button>
-//               </Tooltip>
-//             )}
-//           </>
-//         )}
-//         {!isLocked && row._existingId && (
-//           <Tooltip label="Add to Swap">
-//             <IconButton aria-label="Add to Swap" icon={<FiRefreshCw />} size="xs" variant="ghost" onClick={onRequestAddToSwap} />
-//           </Tooltip>
-//         )}
-//         <Tooltip label={isLocked ? 'Locked. Unlock to assign.' : 'Assign faculty (scored)'}>
-//           <IconButton aria-label="Assign faculty" icon={<FiUserPlus />} size="sm" colorScheme="blue" variant="ghost" onClick={onRequestAssign} isDisabled={disabled || isLocked} />
-//         </Tooltip>
-//         {row._existingId && (
-//           <Tooltip label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}>
-//             <IconButton aria-label="Delete assignment" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={onRequestDelete} isDisabled={disabled || isLocked} />
-//           </Tooltip>
-//         )}
-//       </HStack>
-//     </HStack>
-//   );
-// }
-
 // --- main component ---
 
 function AssignmentRow({
@@ -426,6 +151,7 @@ function AssignmentRow({
   faculties,
   schedulesSource,
   allCourses,
+  statsCourses,
   blockCode,
   disabled,
   onChange,
@@ -486,8 +212,8 @@ function AssignmentRow({
   );
 
   const stats = React.useMemo(
-    () => buildFacultyStats(faculties || [], allCourses || []),
-    [faculties, allCourses]
+    () => buildFacultyStats(faculties || [], statsCourses || allCourses || []),
+    [faculties, statsCourses, allCourses]
   );
 
   const scheduleForScoring = React.useMemo(
@@ -874,9 +600,17 @@ export default function CourseLoading() {
   const [resolveRowIndex, setResolveRowIndex] = React.useState(null);
   const [resolveConflictId, setResolveConflictId] = React.useState(null);
   const [resolveLabel, setResolveLabel] = React.useState('');
+  // Faculty-view resolve dialog
+  const [facResolveOpen, setFacResolveOpen] = React.useState(false);
+  const [facResolveBusy, setFacResolveBusy] = React.useState(false);
+  const [facResolveIndex, setFacResolveIndex] = React.useState(null);
+  const [facResolveConflictId, setFacResolveConflictId] = React.useState(null);
+  const [facResolveLabel, setFacResolveLabel] = React.useState('');
   // Swap tray selections (persist across block/program changes)
   const [swapA, setSwapA] = React.useState(null);
   const [swapB, setSwapB] = React.useState(null);
+
+  // Shared indexes/stats for faculty-view scoring (mirrors block view engine)
 
   React.useEffect(() => { dispatch(loadBlocksThunk({})); }, [dispatch]);
   React.useEffect(() => { dispatch(loadFacultiesThunk({})); }, [dispatch]);
@@ -886,22 +620,80 @@ export default function CourseLoading() {
       try {
         const res = await api.getFaculties({});
         const data = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : (res?.items || []);
-        const opts = (data || []).map(f => ({
+        // Build maps from Redux full faculty list for enrichment
+        const byId = new Map();
+        const byName = new Map();
+        const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        (facultyAll || []).forEach(ff => {
+          if (ff?.id != null) byId.set(String(ff.id), ff);
+          const nm = ff?.name || ff?.faculty || ff?.full_name;
+          if (nm) byName.set(norm(nm), ff);
+        });
+        const enrich = (base) => {
+          const out = { ...base };
+          const src = (base.id != null && byId.get(String(base.id))) || byName.get(norm(base.label));
+          if (src) {
+            out.name = src.name || src.faculty || src.full_name || out.label;
+            out.faculty = src.faculty || undefined;
+            out.full_name = src.full_name || undefined;
+            out.credentials = src.credentials || src.credential || undefined;
+            out.degree = src.degree || undefined;
+            out.degrees = src.degrees || undefined;
+            out.qualification = src.qualification || undefined;
+            out.qualifications = src.qualifications || undefined;
+            out.title = src.title || undefined;
+            out.designation = src.designation || undefined;
+            out.rank = src.rank || undefined;
+            out.facultyProfile = src.facultyProfile || undefined;
+            out.dept = out.dept || src.dept || src.department || '';
+            out.employment = out.employment || src.employment || '';
+            out.loadReleaseUnits = out.loadReleaseUnits ?? (src.load_release_units ?? src.loadReleaseUnits ?? null);
+          }
+          return out;
+        };
+        const optsRaw = (data || []).map(f => ({
           id: f.id,
-          label: f.faculty || f.name || String(f.id),
-          value: f.faculty || f.name || String(f.id),
+          label: f.faculty || f.name || f.full_name || String(f.id),
+          value: f.faculty || f.name || f.full_name || String(f.id),
           dept: f.dept || f.department || '',
           employment: f.employment || '',
           loadReleaseUnits: f.load_release_units ?? f.loadReleaseUnits ?? null,
+          // pass-through known fields if API provides them
+          name: f.name || f.faculty || f.full_name,
+          faculty: f.faculty,
+          full_name: f.full_name,
+          credentials: f.credentials || f.credential,
+          degree: f.degree,
+          degrees: f.degrees,
+          qualification: f.qualification,
+          qualifications: f.qualifications,
+          title: f.title,
+          designation: f.designation,
+          rank: f.rank,
+          facultyProfile: f.facultyProfile,
         }));
+        const opts = optsRaw.map(enrich);
         setFacOptions(opts);
       } catch (e) {
         setFacOptions([]);
       }
     })();
-  }, []);
+  }, [facultyAll]);
 
   const settingsLoad = settings?.schedulesLoad || { school_year: '', semester: '' };
+
+  // Limit load/overload scoring to current load SY/Sem defaults
+  const scopedCourses = React.useMemo(() => {
+    const list = Array.isArray(existing) ? existing : [];
+    const sy = String(settingsLoad?.school_year || '').trim();
+    const sem = normalizeSem(settingsLoad?.semester || '');
+    let out = list;
+    if (sy) out = out.filter(c => String(c.schoolyear || c.schoolYear || c.school_year || '') === sy);
+    if (sem) out = out.filter(c => normalizeSem(c.semester || c.term || c.sem || '') === sem);
+    return out;
+  }, [existing, settingsLoad]);
+  const facIndexesAllFull = React.useMemo(() => buildIndexes(existing || []), [existing]);
+  const facStatsScoped = React.useMemo(() => buildFacultyStats(facOptions || [], scopedCourses || []), [facOptions, scopedCourses]);
 
   // Helper: reload currently selected block using the same path as the Reload button
   const reloadCurrentBlock = async () => {
@@ -1854,6 +1646,101 @@ export default function CourseLoading() {
     setSwapA(entry);
   };
 
+  // Faculty-view: add to swap using current item state
+  const addFacultyItemToSwap = (idx) => {
+    const c = facultySchedules.items[idx]; if (!c) return;
+    const e = facEdits[c.id] || {};
+    const locked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||c.lock||c.is_locked||'').toLowerCase(); return s==='yes'||s==='true'||s==='1';})();
+    if (!c.id) { toast({ title: 'Only existing schedules', description: 'Save a schedule before adding to swap.', status: 'info' }); return; }
+    if (locked) { toast({ title: 'Locked schedule', description: 'Unlock before swapping.', status: 'warning' }); return; }
+    const proxy = {
+      _existingId: c.id,
+      _locked: locked,
+      _faculty: e.faculty || c.faculty || c.instructor || '',
+      _day: c.day || 'MON-FRI',
+      _time: e.time || c.time || c.schedule || '',
+      course_name: c.code || c.courseName || '',
+      courseTitle: c.title || c.courseTitle || '',
+      blockCode: c.blockCode || c.section || '',
+      section: c.section || c.blockCode || ''
+    };
+    addToSwap(proxy);
+  };
+
+  // Faculty-view: resolve conflicting old schedule and keep this edit
+  const openFacultyResolve = async (idx) => {
+    const c = facultySchedules.items[idx]; if (!c) return;
+    const e = facEdits[c.id] || {};
+    const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||c.lock||c.is_locked||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })();
+    if (isLocked) { toast({ title: 'Locked schedule', description: 'Unlock the schedule before resolving.', status: 'warning' }); return; }
+    let details = Array.isArray(e._details) ? e._details : [];
+    let target = details.find(d => String(d?.reason||'').toLowerCase().includes('double-booked: same faculty'));
+    if (!target) {
+      try {
+        const payload = {
+          term: e.term || c.term,
+          time: e.time || c.time || c.schedule,
+          faculty: e.faculty || c.faculty || c.instructor,
+          facultyId: e.facultyId || c.facultyId || c.faculty_id || null,
+          schoolyear: settingsLoad.school_year || undefined,
+          semester: settingsLoad.semester || undefined,
+          blockCode: c.blockCode || c.section || '',
+          courseName: c.courseName || c.code || ''
+        };
+        const res = await api.request(`/${encodeURIComponent(c.id)}/check`, { method: 'POST', body: JSON.stringify(payload) });
+        const arr = Array.isArray(res?.details) ? res.details : [];
+        target = arr.find(d => String(d?.reason||'').toLowerCase().includes('double-booked: same faculty'));
+      } catch {}
+    }
+    const confId = target?.item?.id;
+    if (!confId) { toast({ title: 'Cannot resolve', description: 'No conflicting schedule found to replace.', status: 'warning' }); return; }
+    try {
+      const s = await api.getScheduleById(confId);
+      const locked = (function(v){ if (typeof v==='boolean') return v; const st=String(v||'').toLowerCase(); return st==='yes'||st==='true'||st==='1'; })(s?.lock || s?.is_locked);
+      if (locked) { toast({ title: 'Cannot resolve', description: 'Conflicting schedule is locked. Unlock it first.', status: 'warning' }); return; }
+      const label = `${s?.code || s?.courseName || ''} ${s?.section ? '('+s.section+')' : ''}`.trim() || 'schedule';
+      setFacResolveIndex(idx);
+      setFacResolveConflictId(confId);
+      setFacResolveLabel(label);
+      setFacResolveOpen(true);
+    } catch (e) {
+      toast({ title: 'Cannot resolve', description: e?.message || 'Failed to load conflicting schedule.', status: 'error' });
+    }
+  };
+
+  const confirmFacultyResolve = async () => {
+    const idx = facResolveIndex; const confId = facResolveConflictId;
+    if (idx == null || !confId) { setFacResolveOpen(false); return; }
+    setFacResolveBusy(true);
+    try {
+      const c = facultySchedules.items[idx]; const e = facEdits[c.id] || {};
+      const body = {
+        term: e.term || c.term || '',
+        time: e.time || c.time || c.schedule || '',
+        day: c.day || undefined,
+        faculty: e.faculty || c.faculty || c.instructor || '',
+        facultyId: e.facultyId || c.facultyId || c.faculty_id || null,
+        section: c.blockCode || c.section || '',
+        courseName: c.courseName || c.code || '',
+        courseTitle: c.courseTitle || c.title || '',
+        schoolyear: settingsLoad.school_year || undefined,
+        semester: settingsLoad.semester || undefined,
+      };
+      await api.resolveSchedule(c.id, body);
+      try { await fetchFacultySchedules(selectedFaculty); } catch {}
+      try { dispatch(loadAllSchedules()); } catch {}
+      toast({ title: 'Resolved', description: 'Replaced conflicting schedule with your edit.', status: 'success' });
+    } catch (e) {
+      toast({ title: 'Resolve failed', description: e?.message || 'Could not resolve the conflict.', status: 'error' });
+    } finally {
+      setFacResolveBusy(false);
+      setFacResolveOpen(false);
+      setFacResolveIndex(null);
+      setFacResolveConflictId(null);
+      setFacResolveLabel('');
+    }
+  };
+
   const clearSwapSlot = (slot) => { if (slot === 'A') setSwapA(null); else setSwapB(null); };
 
   const swapNow = async () => {
@@ -2224,6 +2111,46 @@ export default function CourseLoading() {
                   {(facultyOpts.employments || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </Select>
               </HStack>
+              <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
+                <Stack spacing={2}>
+                  {/* Line for A */}
+                  <HStack spacing={2} flexWrap="wrap">
+                    <Badge colorScheme={swapA ? 'blue' : 'gray'}>A</Badge>
+                    <Text noOfLines={1} flex="1 1 220px" color={subtle}>
+                      {swapA ? swapA.label : 'Add a schedule to slot A'}
+                    </Text>
+                    {swapA && (
+                      <Button size="xs" variant="ghost" onClick={() => clearSwapSlot('A')}>
+                        Clear
+                      </Button>
+                    )}
+                  </HStack>
+
+                  {/* Line for B */}
+                  <HStack spacing={2} flexWrap="wrap">
+                    <Badge colorScheme={swapB ? 'purple' : 'gray'}>B</Badge>
+                    <Text noOfLines={1} flex="1 1 220px" color={subtle}>
+                      {swapB ? swapB.label : 'Add a schedule to slot B'}
+                    </Text>
+                    {swapB && (
+                      <Button size="xs" variant="ghost" onClick={() => clearSwapSlot('B')}>
+                        Clear
+                      </Button>
+                    )}
+
+                    <Button
+                      size="sm"
+                      colorScheme="blue"
+                      onClick={swapNow}
+                      isDisabled={!canLoad || !swapA || !swapB || swapBusy}
+                      isLoading={swapBusy}
+                    >
+                      Swap Now
+                    </Button>
+                  </HStack>
+                </Stack>
+
+              </Box>
               <VStack align="stretch" spacing={1} maxH="calc(100vh - 300px)" overflowY="auto">
                 {filteredFaculty.map(f => {
                   const isSel = selectedFaculty && String(selectedFaculty.id) === String(f.id);
@@ -2353,6 +2280,7 @@ export default function CourseLoading() {
                           faculties={facOptions}
                           schedulesSource={(freshCache && freshCache.length) ? freshCache : (existing || [])}
                           allCourses={(existing || [])}
+                          statsCourses={scopedCourses}
                           blockCode={selectedBlock?.blockCode || ''}
                           disabled={!canLoad}
                           onChange={(patch)=>handleRowChange(idx, patch)}
@@ -2454,15 +2382,91 @@ export default function CourseLoading() {
                                       {getTimeOptions().map(t => <option key={t} value={t}>{t || 'Time'}</option>)}
                                     </Select>
                                     <Box minW="220px">
-                                      <FacultySelect
-                                        value={e.faculty}
-                                        onChange={(v)=>updateFacEdit(c.id, { faculty: v })}
-                                        onChangeId={(fid)=>updateFacEdit(c.id, { facultyId: fid })}
-                                        allowClear
-                                        disabled={isLocked}
-                                        options={facOptions}
-                                      />
+                                      {(() => {
+                                        const normTerm = (v) => { const s=String(v||'').trim().toLowerCase(); if (s.startsWith('1')) return '1st'; if (s.startsWith('2')) return '2nd'; if (s.startsWith('s')) return 'Sem'; return String(v||''); };
+                                        const timeKey = (t) => { const tr=parseTimeBlockToMinutes(String(t||'').trim()); return (Number.isFinite(tr.start)&&Number.isFinite(tr.end))? `${tr.start}-${tr.end}` : String(t||'').trim(); };
+                                        const sectionNorm = String(c.blockCode || c.section || '').trim().toLowerCase();
+                                        const termNorm = normTerm(e.term);
+                                        const tKey = timeKey(e.time);
+                                        const busy = new Set();
+                                        // include current selection even if busy
+                                        const currKey = (e.facultyId != null) ? `id:${e.facultyId}` : `nm:${String(e.faculty||'').toLowerCase().replace(/[^a-z0-9]/g,'')}`;
+                                        (existing || []).forEach(s => {
+                                          const sSect = String(s.section || s.blockCode || '').trim().toLowerCase();
+                                          if (sSect !== sectionNorm) return;
+                                          if (normTerm(s.term) !== termNorm) return;
+                                          const sKey = timeKey(s.time || s.schedule || '');
+                                          if (sKey && tKey) {
+                                            if (sKey === tKey) {
+                                              const k = (s.facultyId != null) ? `id:${s.facultyId}` : `nm:${String(s.faculty || s.instructor || '').toLowerCase().replace(/[^a-z0-9]/g,'')}`;
+                                              if (k !== currKey) busy.add(k);
+                                            } else {
+                                              const a = parseTimeBlockToMinutes(String(sKey||'').trim());
+                                              const b = parseTimeBlockToMinutes(String(tKey||'').trim());
+                                              if (Number.isFinite(a.start) && Number.isFinite(a.end) && Number.isFinite(b.start) && Number.isFinite(b.end)){
+                                                if (Math.max(a.start,b.start) < Math.min(a.end,b.end)){
+                                                  const k = (s.facultyId != null) ? `id:${s.facultyId}` : `nm:${String(s.faculty || s.instructor || '').toLowerCase().replace(/[^a-z0-9]/g,'')}`;
+                                                  if (k !== currKey) busy.add(k);
+                                                }
+                                              }
+                                            }
+                                          }
+                                        });
+                                        const base = facOptions || [];
+                                        const filtered = base.filter(o => {
+                                          const key = (o.id != null ? `id:${o.id}` : `nm:${String(o.label||'').toLowerCase().replace(/[^a-z0-9]/g,'')}`);
+                                          if (key === currKey) return true;
+                                          return !busy.has(key);
+                                        });
+                                        // scoring using shared engine (same as block view)
+                                        const scheduleCtx = {
+                                          programcode: c.programcode || c.program || '',
+                                          program: c.program || c.programcode || '',
+                                          dept: c.dept || '',
+                                          term: e.term || c.term || '',
+                                          time: e.time || c.time || c.schedule || '',
+                                          id: c.id || undefined,
+                                          code: c.code || c.courseName || '',
+                                          courseName: c.courseName || c.code || '',
+                                          title: c.title || c.courseTitle || '',
+                                          courseTitle: c.courseTitle || c.title || '',
+                                          section: c.blockCode || c.section || ''
+                                        };
+                                        // Provide richer faculty inputs for scoring (credentials, titles, etc.)
+                                        const facInputs = filtered.map(o => ({
+                                          id: o.id,
+                                          name: o.name || o.label,
+                                          faculty: o.faculty,
+                                          full_name: o.full_name,
+                                          dept: o.dept,
+                                          employment: o.employment,
+                                          loadReleaseUnits: o.loadReleaseUnits,
+                                          credentials: o.credentials,
+                                          degree: o.degree,
+                                          degrees: o.degrees,
+                                          qualification: o.qualification,
+                                          qualifications: o.qualifications,
+                                          title: o.title,
+                                          designation: o.designation,
+                                          rank: o.rank,
+                                          facultyProfile: o.facultyProfile,
+                                        }));
+                                        const scoreMap = buildFacultyScoreMap({ faculties: facInputs, stats: facStatsScoped, indexesAll: facIndexesAllFull, schedule: scheduleCtx });
+                                        const options = filtered.map(o => ({ ...o, score: (scoreMap.get(String(o.id))?.score) || 0, parts: scoreMap.get(String(o.id))?.parts }));
+                                        options.sort((a,b)=>{ const da = (typeof a.score==='number')?a.score:-1; const db=(typeof b.score==='number')?b.score:-1; if (db!==da) return db-da; return String(a.label||'').localeCompare(String(b.label||'')); });
+                                        return (
+                                          <FacultySelect
+                                            value={e.faculty}
+                                            onChange={(v)=>updateFacEdit(c.id, { faculty: v })}
+                                            onChangeId={(fid)=>updateFacEdit(c.id, { facultyId: fid })}
+                                            allowClear
+                                            disabled={isLocked}
+                                            options={options}
+                                          />
+                                        );
+                                      })()}
                                     </Box>
+                                    
                                     <HStack>
                                       {e._checking ? (
                                         <HStack spacing={1}><Spinner size="xs" /><Text fontSize="xs" color={subtle}>Checking...</Text></HStack>
@@ -2474,8 +2478,12 @@ export default function CourseLoading() {
                                     </HStack>
                                     <HStack ml="auto" spacing={2}>
                                       {e._conflict && (
-                                        <Button size="sm" variant="outline" leftIcon={<FiHelpCircle />} onClick={()=>openFacultySuggestions(c.id)} isDisabled={isLocked}>Suggestions</Button>
+                                        <>
+                                          <Button size="sm" variant="outline" leftIcon={<FiHelpCircle />} onClick={()=>openFacultySuggestions(c.id)} isDisabled={isLocked}>Suggestions</Button>
+                                          <Button size="sm" variant="outline" onClick={()=>openFacultyResolve(facultySchedules.items.indexOf(c))} isDisabled={isLocked}>Resolve</Button>
+                                        </>
                                       )}
+                                      <Button size="sm" variant="outline" onClick={()=>addFacultyItemToSwap(facultySchedules.items.indexOf(c))} isDisabled={isLocked}>Add to Swap</Button>
                                       <Button size="sm" leftIcon={<FiUserPlus />} variant="outline" onClick={()=>openFacAssign(facultySchedules.items.indexOf(c))} isDisabled={isLocked}>Assign</Button>
                                       <Button size="sm" variant="outline" onClick={()=>updateFacEdit(c.id, { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), faculty: c.faculty || c.instructor || '', facultyId: c.facultyId || c.faculty_id || null, _conflict:false, _details:[] })} isDisabled={!dirty || isLocked}>Revert</Button>
                                       <Button size="sm" colorScheme="blue" onClick={()=>saveFacultyEdit(c.id)} isDisabled={!canSave || isLocked}>Save</Button>
@@ -2540,6 +2548,22 @@ export default function CourseLoading() {
             <AlertDialogFooter>
               <Button ref={cancelRef} onClick={()=>{ if (!resolveBusy) { setResolveOpen(false); setResolveRowIndex(null); setResolveConflictId(null); setResolveLabel(''); } }}>Cancel</Button>
               <Button colorScheme="purple" ml={3} isLoading={resolveBusy} onClick={confirmResolve}>Resolve</Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
+
+      {/* Faculty-view resolve dialog */}
+      <AlertDialog isOpen={facResolveOpen} onClose={()=>{ if (!facResolveBusy) { setFacResolveOpen(false); setFacResolveIndex(null); setFacResolveConflictId(null); setFacResolveLabel(''); } }} leastDestructiveRef={cancelRef}>
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader>Resolve conflict?</AlertDialogHeader>
+            <AlertDialogBody>
+              Replace conflicting schedule <b>{facResolveLabel || '-'}</b> with your edited assignment?
+            </AlertDialogBody>
+            <AlertDialogFooter>
+              <Button ref={cancelRef} onClick={()=>{ if (!facResolveBusy) { setFacResolveOpen(false); setFacResolveIndex(null); setFacResolveConflictId(null); setFacResolveLabel(''); } }} variant="ghost">Cancel</Button>
+              <Button colorScheme="blue" onClick={confirmFacultyResolve} ml={3} isLoading={facResolveBusy}>Resolve</Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialogOverlay>

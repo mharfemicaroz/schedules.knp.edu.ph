@@ -95,7 +95,7 @@ export const buildFacultyStats = (faculties, courses) => {
     }
     const release =
       Number(f.loadReleaseUnits ?? f.load_release_units ?? 0) || 0;
-    const baseline = Math.max(0, 24 - release);
+    const baseline = 24;
     const overload = Math.max(0, units - baseline);
     map.set(String(f.id), {
       load: units,
@@ -273,6 +273,40 @@ export const buildFacultyScoreMap = ({
       sum += best;
     }
     return sum / queryTokens.length;
+  };
+  // Topic-vector helpers for content-level similarity
+  const toTokens = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((t) => t && t.length >= 3);
+  const extractTags = (r) => {
+    const t = r?.courseTopics || r?.topics || r?.tags || r?.subjectTags || null;
+    if (Array.isArray(t) && t.length)
+      return t.map((x) => String(x).toLowerCase());
+    const code = String(r?.code || r?.courseName || "");
+    const title = String(r?.title || r?.courseTitle || "");
+    return Array.from(new Set(toTokens(code).concat(toTokens(title))));
+  };
+  const toVec = (arr) => {
+    const m = new Map();
+    (arr || []).forEach((k) => m.set(k, (m.get(k) || 0) + 1));
+    return m;
+  };
+  const cosine = (a, b) => {
+    if (!a || !b || a.size === 0 || b.size === 0) return 0;
+    let dot = 0,
+      na = 0,
+      nb = 0;
+    a.forEach((va, k) => {
+      const vb = b.get(k) || 0;
+      dot += va * vb;
+      na += va * va;
+    });
+    b.forEach((vb) => (nb += vb * vb));
+    if (na === 0 || nb === 0) return 0;
+    return dot / Math.sqrt(na * nb);
   };
   const candCodeTokens = tok(schedule?.code || schedule?.courseName || "");
   const candTitleTokens = tok(schedule?.title || schedule?.courseTitle || "");
@@ -471,6 +505,9 @@ export const buildFacultyScoreMap = ({
       "DIT",
       "DIS",
       "DSM",
+      "DR",
+      "DOCTOR",
+      "DOCTORATE",
     ]);
     const masSet = new Set([
       "MAED",
@@ -486,6 +523,12 @@ export const buildFacultyScoreMap = ({
       "MPM",
       "MMATH",
       "MTECH",
+      "MA",
+      "MS",
+      "MSCJ",
+      "MASTER",
+      "MASTERS",
+      "MASTERAL",
     ]);
     const licSet = new Set([
       "LPT",
@@ -503,6 +546,9 @@ export const buildFacultyScoreMap = ({
       "RA",
       "RLA",
       "RL",
+      "PRC",
+      "LICENSED",
+      "REGISTERED",
     ]);
 
     let nDoc = 0,
@@ -540,35 +586,56 @@ export const buildFacultyScoreMap = ({
         .split(/[\s,]+/)
         .filter(Boolean)
         .map((t) => t.replace(/\.+/g, ""));
-    const docTokens = new Set(
+    const tokensAllUpper = new Set(
       tokens
         .concat(credParts.flatMap(splitTokens))
         .map((t) => t.replace(/\.+/g, "").toUpperCase())
     );
-    docTokens.forEach((tt) => {
+    tokensAllUpper.forEach((tt) => {
       if (docSet.has(tt)) nDoc++;
-    });
-    tokens.forEach((t) => {
-      const tt = t.replace(/\s+/g, "");
       if (masSet.has(tt)) nMas++;
       if (licSet.has(tt)) nLic++;
-      if (tt === "ATTY") nAtty++;
-      if (tt === "JD") nAtty++;
+      if (tt === "ATTY" || tt === "JD") nAtty++;
       if (tt === "CPA") nCpa++;
       if (tt === "ENGR") nEng++;
       if (tt === "ARCH") nArx++;
     });
     const nLicTotal = nLic;
 
-    let degreeScore = 0.4;
-    const boost =
-      Math.min(0.9, nDoc * 0.6) +
-      (nAtty > 0 ? 0.5 : 0) +
-      (nCpa > 0 ? 0.45 : 0) +
-      Math.min(0.5, nMas * 0.25) +
-      Math.min(0.36, nLicTotal * 0.12) +
-      Math.min(0.3, (nEng > 0 ? 0.15 : 0) + (nArx > 0 ? 0.15 : 0));
-    degreeScore = Math.max(0, Math.min(1, degreeScore + boost));
+    // Degree: diminishing returns via exponential
+    const alphaMas = 0.35;
+    const alphaDoc = 1.1;
+    const alphaLic = 0.12;
+    const extraJD = nAtty > 0 ? 0.6 : 0;
+    const extraCPA = nCpa > 0 ? 0.5 : 0;
+    const extraEngArx = (nEng > 0 ? 0.2 : 0) + (nArx > 0 ? 0.2 : 0);
+    const expoSum =
+      alphaMas * nMas +
+      alphaDoc * nDoc +
+      alphaLic * nLicTotal +
+      extraJD +
+      extraCPA +
+      extraEngArx;
+    let degreeScore = 1 - Math.exp(-Math.max(0, expoSum));
+    if (degreeScore === 0) {
+      const bachelorSet = new Set([
+        "BS",
+        "BA",
+        "AB",
+        "BSC",
+        "BSED",
+        "BEED",
+        "BSEE",
+        "BSECE",
+        "BSA",
+      ]);
+      let hasBachelor = false;
+      tokensAllUpper.forEach((tt) => {
+        if (bachelorSet.has(tt)) hasBachelor = true;
+      });
+      if (hasBachelor) degreeScore = 0.2;
+    }
+    degreeScore = Math.max(0, Math.min(1, degreeScore));
 
     const rows = rowsAll.filter((r) => {
       const rNorm = normalizeSem(r.term);
@@ -768,6 +835,30 @@ export const buildFacultyScoreMap = ({
       });
       if (topDay && candDays.includes(topDay))
         timeScore = Math.min(1, timeScore + 0.05);
+      // Fatigue/Fairness: penalize extra very early/late loads
+      const isEarly = Number.isFinite(candMid) && candMid < 9 * 60;
+      const isLate = Number.isFinite(candMid) && candMid > 18 * 60;
+      if (isEarly || isLate) {
+        let countEL = 0;
+        rows.forEach((r) => {
+          let s = r.timeStartMinutes,
+            e = r.timeEndMinutes;
+          const tS = String(r.scheduleKey || r.schedule || r.time || "").trim();
+          if (!Number.isFinite(s) || !Number.isFinite(e)) {
+            const tt = parseTimeBlockToMinutes(tS);
+            s = tt.start;
+            e = tt.end;
+          }
+          if (Number.isFinite(s) && Number.isFinite(e)) {
+            const mid = (s + e) / 2;
+            if (mid < 9 * 60 || mid > 18 * 60) countEL++;
+          }
+        });
+        if (countEL >= 2) {
+          const penalty = Math.min(0.15, 0.05 * (countEL - 1));
+          timeScore = Math.max(0, timeScore * (1 - penalty));
+        }
+      }
     }
 
     let matchScore = 0.5;
@@ -822,13 +913,87 @@ export const buildFacultyScoreMap = ({
         matchScore = 0.5 + 0.5 * Math.max(0, Math.min(1, scaled));
       }
     }
+    // Content-level similarity blend (cosine on topic vectors)
+    try {
+      const candTags = extractTags(schedule);
+      const facTags = [];
+      rowsAll.forEach((r) => facTags.push(...extractTags(r)));
+      const sim = cosine(toVec(candTags), toVec(facTags));
+      matchScore = Math.min(1, 0.6 * matchScore + 0.4 * sim);
+    } catch {}
+    // Over-specialization: mild penalty on repeated exact code
+    try {
+      const candCode = String(schedule?.code || schedule?.courseName || "")
+        .trim()
+        .toLowerCase();
+      if (candCode) {
+        let cntSame = 0;
+        rowsAll.forEach((r) => {
+          const rc = String(r.code || r.courseName || "")
+            .trim()
+            .toLowerCase();
+          if (rc && rc === candCode) cntSame++;
+        });
+        if (cntSame >= 3) {
+          const factor = Math.max(0.85, 1 - 0.03 * (cntSame - 2));
+          matchScore = Math.max(0, matchScore * factor);
+        }
+      }
+    } catch {}
 
-    const baseline = Math.max(0, 24 - (stat.release || 0));
+    const baseline = 24;
     const loadRatio = baseline > 0 ? (stat.load || 0) / baseline : 1;
-    const loadScore = Math.max(0, 1 - Math.max(0, loadRatio - 0.8) / 0.8);
+    // Smooth logistic around r=0.80
+    const rCenter = 0.8,
+      kSlope = 8;
+    const loadScore = 1 / (1 + Math.exp(kSlope * (loadRatio - rCenter)));
     const overloadScore = Math.max(0, 1 - (stat.overload || 0) / 6);
-    const termCount = rows.length;
-    const expScore = Math.min(1, termCount / 8);
+    // Recency-weighted term experience: depth (exact) + breadth (related)
+    const nowOrd = Number.isFinite(candTermOrder) ? candTermOrder : undefined;
+    let depth = 0;
+    const breadthSet = new Set();
+    rows.forEach((r) => {
+      const rOrd = termOrder(
+        String(r.term || "")
+          .trim()
+          .toLowerCase()
+      );
+      const yearsBack =
+        Number.isFinite(nowOrd) && Number.isFinite(rOrd)
+          ? Math.max(0, Math.floor((nowOrd - rOrd) / 10))
+          : 0;
+      const rec = Math.pow(0.8, yearsBack);
+      const rCode = String(r.code || r.courseName || "")
+        .trim()
+        .toLowerCase();
+      const cCode = String(schedule?.code || schedule?.courseName || "")
+        .trim()
+        .toLowerCase();
+      if (rCode && cCode && rCode === cCode) depth += rec;
+      const rTags = extractTags(r);
+      const cTags = extractTags(schedule);
+      const rel = cosine(toVec(rTags), toVec(cTags));
+      if (rel >= 0.5)
+        breadthSet.add(
+          rCode || String(r.title || r.courseTitle || "").toLowerCase()
+        );
+    });
+    const expDepth = Math.min(1, depth / 6);
+    const expBreadth = Math.min(1, breadthSet.size / 8);
+    const expScore = 0.7 * expDepth + 0.3 * expBreadth;
+    // Employment fairness: reduce slightly when overloaded
+    if (loadRatio > 1) {
+      empScore = Math.max(
+        0,
+        empScore * (1 - Math.min(0.3, 0.2 * (loadRatio - 1)))
+      );
+    }
+    // Cross-listing tolerance: boost deptScore if strong degree+match
+    const strength = (degreeScore + matchScore) / 2;
+    if (strength >= 0.8 && progFreq < 0.6) {
+      const tol = Math.min(1, (strength - 0.7) / 0.3);
+      deptScore = Math.min(1, deptScore + 0.12 * tol * (1 - progFreq));
+    }
 
     const score01 =
       0.15 * deptScore +
