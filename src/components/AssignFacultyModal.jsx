@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Button, HStack, VStack, Input, Select, Text, Box, useColorModeValue, Table, Thead, Tr, Th, Tbody, Td, Spinner, Tooltip, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, useDisclosure } from '@chakra-ui/react';
+import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Button, HStack, VStack, Input, Select, Text, Box, useColorModeValue, Table, Thead, Tr, Th, Tbody, Td, Spinner, Tooltip, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, useDisclosure, Badge, Divider, Progress, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, Tag } from '@chakra-ui/react';
 import { FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
@@ -798,28 +798,39 @@ const scoreOf = useMemo(
   const pageCount = Math.max(1, Math.ceil(sortedEligibles.length / pageSize));
   const paged = useMemo(() => sortedEligibles.slice((page-1)*pageSize, (page-1)*pageSize + pageSize), [sortedEligibles, page, pageSize]);
 
+  const scoreDisc = useDisclosure();
+  const [scoreDetail, setScoreDetail] = useState(null);
+
   return (
     <>
     <Modal isOpen={isOpen} onClose={onClose} size="6xl" isCentered>
       <ModalOverlay />
       <ModalContent maxW={{ base: '95vw', md: '90vw' }}>
-        <ModalHeader>Assign Faculty</ModalHeader>
+        <ModalHeader>
+          <HStack justify="space-between">
+            <VStack align="start" spacing={0}>
+              <Text fontSize="lg" fontWeight="700">Assign Faculty</Text>
+              <Text fontSize="xs" color={useColorModeValue('gray.600','gray.300')}>Pick the best match by score and workload</Text>
+            </VStack>
+            <Tag colorScheme="blue" size="sm">Smart Scoring</Tag>
+          </HStack>
+        </ModalHeader>
         <ModalCloseButton />
         <ModalBody>
           <VStack align="stretch" spacing={4}>
             <Box borderWidth="1px" borderColor={border} rounded="md" p={3} bg={panelBg}>
-              <HStack spacing={3} wrap="wrap">
-                <Input placeholder="Search name / email / dept" value={q} onChange={(e)=>{ setQ(e.target.value); setPage(1); }} maxW="260px" size="sm" />
-                <Select placeholder="Department" value={department} onChange={(e)=>{ setDepartment(e.target.value); setPage(1); }} maxW="200px" size="sm">
+              <SimpleGrid columns={{ base: 1, md: 4 }} spacing={3}>
+                <Input placeholder="Search name / email / dept" value={q} onChange={(e)=>{ setQ(e.target.value); setPage(1); }} size="sm" />
+                <Select placeholder="Department" value={department} onChange={(e)=>{ setDepartment(e.target.value); setPage(1); }} size="sm">
                   {(opts?.departments || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </Select>
-                <Select placeholder="Employment" value={employment} onChange={(e)=>{ setEmployment(e.target.value); setPage(1); }} maxW="180px" size="sm">
+                <Select placeholder="Employment" value={employment} onChange={(e)=>{ setEmployment(e.target.value); setPage(1); }} size="sm">
                   {(opts?.employments || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </Select>
-                <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)||10); setPage(1); }} maxW="100px">
+                <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)||10); setPage(1); }}>
                   {[10,15,20,30,50].map(n => <option key={n} value={n}>{n}/page</option>)}
                 </Select>
-              </HStack>
+              </SimpleGrid>
             </Box>
 
             {(busy || loadingFac) ? (
@@ -871,11 +882,17 @@ const scoreOf = useMemo(
                       const s = stats.get(String(f.id)) || { load: 0, release: 0, overload: 0, courses: 0 };
                       const entry = scoreOf.get(String(f.id)) || { score: 0, parts: {} };
                       const score = entry.score;
+                      const overloadBadge = s.overload > 0 ? (
+                        <Badge colorScheme="red" ml={2}>Overload +{s.overload}</Badge>
+                      ) : null;
                       return (
                         <Tr key={f.id}>
                           <Td>
                             <VStack align="start" spacing={0}>
-                              <Text fontWeight="700">{f.name || f.faculty || f.full_name || '-'}</Text>
+                              <HStack>
+                                <Text fontWeight="700">{f.name || f.faculty || f.full_name || '-'}</Text>
+                                {overloadBadge}
+                              </HStack>
                               <Text fontSize="xs" color="gray.500">{f.email || ''}</Text>
                             </VStack>
                           </Td>
@@ -886,13 +903,10 @@ const scoreOf = useMemo(
                           <Td isNumeric color={s.overload > 0 ? 'red.500' : undefined}>{s.overload}</Td>
                           <Td isNumeric>{s.courses}</Td>
                           <Td isNumeric>
-                            <Tooltip hasArrow placement="top" label={
-                              (()=>{
-                                const p = entry.parts || {};
-                                return `Dept:${(p.dept??0).toFixed(2)}  Emp:${(p.employment??0).toFixed(2)}  Degree:${(p.degree??0).toFixed(2)}\nTime:${(p.time??0).toFixed(2)}  Load:${(p.load??0).toFixed(2)}  Overload:${(p.overload??0).toFixed(2)}\nTermExp:${(p.termExp??0).toFixed(2)}  Match:${(p.match??0).toFixed(2)}`;
-                              })()
-                            }>
-                              <Text as="span">{score.toFixed(2)}</Text>
+                            <Tooltip hasArrow placement="top" label={`Click to view score breakdown`}>
+                              <Button size="xs" variant="ghost" colorScheme="purple" onClick={()=>{ setScoreDetail({ fac: f, entry }); scoreDisc.onOpen(); }}>
+                                {score.toFixed(2)}
+                              </Button>
                             </Tooltip>
                           </Td>
                           <Td textAlign="right">
@@ -921,6 +935,69 @@ const scoreOf = useMemo(
         </ModalBody>
         <ModalFooter>
           <Button onClick={onClose} variant="ghost">Close</Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+
+    {/* Score Breakdown Modal */}
+    <Modal isOpen={scoreDisc.isOpen} onClose={()=>{ setScoreDetail(null); scoreDisc.onClose(); }} isCentered size="lg">
+      <ModalOverlay />
+      <ModalContent>
+        <ModalHeader>Score Breakdown</ModalHeader>
+        <ModalCloseButton />
+        <ModalBody>
+          {scoreDetail ? (
+            <VStack align="stretch" spacing={4}>
+              <HStack justify="space-between">
+                <VStack align="start" spacing={0}>
+                  <Text fontWeight="700">{scoreDetail.fac.name || scoreDetail.fac.faculty || '-'}</Text>
+                  <Text fontSize="sm" color={useColorModeValue('gray.600','gray.300')}>
+                    {scoreDetail.fac.department || scoreDetail.fac.dept || '-'} · {scoreDetail.fac.employment || '-'}
+                  </Text>
+                </VStack>
+                <Stat>
+                  <StatLabel>Total Score</StatLabel>
+                  <StatNumber>{(scoreDetail.entry.score || 0).toFixed(2)}</StatNumber>
+                  <StatHelpText>Higher is better</StatHelpText>
+                </Stat>
+              </HStack>
+              <Divider />
+              <VStack align="stretch" spacing={3}>
+                {(() => {
+                  const p = scoreDetail.entry.parts || {};
+                  const rows = [
+                    { key: 'Department fit', val: p.dept },
+                    { key: 'Employment match', val: p.employment },
+                    { key: 'Degree/qualification', val: p.degree },
+                    { key: 'Time/session alignment', val: p.time },
+                    { key: 'Current load', val: p.load },
+                    { key: 'Overload penalty', val: p.overload },
+                    { key: 'Term experience', val: p.termExp },
+                    { key: 'Course match', val: p.match },
+                  ];
+                  return rows.map((r, i) => (
+                    <Box key={i}>
+                      <HStack justify="space-between" mb={1}>
+                        <Text fontSize="sm" fontWeight="600">{r.key}</Text>
+                        <Text fontSize="sm">{Number(r.val ?? 0).toFixed(2)}</Text>
+                      </HStack>
+                      <Progress value={Math.max(0, Math.min(100, Number(r.val ?? 0) * 10))} size="sm" colorScheme="purple" borderRadius="md" />
+                    </Box>
+                  ));
+                })()}
+              </VStack>
+              <Box p={3} borderWidth="1px" borderColor={useColorModeValue('gray.200','gray.700')} rounded="md">
+                <Text fontSize="sm" color={useColorModeValue('gray.700','gray.300')}>
+                  Scores are computed from department fit, employment and qualification, time/session alignment, current load and overload, term experience, and course matching.
+                </Text>
+              </Box>
+            </VStack>
+          ) : (
+            <HStack><Spinner size="sm" /><Text>Loading...</Text></HStack>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button onClick={()=>{ setScoreDetail(null); scoreDisc.onClose(); }} variant="ghost">Close</Button>
         </ModalFooter>
       </ModalContent>
     </Modal>
