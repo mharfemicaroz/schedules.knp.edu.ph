@@ -940,42 +940,45 @@ const scoreOf = useMemo(
     </Modal>
 
     {/* Score Breakdown Modal */}
-    <Modal isOpen={scoreDisc.isOpen} onClose={()=>{ setScoreDetail(null); scoreDisc.onClose(); }} isCentered size="xl" scrollBehavior="inside">
+    <Modal isOpen={scoreDisc.isOpen} onClose={()=>{ setScoreDetail(null); scoreDisc.onClose(); }} isCentered size="2xl" scrollBehavior="inside">
       <ModalOverlay />
-      <ModalContent maxW={{ base: '92vw', md: '720px', lg: '860px' }}>
-        <ModalHeader p={3}>
-          <HStack justify="space-between">
-            <Text fontWeight="700" fontSize="md">Score Breakdown</Text>
-            {scoreDetail && (
-              <Badge colorScheme="purple" fontSize="0.75rem">{(scoreDetail.entry.score || 0).toFixed(2)}</Badge>
-            )}
-          </HStack>
+      <ModalContent maxW={{ base: '94vw', md: '800px', lg: '960px' }}>
+        <ModalHeader p={4} pr={12}>
+          <VStack align="start" spacing={1}>
+            <HStack>
+              <Text fontWeight="700" fontSize="lg">Score Breakdown</Text>
+              {scoreDetail && (
+                <Badge colorScheme="purple" fontSize="0.8rem">{(scoreDetail.entry.score || 0).toFixed(2)}</Badge>
+              )}
+            </HStack>
+            <Text fontSize="xs" color={useColorModeValue('gray.600','gray.300')}>Overall score 0–10; each component 0–1</Text>
+          </VStack>
         </ModalHeader>
         <ModalCloseButton />
-        <ModalBody px={3} pb={3} pt={1}>
+        <ModalBody px={4} pb={4} pt={1}>
           {scoreDetail ? (
             <VStack align="stretch" spacing={3}>
               <HStack justify="space-between" align="start">
                 <VStack align="start" spacing={0}>
-                  <Text fontWeight="700" fontSize="sm">{scoreDetail.fac.name || scoreDetail.fac.faculty || '-'}</Text>
-                  <Text fontSize="xs" color={useColorModeValue('gray.600','gray.300')}>
+                  <Text fontWeight="700" fontSize="md">{scoreDetail.fac.name || scoreDetail.fac.faculty || '-'}</Text>
+                  <Text fontSize="sm" color={useColorModeValue('gray.600','gray.300')}>
                     {scoreDetail.fac.department || scoreDetail.fac.dept || '-'} · {scoreDetail.fac.employment || '-'}
                   </Text>
                 </VStack>
-                <Stat textAlign="right">
-                  <StatLabel fontSize="xs">Total</StatLabel>
-                  <StatNumber fontSize="xl">{(scoreDetail.entry.score || 0).toFixed(2)}</StatNumber>
-                  <StatHelpText fontSize="xs">0–1 components</StatHelpText>
+                <Stat textAlign="right" minW="140px">
+                  <StatLabel fontSize="sm">Overall (0–10)</StatLabel>
+                  <StatNumber fontSize="2xl">{(scoreDetail.entry.score || 0).toFixed(2)}</StatNumber>
+                  <StatHelpText fontSize="xs">Parts shown below (0–1)</StatHelpText>
                 </Stat>
               </HStack>
-              <SimpleGrid columns={{ base: 1, md: 2 }} spacing={3}>
+              <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
                 {(() => {
                   const p = scoreDetail.entry.parts || {};
                   const rows = [
                     { key: 'Department fit', val: p.dept },
                     { key: 'Employment match', val: p.employment },
                     { key: 'Degree/qualification', val: p.degree },
-                    { key: 'Time/session', val: p.time },
+                    { key: 'Time/session alignment', val: p.time },
                     { key: 'Current load', val: p.load },
                     { key: 'Overload penalty', val: p.overload },
                     { key: 'Term experience', val: p.termExp },
@@ -984,16 +987,16 @@ const scoreOf = useMemo(
                   return rows.map((r, i) => (
                     <Box key={i}>
                       <HStack justify="space-between" mb={1}>
-                        <Text fontSize="xs" fontWeight="600">{r.key}</Text>
-                        <Text fontSize="xs">{Number(r.val ?? 0).toFixed(2)}</Text>
+                        <Text fontSize="sm" fontWeight="600">{r.key}</Text>
+                        <Text fontSize="sm">{Number(r.val ?? 0).toFixed(2)}</Text>
                       </HStack>
-                      <Progress value={Math.max(0, Math.min(100, Number(r.val ?? 0) * 100))} size="xs" colorScheme="purple" borderRadius="md" />
+                      <Progress value={Math.max(0, Math.min(100, Number(r.val ?? 0) * 100))} size="sm" colorScheme="purple" borderRadius="md" />
                     </Box>
                   ));
                 })()}
               </SimpleGrid>
-              <Text fontSize="xs" color={useColorModeValue('gray.600','gray.400')}>
-                Scores combine fit, time alignment, workload, experience, and matching. Values are 0–1; higher is better.
+              <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>
+                Scores combine fit, time alignment, workload, experience, and matching.
               </Text>
             </VStack>
           ) : (
