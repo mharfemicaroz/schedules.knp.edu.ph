@@ -139,6 +139,8 @@ export const buildFacultyScoreMap = ({
   stats,
   indexesAll,
   schedule,
+  attendanceStats = undefined,
+  penaltyConfig = undefined,
 }) => {
   const norm = (s) => String(s || "").toLowerCase();
   const deptOf = (f) => String(f.department || f.dept || "");
@@ -985,6 +987,76 @@ export const buildFacultyScoreMap = ({
       deptScore = Math.min(1, deptScore + 0.12 * tol * (1 - progFreq));
     }
 
+    // ----- Grades submission factor (same-term rows) -----
+    // Uses rows (scoped by same term) when available; otherwise neutral (1.0)
+    let gradesFactor = 1.0;
+    let gradesPart = 1.0;
+    try {
+      const cfgG = (penaltyConfig && penaltyConfig.grades) || {
+        late: 0.5,
+        ontime: -0.02, // small bonus
+        early: -0.05, // small bonus
+        none: 0,
+      };
+      let cLate = 0,
+        cOntime = 0,
+        cEarly = 0,
+        denom = 0;
+      rows.forEach((r) => {
+        const gs = String(r.gradesStatus || r.grades_status || "")
+          .trim()
+          .toLowerCase();
+        if (!gs) return; // unknown or not recorded; stay neutral
+        if (gs === "late") cLate++;
+        else if (gs === "ontime") cOntime++;
+        else if (gs === "early") cEarly++;
+        denom++;
+      });
+      if (denom > 0) {
+        const penalty = cfgG.late * (cLate / denom);
+        const bonus = Math.max(0, -cfgG.ontime) * (cOntime / denom) +
+          Math.max(0, -cfgG.early) * (cEarly / denom);
+        const raw = 1 - penalty + bonus;
+        gradesFactor = Math.max(0.7, Math.min(1.05, raw));
+        gradesPart = Math.max(0, Math.min(1, raw));
+      }
+    } catch {}
+
+    // ----- Attendance factor (optional external stats) -----
+    // Accepts either a Map or plain object keyed by facultyId -> { total, byStatus }
+    let attendanceFactor = 1.0;
+    let attendancePart = 1.0;
+    try {
+      const cfgA = (penaltyConfig && penaltyConfig.attendance) || {
+        absent: 0.6,
+        late: 0.3,
+        excused: 0.0,
+      };
+      const getFrom = (src, key) => {
+        if (!src) return undefined;
+        if (src instanceof Map) return src.get(String(key));
+        if (typeof src === "object") return src[String(key)] || src[key];
+        return undefined;
+      };
+      const att = getFrom(attendanceStats, f.id);
+      if (att && typeof att === "object") {
+        const by = att.byStatus || att.by_status || {};
+        const total = Number(att.total ?? Object.values(by).reduce((s, v) => s + (Number(v) || 0), 0)) || 0;
+        if (total > 0) {
+          const nAbsent = Number(by.absent || by.ABSENT || 0) || 0;
+          const nLate = Number(by.late || by.LATE || 0) || 0;
+          const nExcused = Number(by.excused || by.EXCUSED || 0) || 0;
+          const pAbsent = nAbsent / total;
+          const pLate = nLate / total;
+          const pExcused = nExcused / total;
+          const penalty = cfgA.absent * pAbsent + cfgA.late * pLate + cfgA.excused * pExcused;
+          const raw = 1 - penalty;
+          attendanceFactor = Math.max(0.7, Math.min(1.0, raw));
+          attendancePart = Math.max(0, Math.min(1, raw));
+        }
+      }
+    } catch {}
+
     const score01 =
       0.15 * deptScore +
       0.05 * empScore +
@@ -994,7 +1066,8 @@ export const buildFacultyScoreMap = ({
       0.04 * overloadScore +
       0.08 * expScore +
       0.18 * matchScore;
-    const score = Math.max(1, Math.min(10, score01 * 10));
+    // Apply attendance and grades submission factors multiplicatively
+    const score = Math.max(1, Math.min(10, score01 * 10 * attendanceFactor * gradesFactor));
     map.set(String(f.id), {
       score,
       parts: {
@@ -1006,6 +1079,8 @@ export const buildFacultyScoreMap = ({
         overload: overloadScore,
         termExp: expScore,
         match: matchScore,
+        attendance: attendancePart,
+        grades: gradesPart,
       },
     });
   });

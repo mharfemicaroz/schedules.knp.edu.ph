@@ -102,7 +102,7 @@ function isEligibleAssignment(schedule, faculty, indexes) {
   return true;
 }
 
-export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign, schoolyear, semester }) {
+export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign, schoolyear, semester, attendanceStats }) {
   const dispatch = useDispatch();
   const allCourses = useSelector(selectAllCourses);
   const settings = useSelector(selectSettings);
@@ -731,8 +731,8 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
 
 
 const scoreOf = useMemo(
-  () => buildFacultyScoreMap({ faculties, stats, indexesAll, schedule }),
-  [faculties, stats, indexesAll, schedule]
+  () => buildFacultyScoreMap({ faculties, stats, indexesAll, schedule, attendanceStats }),
+  [faculties, stats, indexesAll, schedule, attendanceStats]
 );
 
 
@@ -842,7 +842,7 @@ const scoreOf = useMemo(
               <>
               <Box borderWidth="1px" borderColor={border} rounded="md" bg={useColorModeValue('blue.50','whiteAlpha.200')} p={3}>
                 <Text fontSize="sm" color={useColorModeValue('blue.900','blue.100')}>
-                  Score shows how suitable each teacher is for this class. We look at: how often they teach this program (recent classes count more), whether the department fits, work status (full‑time first), qualifications, how close the time is to their usual class times and the same session (AM / PM / Evening), current load and any overload, experience this term, and how similar the course code/title is (spelling differences allowed). Higher is better (1–10).
+                  Score shows how suitable each teacher is for this class. We look at: how often they teach this program (recent classes count more), whether the department fits, work status (full‑time first), qualifications, how close the time is to their usual class times and the same session (AM/PM/Evening), current load and any overload, attendance history, grade submission timeliness, experience this term, and how similar the course code/title is (spelling differences allowed). Higher is better (1–10).
                 </Text>
               </Box>
 
@@ -981,6 +981,8 @@ const scoreOf = useMemo(
                     { key: 'Time/session alignment', val: p.time },
                     { key: 'Current load', val: p.load },
                     { key: 'Overload penalty', val: p.overload },
+                    { key: 'Attendance', val: p.attendance },
+                    { key: 'Grade submission', val: p.grades },
                     { key: 'Term experience', val: p.termExp },
                     { key: 'Course match', val: p.match },
                   ];
@@ -996,7 +998,7 @@ const scoreOf = useMemo(
                 })()}
               </SimpleGrid>
               <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>
-                Scores combine fit, time alignment, workload, experience, and matching.
+                Scores combine fit, time alignment, workload, attendance, grade submission, experience, and matching.
               </Text>
             </VStack>
           ) : (

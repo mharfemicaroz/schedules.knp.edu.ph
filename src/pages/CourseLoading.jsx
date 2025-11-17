@@ -154,6 +154,7 @@ function AssignmentRow({
   allCourses,
   statsCourses,
   blockCode,
+  attendanceStats,
   disabled,
   onChange,
   onToggle,
@@ -242,8 +243,9 @@ function AssignmentRow({
         stats,
         indexesAll,
         schedule: scheduleForScoring,
+        attendanceStats: attendanceStats,
       }),
-    [faculties, stats, indexesAll, scheduleForScoring]
+    [faculties, stats, indexesAll, scheduleForScoring, attendanceStats]
   );
 
   // ---------------------------------------------------------------------------
@@ -585,6 +587,8 @@ export default function CourseLoading() {
   const [suggIndex, setSuggIndex] = React.useState(null);
   const [suggBusy, setSuggBusy] = React.useState(false);
   const [suggestions, setSuggestions] = React.useState([]);
+  // Attendance stats by faculty for current SY/Sem
+  const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
   // Faculty-view suggestions
   const [facSuggOpen, setFacSuggOpen] = React.useState(false);
   const [facSuggBusy, setFacSuggBusy] = React.useState(false);
@@ -696,6 +700,25 @@ export default function CourseLoading() {
   }, [existing, settingsLoad]);
   const facIndexesAllFull = React.useMemo(() => buildIndexes(existing || []), [existing]);
   const facStatsScoped = React.useMemo(() => buildFacultyStats(facOptions || [], scopedCourses || []), [facOptions, scopedCourses]);
+
+  // Fetch attendance stats per faculty (all-time, regardless of SY/Sem)
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await api.getAttendanceStatsByFaculty();
+        const map = new Map();
+        (Array.isArray(rows) ? rows : []).forEach(r => {
+          const fid = r.facultyId != null ? String(r.facultyId) : null;
+          if (fid) map.set(fid, { total: Number(r.total || 0) || 0, byStatus: r.byStatus || r.by_status || {} });
+        });
+        if (alive) setAttendanceStatsMap(map);
+      } catch (e) {
+        if (alive) setAttendanceStatsMap(new Map());
+      }
+    })();
+    return () => { alive = false; };
+  }, [settingsLoad?.school_year, settingsLoad?.semester]);
 
   // Helper: reload currently selected block using the same path as the Reload button
   const reloadCurrentBlock = async () => {
@@ -2362,6 +2385,7 @@ export default function CourseLoading() {
                           allCourses={(existing || [])}
                           statsCourses={scopedCourses}
                           blockCode={selectedBlock?.blockCode || ''}
+                          attendanceStats={attendanceStatsMap}
                           disabled={!canLoad}
                           onChange={(patch)=>handleRowChange(idx, patch)}
                           onToggle={(ck)=>toggleRow(idx, ck)}
@@ -2531,7 +2555,7 @@ export default function CourseLoading() {
                                           rank: o.rank,
                                           facultyProfile: o.facultyProfile,
                                         }));
-                                        const scoreMap = buildFacultyScoreMap({ faculties: facInputs, stats: facStatsScoped, indexesAll: facIndexesAllFull, schedule: scheduleCtx });
+                                        const scoreMap = buildFacultyScoreMap({ faculties: facInputs, stats: facStatsScoped, indexesAll: facIndexesAllFull, schedule: scheduleCtx, attendanceStats: attendanceStatsMap });
                                         const options = filtered.map(o => ({ ...o, score: (scoreMap.get(String(o.id))?.score) || 0, parts: scoreMap.get(String(o.id))?.parts }));
                                         options.sort((a,b)=>{ const da = (typeof a.score==='number')?a.score:-1; const db=(typeof b.score==='number')?b.score:-1; if (db!==da) return db-da; return String(a.label||'').localeCompare(String(b.label||'')); });
                                         return (
@@ -2607,6 +2631,7 @@ export default function CourseLoading() {
         onAssign={handleAssignFromModal}
         schoolyear={settingsLoad?.school_year}
         semester={settingsLoad?.semester}
+        attendanceStats={attendanceStatsMap}
       />
       <AssignFacultyModal
         isOpen={facAssignOpen}
@@ -2615,6 +2640,7 @@ export default function CourseLoading() {
         onAssign={handleFacAssign}
         schoolyear={settingsLoad?.school_year}
         semester={settingsLoad?.semester}
+        attendanceStats={attendanceStatsMap}
       />
 
       {/* Resolve conflict dialog */}

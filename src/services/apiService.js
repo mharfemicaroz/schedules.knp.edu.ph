@@ -337,6 +337,18 @@ class ApiService {
     return await res.json();
   }
 
+  async getAttendanceStatsByFaculty(params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") search.set(k, v);
+    });
+    const qs = search.toString();
+    const url = `${this.baseURL}${this.attendancePath}/stats/by-faculty${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   async getAttendanceById(id) {
     const url = `${this.baseURL}${this.attendancePath}/${encodeURIComponent(id)}`;
     const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
