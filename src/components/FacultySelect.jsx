@@ -68,6 +68,9 @@ export default function FacultySelect({
           Time: {fmt(p.time)} | Load: {fmt(p.load)} | Over: {fmt(p.overload)}
         </Text>
         <Text fontSize="xs">
+          Attendance: {fmt(p.attendance)} | Grade submission: {fmt(p.grades)}
+        </Text>
+        <Text fontSize="xs">
           Exp: {fmt(p.termExp)} | Match: {fmt(p.match)}
         </Text>
       </VStack>

@@ -7,7 +7,8 @@ import {
   AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody
 } from '@chakra-ui/react';
-import { FiRefreshCw, FiUpload, FiSearch, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus } from 'react-icons/fi';
+import { Skeleton, SkeletonText, Fade } from '@chakra-ui/react';
+import { FiRefreshCw, FiUpload, FiSearch, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus, FiPrinter } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadBlocksThunk } from '../store/blockThunks';
 import { selectBlocks } from '../store/blockSlice';
@@ -25,8 +26,44 @@ import { getTimeOptions } from '../utils/timeOptions';
 import { normalizeTimeBlock } from '../utils/timeNormalize';
 import { parseTimeBlockToMinutes, parseF2FDays } from '../utils/conflicts';
 import { buildIndexes, buildFacultyStats, buildFacultyScoreMap, normalizeSem } from '../utils/facultyScoring';
+import { buildTable, printContent } from '../utils/printDesign';
 
 // --- helpers (same as previous) ---
+function VirtualBlockList({ items, renderRow, estimatedRowHeight = 76, overscan = 6, maxHeight = '50vh', border, dividerBorder }) {
+  const containerRef = React.useRef(null);
+  const [viewportH, setViewportH] = React.useState(400);
+  const [scrollTop, setScrollTop] = React.useState(0);
+  const list = Array.isArray(items) ? items : [];
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      try { setViewportH(el.clientHeight || 400); } catch {}
+    });
+    try { ro.observe(el); } catch {}
+    setViewportH(el.clientHeight || 400);
+    return () => { try { ro.disconnect(); } catch {} };
+  }, []);
+  const onScroll = (e) => {
+    setScrollTop(e.currentTarget.scrollTop || 0);
+  };
+  const rowH = Math.max(40, Number(estimatedRowHeight) || 76);
+  const total = list.length;
+  const start = Math.max(0, Math.floor(scrollTop / rowH) - overscan);
+  const end = Math.min(total, Math.ceil((scrollTop + viewportH) / rowH) + overscan);
+  const padTop = start * rowH;
+  const padBottom = Math.max(0, (total - end) * rowH);
+  const slice = list.slice(start, end);
+  return (
+    <Box ref={containerRef} maxH={maxHeight} overflowY="auto" borderWidth="0px" onScroll={onScroll}>
+      <Box style={{ paddingTop: padTop + 'px', paddingBottom: padBottom + 'px' }}>
+        <VStack align="stretch" spacing={0} divider={<Divider borderColor={dividerBorder} />}>
+          {slice.map((r, i) => renderRow(r, start + i))}
+        </VStack>
+      </Box>
+    </Box>
+  );
+}
 function parseBlockMeta(blockCode) {
   const s = String(blockCode || '').trim();
   if (!s) return { programcode: '', yearlevel: '', section: '' };
@@ -62,6 +99,8 @@ function BlockList({ items, selectedId, onSelect, loading, onProgramChange }) {
   const border = useColorModeValue('gray.200','gray.700');
   const bg = useColorModeValue('white','gray.800');
   const muted = useColorModeValue('gray.600','gray.300');
+  const skStart = useColorModeValue('gray.100','gray.700');
+  const skEnd = useColorModeValue('gray.200','gray.600');
   const [q, setQ] = React.useState('');
   const [prog, setProg] = React.useState('');
   const [yr, setYr] = React.useState('');
@@ -114,7 +153,23 @@ function BlockList({ items, selectedId, onSelect, loading, onProgramChange }) {
         <IconButton aria-label="Search" icon={<FiSearch />} size="sm" variant="outline" />
       </HStack>
       <VStack align="stretch" spacing={2} overflowY="auto">
-        {loading && <HStack><Spinner size="sm" /><Text color={muted}>Loading blocks…</Text></HStack>}
+        {loading && (
+          <VStack align="stretch" spacing={2}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Box key={`blk-skel-${i}`} p={2} borderWidth="1px" borderColor={border} rounded="md" bg={bg}>
+                <HStack justify="space-between">
+                  <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="60%" rounded="sm" />
+                  <Skeleton startColor={skStart} endColor={skEnd} height="16px" width="70px" rounded="sm" />
+                </HStack>
+                <Wrap mt={2} spacing={1}>
+                  {Array.from({ length: 3 }).map((_, j) => (
+                    <Skeleton key={`room-${i}-${j}`} startColor={skStart} endColor={skEnd} height="14px" width="60px" rounded="md" />
+                  ))}
+                </Wrap>
+              </Box>
+            ))}
+          </VStack>
+        )}
         {!loading && sorted.map(b => (
           <Box key={b.id}
             onClick={()=>onSelect(b)}
@@ -302,10 +357,21 @@ const eligibleOptions = React.useMemo(() => {
         : `nm:${String(o.label || o.name || o.faculty || '')
             .toLowerCase()
             .replace(/[^a-z0-9]/g, '')}`;
-
+    // Always include current selection
     if (key === currFacKey) return true;
-    if (noTermOrTime) return true;
-    return !busy.has(key);
+    // Exclude time/term busy conflicts unless missing context
+    if (!noTermOrTime && busy.has(key)) return false;
+    // Dept filter: only show faculty whose dept matches programcode, with whitelist
+    const prog = String(row?.programcode || row?.program || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+    const deptRaw = String(o.dept || '')
+      .toUpperCase();
+    const deptStripped = deptRaw.replace(/[^A-Z0-9]/g, '');
+    const always = ['GENED', 'KNP PARTTIME', 'PARTTIME', 'PE'];
+    const whitelisted = always.includes(deptRaw.trim());
+    const deptMatches = prog ? (deptStripped.includes(prog)) : true;
+    return whitelisted || deptMatches;
   });
 
   const scored = filtered.map(o => {
@@ -556,6 +622,10 @@ export default function CourseLoading() {
   const panelBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.300');
   const dividerBorder = useColorModeValue('gray.100','gray.700');
+  // Skeleton shared colors and overlay
+  const skStart = useColorModeValue('gray.100','gray.700');
+  const skEnd = useColorModeValue('gray.200','gray.600');
+  const overlayBg = useColorModeValue('whiteAlpha.600','blackAlpha.500');
 
   const blocks = useSelector(selectBlocks);
   const facultyAll = useSelector(selectAllFaculty);
@@ -571,6 +641,17 @@ export default function CourseLoading() {
 
   const [viewMode, setViewMode] = React.useState('blocks'); // 'blocks' | 'faculty'
   const [selectedBlock, setSelectedBlock] = React.useState(null);
+  const [selectedProgram, setSelectedProgram] = React.useState('');
+  const [progBlocksLimit, setProgBlocksLimit] = React.useState(6);
+  const progSentinelRef = React.useRef(null);
+  const blockSkelWrapRef = React.useRef(null);
+  const [blockSkelCount, setBlockSkelCount] = React.useState(8);
+  const facSkelWrapRef = React.useRef(null);
+  const [facSkelCount, setFacSkelCount] = React.useState(8);
+  const [yearOrder, setYearOrder] = React.useState([]);
+  const [loadedYears, setLoadedYears] = React.useState([]);
+  const [loadingYear, setLoadingYear] = React.useState(false);
+  const progYearSentinelRef = React.useRef(null);
   const [selectedFaculty, setSelectedFaculty] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [facLoading, setFacLoading] = React.useState(false);
@@ -688,6 +769,94 @@ export default function CourseLoading() {
 
   const settingsLoad = settings?.schedulesLoad || { school_year: '', semester: '' };
 
+  // --- Printing helpers ---
+  const esc = (val) => String(val ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\"/g,'&quot;').replace(/'/g,'&#039;');
+
+  const termOrder = (t) => {
+    const v = String(t || '').trim().toLowerCase();
+    if (v.startsWith('1')) return 1; if (v.startsWith('2')) return 2; if (v.startsWith('s')) return 3; return 9;
+  };
+  const timeStart = (tStr) => {
+    const tr = parseTimeBlockToMinutes(String(tStr || '').trim());
+    return Number.isFinite(tr.start) ? tr.start : 99999;
+  };
+
+  const onPrintBlock = () => {
+    if (!selectedBlock) return;
+    const title = `Block: ${selectedBlock.blockCode || ''}`;
+    const subtitle = [`School Year: ${settingsLoad?.school_year || ''}`, `Semester: ${settingsLoad?.semester || ''}`].filter(Boolean).join('  |  ');
+    const headers = ['#','Course','Title','Units','Term','Time','Day','Room','Faculty'];
+    const sorted = (rows || []).slice().sort((a,b) => {
+      // Sort by explicit term only; do not fall back to semester
+      const ta = termOrder(a._term || a.term);
+      const tb = termOrder(b._term || b.term);
+      if (ta !== tb) return ta - tb;
+      const sa = timeStart(a._time || a.time || a.schedule);
+      const sb = timeStart(b._time || b.time || b.schedule);
+      if (sa !== sb) return sa - sb;
+      return String(a.course_name || a.courseName || a.code || '').localeCompare(String(b.course_name || b.courseName || b.code || ''));
+    });
+    const bodyRows = sorted.map((r,i) => [
+      String(i+1),
+      String(r.course_name || r.courseName || r.code || ''),
+      String(r.course_title || r.courseTitle || r.title || ''),
+      String(r.unit ?? ''),
+      // Display only the short term label if explicitly set; otherwise blank
+      String(r._term || r.term || ''),
+      String(r._time || r.time || r.schedule || ''),
+      String(r._day || r.day || ''),
+      // Prefer per-row room; if empty, fallback to selected block's room aggregation
+      String(r.room || selectedBlock?.room || ''),
+      String(r._faculty || r.faculty || r.instructor || ''),
+    ]);
+    const bodyHtml = [
+      `<table class="prt-table"><tbody>
+        <tr><th>Block Code</th><td>${esc(selectedBlock.blockCode || '')}</td><th>Session</th><td>${esc(selectedBlock.session || '')}</td></tr>
+        <tr><th>Rooms</th><td colspan="3">${esc(String(selectedBlock.room || ''))}</td></tr>
+      </tbody></table>`,
+      buildTable(headers, bodyRows)
+    ].join('');
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait' });
+  };
+
+  const onPrintFaculty = () => {
+    if (!selectedFaculty) return;
+    const f = selectedFaculty;
+    const title = `Faculty: ${f.name || f.faculty || ''}`;
+    const headers = ['#','Code','Title','Units','Term','Time','Day','Room','Section'];
+    const list = Array.isArray(facultySchedules?.items) ? facultySchedules.items : [];
+    const sorted = list.slice().sort((a,b) => {
+      const ta = termOrder(a.term);
+      const tb = termOrder(b.term);
+      if (ta !== tb) return ta - tb;
+      const sa = timeStart(a.schedule || a.time || a.scheduleKey);
+      const sb = timeStart(b.schedule || b.time || b.scheduleKey);
+      if (sa !== sb) return sa - sb;
+      return String(a.courseName || a.code || '').localeCompare(String(b.courseName || b.code || ''));
+    });
+    const bodyRows = sorted.map((r,i) => [
+      String(i+1),
+      String(r.code || r.courseName || ''),
+      String(r.title || r.courseTitle || ''),
+      String(r.unit ?? ''),
+      String(r.term || ''),
+      String(r.schedule || r.time || ''),
+      String(r.day || ''),
+      String(r.room || ''),
+      String(r.section || r.blockCode || ''),
+    ]);
+    const metaHtml = `<table class="prt-table"><tbody>
+      <tr><th>Department</th><td>${esc(f.department || f.dept || '')}</td><th>Employment</th><td>${esc(f.employment || '')}</td></tr>
+      <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
+      <tr><th>Load Release Units</th><td>${esc(String(f.loadReleaseUnits ?? f.load_release_units ?? 0))}</td><th>Schedules</th><td>${esc(String(list.length))}</td></tr>
+    </tbody></table>`;
+    const bodyHtml = [metaHtml, buildTable(headers, bodyRows)].join('');
+    // FacultyDetail-style layout triggers conforme signature block (based on title prefix)
+    printContent({ title, subtitle: '', bodyHtml }, { pageSize: 'A4', orientation: 'portrait' });
+  };
+
   // Limit load/overload scoring to current load SY/Sem defaults
   const scopedCourses = React.useMemo(() => {
     const list = Array.isArray(existing) ? existing : [];
@@ -745,6 +914,10 @@ export default function CourseLoading() {
   };
 
   const onSelectBlock = async (b) => {
+    // Clear program view state and existing rows immediately for a snappy switch
+    try { setSelectedProgram(''); } catch {}
+    setRows([]);
+    setFreshCache([]);
     setSelectedBlock(b);
     const meta = parseBlockMeta(b.blockCode);
     setLoading(true);
@@ -876,6 +1049,242 @@ export default function CourseLoading() {
     });
     setRows(next);
   }, [existing, selectedBlock, freshCache]);
+
+  // Program-level view (no block selected): stage 1 fetch prospectus and determine year order
+  React.useEffect(() => {
+    (async () => {
+      if (selectedBlock) return;
+      const prog = String(selectedProgram || '').trim();
+      if (!prog) { setRows([]); setYearOrder([]); setLoadedYears([]); return; }
+      setLoading(true);
+      try {
+        const sem = settingsLoad?.semester || '';
+        const prosp = await api.getProspectus({ programcode: prog, semester: sem || undefined });
+        const items = Array.isArray(prosp) ? prosp : (Array.isArray(prosp?.data) ? prosp.data : []);
+        const loadSem = normalizeSem(sem || '');
+        const narrowed = loadSem ? items.filter(p => normalizeSem(p.semester) === loadSem) : items;
+        const yrs = Array.from(new Set(narrowed.map(p => extractYearDigits(p.yearlevel)).filter(Boolean)))
+          .sort((a,b) => Number(a) - Number(b));
+        setYearOrder(yrs);
+        setRows([]);
+        setLoadedYears([]);
+      } catch {
+        setYearOrder([]);
+        setRows([]);
+        setLoadedYears([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [selectedProgram, selectedBlock, settingsLoad?.semester]);
+
+  // Reset progressive block limit when program changes
+  React.useEffect(() => {
+    setProgBlocksLimit(6);
+  }, [selectedProgram, settingsLoad?.school_year, settingsLoad?.semester]);
+
+  // Stage 2: progressive per-year loading (on demand)
+  const loadProgramYear = React.useCallback(async (yearDigit) => {
+    if (!yearDigit) return;
+    const prog = String(selectedProgram || '').trim();
+    if (!prog) return;
+    if (loadingYear) return;
+    setLoadingYear(true);
+    try {
+      const sy = String(settingsLoad?.school_year || '').trim();
+      const sem = settingsLoad?.semester || '';
+      // Fetch fresh schedules for program + yearlevel
+      const q = new URLSearchParams();
+      q.set('programCode', prog);
+      if (sy) q.set('sy', sy);
+      if (sem) q.set('sem', sem);
+      q.set('yearlevel', String(yearDigit));
+      const resp = await api.request(`/?${q.toString()}`);
+      const fresh = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []);
+      // Prospectus for program (already used to compute years), but refetch to keep simple
+      const prosp = await api.getProspectus({ programcode: prog, semester: sem || undefined });
+      const items = Array.isArray(prosp) ? prosp : (Array.isArray(prosp?.data) ? prosp.data : []);
+      const loadSem = normalizeSem(sem || '');
+      const narrowedAll = loadSem ? items.filter(p => normalizeSem(p.semester) === loadSem) : items;
+      const narrowed = narrowedAll.filter(p => extractYearDigits(p.yearlevel) === String(yearDigit));
+      const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g,' ').trim();
+      const exRows = (fresh || []).filter(c => !excludeDeletedIdsRef.current.has(c.id));
+      // Index by block
+      const secOf = (c) => norm(c.blockCode || c.section || '');
+      const yearOf = (s) => extractYearDigits(s.yearlevel);
+      const codeOf = (s) => norm(s.code || s.courseName);
+      const titleOf = (s) => norm(s.title || s.courseTitle);
+      const pidOf = (s) => (s?.prospectusId != null ? String(s.prospectusId) : null);
+      const exByBlockPid = new Map();
+      const exByBlockCode = new Map();
+      const exByBlockTitle = new Map();
+      const blockSet = new Set();
+      for (const s of exRows) {
+        const sec = secOf(s);
+        if (!sec) continue;
+        blockSet.add(sec);
+        const pid = pidOf(s);
+        const cN = codeOf(s);
+        const tN = titleOf(s);
+        if (pid) {
+          if (!exByBlockPid.has(sec)) exByBlockPid.set(sec, new Map());
+          const m = exByBlockPid.get(sec);
+          if (!m.has(pid)) m.set(pid, s);
+        }
+        if (cN) {
+          if (!exByBlockCode.has(sec)) exByBlockCode.set(sec, new Map());
+          const m = exByBlockCode.get(sec);
+          if (!m.has(cN)) m.set(cN, s);
+        }
+        if (tN) {
+          if (!exByBlockTitle.has(sec)) exByBlockTitle.set(sec, new Map());
+          const m = exByBlockTitle.get(sec);
+          if (!m.has(tN)) m.set(tN, s);
+        }
+      }
+      const findExistingForBlock = (pros, blockCode) => {
+        const pid = pros?.id != null ? String(pros.id) : null;
+        const pCode = norm(pros.course_name || pros.courseName || pros.code);
+        const pTitle = norm(pros.course_title || pros.courseTitle || pros.title);
+        const wantYear = extractYearDigits(pros.yearlevel);
+        const sec = norm(blockCode || '');
+        let hit = null;
+        if (pid && exByBlockPid.get(sec)?.has(pid)) hit = exByBlockPid.get(sec).get(pid);
+        if (!hit && pCode && exByBlockCode.get(sec)?.has(pCode)) hit = exByBlockCode.get(sec).get(pCode);
+        if (!hit && pTitle && exByBlockTitle.get(sec)?.has(pTitle)) hit = exByBlockTitle.get(sec).get(pTitle);
+        if (hit && wantYear) {
+          const y = yearOf(hit);
+          if (y && y !== wantYear) hit = null;
+        }
+        return hit;
+      };
+      const rowsByBlock = [];
+      const blocks = Array.from(blockSet).sort((a,b) => a.localeCompare(b));
+      if (blocks.length) {
+        for (const sec of blocks) {
+          for (const p of narrowed) {
+            const hit = findExistingForBlock(p, sec);
+            const locked = (() => {
+              const v = hit?.lock; if (typeof v === 'boolean') return v; const s = String(v || '').trim().toLowerCase(); return s === 'yes' || s === 'true' || s === '1';
+            })();
+            const prefill = hit ? {
+              _term: canonicalTerm(hit.term || ''),
+              _time: hit.schedule || hit.time || '',
+              _faculty: hit.facultyName || hit.faculty || hit.instructor || '',
+              _day: hit.day || 'MON-FRI',
+            } : { _term: '', _time: '', _faculty: '', _day: 'MON-FRI' };
+            rowsByBlock.push({
+              ...p,
+              ...prefill,
+              programcode: p.programcode || prog,
+              section: sec,
+              blockCode: sec,
+              _existingId: hit?.id || null,
+              _locked: !!(hit && locked),
+              _selected: false,
+              _status: hit ? 'Assigned' : 'Unassigned',
+            });
+          }
+        }
+      } else {
+        for (const p of narrowed) {
+          rowsByBlock.push({
+            ...p,
+            programcode: p.programcode || prog,
+            section: '',
+            blockCode: '',
+            _existingId: null,
+            _locked: false,
+            _selected: false,
+            _status: 'Unassigned',
+            _term: '',
+            _time: '',
+            _faculty: '',
+            _day: 'MON-FRI',
+          });
+        }
+      }
+      setRows(prev => prev.concat(rowsByBlock));
+      setLoadedYears(prev => prev.concat(String(yearDigit)));
+    } catch {}
+    setLoadingYear(false);
+  }, [selectedProgram, settingsLoad?.school_year, settingsLoad?.semester, loadingYear]);
+
+  // Auto-load first available year when order is known
+  React.useEffect(() => {
+    if (!selectedBlock && selectedProgram && yearOrder && yearOrder.length && loadedYears.length === 0) {
+      loadProgramYear(yearOrder[0]);
+    }
+  }, [yearOrder, selectedProgram, selectedBlock]);
+
+  // Infinite year loader sentinel
+  React.useEffect(() => {
+    const el = progYearSentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => {
+      for (const ent of entries) {
+        if (ent.isIntersecting) {
+          const remaining = (yearOrder || []).filter(y => !loadedYears.includes(String(y)));
+          if (remaining.length && !loadingYear) {
+            loadProgramYear(remaining[0]);
+          }
+        }
+      }
+    }, { root: null, rootMargin: '200px', threshold: 0 });
+    try { io.observe(el); } catch {}
+    return () => { try { io.disconnect(); } catch {} };
+  }, [progYearSentinelRef, yearOrder, loadedYears, loadingYear]);
+
+  // Infinite scroll style: when sentinel enters view, increase block rendering limit
+  React.useEffect(() => {
+    const el = progSentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => {
+      for (const ent of entries) {
+        if (ent.isIntersecting) {
+          setProgBlocksLimit((n) => n + 6);
+        }
+      }
+    }, { root: null, rootMargin: '200px', threshold: 0 });
+    try { io.observe(el); } catch {}
+    return () => { try { io.disconnect(); } catch {} };
+  }, [progSentinelRef, selectedProgram]);
+
+  // Dynamic block overlay skeleton count based on container height
+  React.useEffect(() => {
+    const el = blockSkelWrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      try {
+        const h = el.clientHeight || 480;
+        const rowH = 80; // approximate AssignmentRow height
+        const count = Math.max(4, Math.min(24, Math.ceil(h / rowH) + 2));
+        setBlockSkelCount(count);
+      } catch {}
+    };
+    measure();
+    const ro = new ResizeObserver(() => measure());
+    try { ro.observe(el); } catch {}
+    return () => { try { ro.disconnect(); } catch {} };
+  }, [blockSkelWrapRef, selectedBlock]);
+
+  // Dynamic faculty overlay skeleton count based on container height
+  React.useEffect(() => {
+    const el = facSkelWrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      try {
+        const h = el.clientHeight || 480;
+        const rowH = 80;
+        const count = Math.max(4, Math.min(24, Math.ceil(h / rowH) + 2));
+        setFacSkelCount(count);
+      } catch {}
+    };
+    measure();
+    const ro = new ResizeObserver(() => measure());
+    try { ro.observe(el); } catch {}
+    return () => { try { ro.disconnect(); } catch {} };
+  }, [facSkelWrapRef, selectedFaculty]);
 
   // Assign Faculty Modal (Blocks view)
   const [assignOpen, setAssignOpen] = React.useState(false);
@@ -1326,6 +1735,13 @@ export default function CourseLoading() {
       out.push({ programcode: prog, yearlevel: yr, items: arr });
     });
     return out.sort((a,b) => a.programcode.localeCompare(b.programcode) || String(a.yearlevel).localeCompare(String(b.yearlevel)));
+  }, [rows]);
+
+  // Fast lookup of row index to avoid O(n) rows.indexOf during render
+  const rowIndexMap = React.useMemo(() => {
+    const m = new Map();
+    (rows || []).forEach((r, i) => m.set(r, i));
+    return m;
   }, [rows]);
 
   const requestLockChange = (idx, nextLocked) => {
@@ -2195,7 +2611,7 @@ export default function CourseLoading() {
                   selectedId={selectedBlock?.id}
                   onSelect={onSelectBlock}
                   loading={blocksLoading}
-                  onProgramChange={()=>{ setSelectedBlock(null); setRows([]); setFreshCache([]); }}
+                  onProgramChange={(v)=>{ setSelectedProgram(v || ''); setSelectedBlock(null); setRows([]); setFreshCache([]); }}
                 />
               </Box>
             </VStack>
@@ -2286,7 +2702,7 @@ export default function CourseLoading() {
         </Box>
 
         <Box gridColumn={{ base: 'auto', lg: '2 / span 4' }} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg}>
-          {!selectedBlock && (
+          {!selectedBlock && !selectedProgram && (
             <VStack py={10} spacing={2}>
               {viewMode === 'blocks' ? (
                 <>
@@ -2301,7 +2717,178 @@ export default function CourseLoading() {
               )}
             </VStack>
           )}
+          {viewMode === 'blocks' && !selectedBlock && !!selectedProgram && (
+            <VStack align="stretch" spacing={3}>
+              <HStack justify="space-between" align="center">
+                <HStack>
+                  <Heading size="sm">Program:</Heading>
+                  <Badge colorScheme="blue">{selectedProgram}</Badge>
+                </HStack>
+              </HStack>
+              {loading && (
+                <VStack py={4} spacing={2}>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <HStack key={`prg-skel-${i}`} py={2} px={2} spacing={3} align="center" borderWidth="1px" borderColor={dividerBorder} rounded="md" bg={panelBg}>
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="140px" rounded="sm" />
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="80px" rounded="sm" />
+                    </HStack>
+                  ))}
+                </VStack>
+              )}
+              {!loading && (
+              <>
+              {/* Action bar (global for program view) */}
+              <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
+                <HStack spacing={3} flexWrap="wrap" align="center">
+                  {(() => {
+                    const total = rows.length;
+                    const selectedCount = rows.filter(r => r._selected).length;
+                    const allChecked = total > 0 && selectedCount === total;
+                    const indeterminate = selectedCount > 0 && selectedCount < total;
+                    return (
+                      <HStack>
+                        <Checkbox
+                          isChecked={allChecked}
+                          isIndeterminate={indeterminate}
+                          onChange={(e)=> setRows(prev => prev.map(r => ({ ...r, _selected: !!e.target.checked })))}
+                        >
+                          Select all
+                        </Checkbox>
+                        <Badge colorScheme={selectedCount ? 'blue' : 'gray'}>{selectedCount} selected</Badge>
+                        <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: true })))}>
+                          Select All
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: false })))}>
+                          Deselect All
+                        </Button>
+                      </HStack>
+                    );
+                  })()}
+                  <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && r._status === 'Conflict')} isLoading={saving}>Save Selected</Button>
+                  <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
+                  <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
+                    Lock Selected
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
+                    Unlock Selected
+                  </Button>
+                </HStack>
+              </Box>
+
+              {grouped.map(group => (
+                <Box key={`${group.programcode}-${group.yearlevel}`} borderWidth="1px" borderColor={border} rounded="md" p={2}>
+                  <HStack justify="space-between" mb={2}>
+                    <HStack>
+                      <Badge colorScheme="blue">{group.programcode}</Badge>
+                      <Badge colorScheme="orange">Year {group.yearlevel || ''}</Badge>
+                    </HStack>
+                    <Text fontSize="sm" color={subtle}>{group.items.length} course(s)</Text>
+                  </HStack>
+                  {(() => {
+                    // group by block/section within this year level
+                    const byBlock = new Map();
+                    group.items.forEach((it) => {
+                      const sec = String(it.blockCode || it.section || '').trim() || 'Unassigned';
+                      if (!byBlock.has(sec)) byBlock.set(sec, []);
+                      byBlock.get(sec).push(it);
+                    });
+                    const sections = Array.from(byBlock.keys()).sort((a,b) => a.localeCompare(b));
+                    const limited = sections.slice(0, progBlocksLimit);
+                    return (
+                      <VStack align="stretch" spacing={3}>
+                        {limited.map((sec) => (
+                          <Box key={`${group.programcode}-${group.yearlevel}-${sec}`} borderWidth="1px" borderColor={border} rounded="md" p={2}>
+                            <HStack mb={2}>
+                              <Badge colorScheme={sec === 'Unassigned' ? 'gray' : 'purple'}>{sec}</Badge>
+                              <Text fontSize="sm" color={subtle}>{byBlock.get(sec).length} course(s)</Text>
+                            </HStack>
+                            <VirtualBlockList
+                              items={byBlock.get(sec)}
+                              estimatedRowHeight={80}
+                              overscan={8}
+                              maxHeight="50vh"
+                              border={border}
+                              dividerBorder={dividerBorder}
+                              renderRow={(r) => {
+                                const idx = rowIndexMap.get(r) ?? -1;
+                                return (
+                                  <AssignmentRow
+                                    key={`${r._existingId || r.course_name}-${idx}`}
+                                    row={r}
+                                    faculties={facOptions}
+                                    schedulesSource={(freshCache && freshCache.length) ? freshCache : (existing || [])}
+                                    allCourses={(existing || [])}
+                                    statsCourses={scopedCourses}
+                                    blockCode={r.blockCode || r.section || ''}
+                                    attendanceStats={attendanceStatsMap}
+                                    disabled={!canLoad}
+                                    onChange={(patch)=>handleRowChange(idx, patch)}
+                                    onToggle={(ck)=>toggleRow(idx, ck)}
+                                    onRequestLockChange={(next)=>requestLockChange(idx, next)}
+                                    onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
+                                    onRequestSuggest={()=>openSuggestions(idx)}
+                                    onRequestAssign={()=>openAssignForRow(idx)}
+                                    onRequestAddToSwap={()=>addToSwap(rows[idx])}
+                                    onRequestDelete={()=>requestDelete(idx)}
+                                    onRequestResolve={()=>requestResolve(idx)}
+                                  />
+                                );
+                              }}
+                            />
+                          </Box>
+                        ))}
+                        {sections.length > limited.length && (
+                          <VStack ref={progSentinelRef} py={4} spacing={2}>
+                            <HStack py={2} px={2} spacing={3} align="center" borderWidth="1px" borderColor={dividerBorder} rounded="md" bg={panelBg}>
+                              <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="120px" rounded="sm" />
+                              <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="60px" rounded="sm" />
+                            </HStack>
+                            <HStack py={2} px={2} spacing={3} align="center" borderWidth="1px" borderColor={dividerBorder} rounded="md" bg={panelBg}>
+                              <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '56px', md: '64px' }} height="16px" rounded="sm" />
+                              <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '80px', md: '96px' }} height="16px" rounded="sm" />
+                              <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '82px', md: '92px' }} height="16px" rounded="sm" />
+                              <Box flex="1 1 auto" minW={0}>
+                                <SkeletonText startColor={skStart} endColor={skEnd} noOfLines={1} spacing='2' skeletonHeight='12px' width="60%" />
+                              </Box>
+                              <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '120px', md: '160px' }} height="16px" rounded="sm" />
+                            </HStack>
+                            <Text fontSize="sm" color={subtle}>Loading more blocks…</Text>
+                          </VStack>
+                        )}
+                      </VStack>
+                    );
+                  })()}
+                </Box>
+              ))}
+              {grouped.length === 0 && (
+                <VStack py={10}><Text color={subtle}>No schedules for this program.</Text></VStack>
+              )}
+              <VStack ref={progYearSentinelRef} py={4} spacing={2}>
+                {(yearOrder.filter(y => !loadedYears.includes(String(y))).length > 0) && (
+                  <>
+                    <HStack py={2} px={2} spacing={3} align="center" borderWidth="1px" borderColor={dividerBorder} rounded="md" bg={panelBg}>
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="140px" rounded="sm" />
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="80px" rounded="sm" />
+                    </HStack>
+                    <HStack py={2} px={2} spacing={3} align="center" borderWidth="1px" borderColor={dividerBorder} rounded="md" bg={panelBg}>
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '56px', md: '64px' }} height="16px" rounded="sm" />
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '80px', md: '96px' }} height="16px" rounded="sm" />
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '82px', md: '92px' }} height="16px" rounded="sm" />
+                      <Box flex="1 1 auto" minW={0}>
+                        <SkeletonText startColor={skStart} endColor={skEnd} noOfLines={1} spacing='2' skeletonHeight='12px' width="65%" />
+                      </Box>
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '120px', md: '160px' }} height="16px" rounded="sm" />
+                    </HStack>
+                    <Text fontSize="sm" color={subtle}>{loadingYear ? 'Loading year…' : 'Scroll to load more years'}</Text>
+                  </>
+                )}
+              </VStack>
+              </>
+              )}
+            </VStack>
+          )}
           {viewMode === 'blocks' && selectedBlock && (
+            <Box position="relative">
             <VStack align="stretch" spacing={3}>
               <HStack justify="space-between" align="center">
                 <HStack>
@@ -2309,7 +2896,8 @@ export default function CourseLoading() {
                   <Badge colorScheme="purple">{selectedBlock.blockCode}</Badge>
                 </HStack>
                 <HStack>
-                  <Button leftIcon={<FiRefreshCw />} size="sm" variant="outline" onClick={()=>onSelectBlock(selectedBlock)} isLoading={loading}>Reload</Button>
+                  <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintBlock} isDisabled={loading}>Print</Button>
+                  <Button leftIcon={<FiRefreshCw />} size="sm" variant="outline" onClick={()=>onSelectBlock(selectedBlock)} isDisabled={loading}>Reload</Button>
                 </HStack>
               </HStack>
 
@@ -2375,7 +2963,7 @@ export default function CourseLoading() {
                   </HStack>
           <VStack align="stretch" spacing={0} divider={<Divider borderColor={dividerBorder} />}> 
             {group.items.map((r) => {
-              const idx = rows.indexOf(r);
+              const idx = rowIndexMap.get(r) ?? -1;
               return (
                         <AssignmentRow
                           key={`${r.id || r.course_name}-${idx}`}
@@ -2406,17 +2994,39 @@ export default function CourseLoading() {
                 <VStack py={10}><Text color={subtle}>No prospectus courses for this block/program/year.</Text></VStack>
               )}
             </VStack>
+            <Fade in={loading} unmountOnExit>
+              <Box position="absolute" inset={0} bg={overlayBg} backdropFilter="blur(1.5px)" zIndex={1}>
+                <VStack align="stretch" spacing={2} p={3} ref={blockSkelWrapRef}>
+                  {Array.from({ length: blockSkelCount }).map((_, i) => (
+                    <HStack key={`sk-${i}`} py={2} px={2} spacing={3} align="center" borderWidth="1px" borderColor={dividerBorder} rounded="md" bg={panelBg}>
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '56px', md: '64px' }} height="16px" rounded="sm" />
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '80px', md: '96px' }} height="16px" rounded="sm" />
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '82px', md: '92px' }} height="16px" rounded="sm" />
+                      <Box flex="1 1 auto" minW={0}>
+                        <HStack spacing={2} align="center">
+                          <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="120px" rounded="sm" />
+                          <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="28px" rounded="full" />
+                        </HStack>
+                        <SkeletonText startColor={skStart} endColor={skEnd} noOfLines={1} spacing='2' skeletonHeight='12px' mt={1} width="60%" />
+                      </Box>
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '120px', md: '160px' }} height="16px" rounded="sm" />
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '180px', md: '240px' }} height="16px" rounded="sm" />
+                    </HStack>
+                  ))}
+                </VStack>
+              </Box>
+            </Fade>
+            </Box>
           )}
           {viewMode === 'faculty' && selectedFaculty && (
+            <Box position="relative">
             <VStack align="stretch" spacing={3}>
               <HStack justify="space-between" align="center">
                 <HStack>
                   <Heading size="sm">Faculty:</Heading>
                   <Badge colorScheme="purple">{selectedFaculty.name || selectedFaculty.faculty}</Badge>
                 </HStack>
-                <HStack>
-                  {facultySchedules.loading && <HStack><Spinner size="sm" /><Text>Loading schedules…</Text></HStack>}
-                </HStack>
+                <HStack />
               </HStack>
               <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
                 <HStack spacing={3} mb={2} align="center" flexWrap="wrap">
@@ -2520,7 +3130,18 @@ export default function CourseLoading() {
                                         const filtered = base.filter(o => {
                                           const key = (o.id != null ? `id:${o.id}` : `nm:${String(o.label||'').toLowerCase().replace(/[^a-z0-9]/g,'')}`);
                                           if (key === currKey) return true;
-                                          return !busy.has(key);
+                                          if (busy.has(key)) return false;
+                                          // Dept filter by schedule programcode with whitelist
+                                          const prog = String(c.programcode || c.program || (c.prospectus?.programcode) || '')
+                                            .toUpperCase()
+                                            .replace(/[^A-Z0-9]/g, '');
+                                          const deptRaw = String(o.dept || '')
+                                            .toUpperCase();
+                                          const deptStripped = deptRaw.replace(/[^A-Z0-9]/g, '');
+                                          const always = ['GENED', 'KNP PARTTIME', 'PARTTIME', 'PE'];
+                                          const whitelisted = always.includes(deptRaw.trim());
+                                          const deptMatches = prog ? (deptStripped.includes(prog)) : true;
+                                          return whitelisted || deptMatches;
                                         });
                                         // scoring using shared engine (same as block view)
                                         const scheduleCtx = {
@@ -2619,6 +3240,29 @@ export default function CourseLoading() {
                 )}
               </Box>
             </VStack>
+            <Fade in={facultySchedules.loading} unmountOnExit>
+              <Box position="absolute" inset={0} bg={overlayBg} backdropFilter="blur(1.5px)" zIndex={1}>
+                <VStack align="stretch" spacing={2} p={3} ref={facSkelWrapRef}>
+                  {Array.from({ length: facSkelCount }).map((_, i) => (
+                    <HStack key={`fac-skel-${i}`} py={2} px={2} spacing={3} align="center" borderWidth="1px" borderColor={dividerBorder} rounded="md" bg={panelBg}>
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '56px', md: '64px' }} height="16px" rounded="sm" />
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '80px', md: '96px' }} height="16px" rounded="sm" />
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '82px', md: '92px' }} height="16px" rounded="sm" />
+                      <Box flex="1 1 auto" minW={0}>
+                        <HStack spacing={2} align="center">
+                          <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="120px" rounded="sm" />
+                          <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} height="16px" width="28px" rounded="full" />
+                        </HStack>
+                        <SkeletonText startColor={skStart} endColor={skEnd} noOfLines={1} spacing='2' skeletonHeight='12px' mt={1} width="60%" />
+                      </Box>
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '120px', md: '160px' }} height="16px" rounded="sm" />
+                      <Skeleton startColor={skStart} endColor={skEnd} speed={1.2} width={{ base: '140px', md: '180px' }} height="16px" rounded="sm" />
+                    </HStack>
+                  ))}
+                </VStack>
+              </Box>
+            </Fade>
+            </Box>
           )}
         </Box>
       </SimpleGrid>
@@ -2887,3 +3531,4 @@ export default function CourseLoading() {
     </VStack>
   );
 }
+
