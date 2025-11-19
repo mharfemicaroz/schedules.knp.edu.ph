@@ -183,7 +183,17 @@ export default function Layout({ children }) {
   const rdispatch = useRDispatch();
   const guest = useRSelector(s => s.guest);
   const user = useSelector(s => s.auth.user);
-  const [sidebarVisible, setSidebarVisible] = React.useState(true);
+  const [sidebarVisible, setSidebarVisible] = React.useState(() => {
+    try {
+      const v = localStorage.getItem('ui:sidebarVisible');
+      if (v !== null) return v === '1' || v === 'true';
+    } catch {}
+    return true;
+  });
+  // Persist sidebar visibility to localStorage
+  React.useEffect(() => {
+    try { localStorage.setItem('ui:sidebarVisible', sidebarVisible ? '1' : '0'); } catch {}
+  }, [sidebarVisible]);
   const [showSplash, setShowSplash] = React.useState(true);
   const splashStartRef = React.useRef(Date.now());
   const minSplash = 1000; // ms

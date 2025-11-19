@@ -27,6 +27,7 @@ import { normalizeTimeBlock } from '../utils/timeNormalize';
 import { parseTimeBlockToMinutes, parseF2FDays } from '../utils/conflicts';
 import { buildIndexes, buildFacultyStats, buildFacultyScoreMap, normalizeSem } from '../utils/facultyScoring';
 import { buildTable, printContent } from '../utils/printDesign';
+import ScheduleHistoryModal from '../components/ScheduleHistoryModal';
 
 // --- helpers (same as previous) ---
 function VirtualBlockList({ items, renderRow, estimatedRowHeight = 76, overscan = 6, maxHeight = '50vh', border, dividerBorder }) {
@@ -220,6 +221,8 @@ function AssignmentRow({
   onRequestAssign,
   onRequestResolve,
   onRequestAddToSwap,
+  onRequestHistory,
+  isAdmin,
 }) {
   const timeOpts = getTimeOptions();
   const dayOpts = ['MON-FRI', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'MWF', 'TTH', 'TBA'];
@@ -599,18 +602,22 @@ const eligibleOptions = React.useMemo(() => {
 
         {row._existingId && (
           <Tooltip label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}>
-            <IconButton
-              aria-label="Delete assignment"
-              icon={<FiTrash />}
-              size="sm"
-              colorScheme="red"
-              variant="ghost"
-              onClick={onRequestDelete}
-              isDisabled={disabled || isLocked}
-            />
+                        <IconButton
+                          aria-label="Delete assignment"
+                          icon={<FiTrash />}
+                          size="sm"
+                          colorScheme="red"
+                          variant="ghost"
+                          onClick={onRequestDelete}
+                          isDisabled={disabled || isLocked}
+                        />
+                        {isAdmin && (
+                          <IconButton aria-label="View history" icon={<FiInfo />} size="sm" variant="ghost" onClick={()=> onRequestHistory && onRequestHistory(row)} isDisabled={!(row?._existingId || row?.id)} />
+                        )}
           </Tooltip>
         )}
       </HStack>
+      {/* Admin-only history button is wired by parent via onRequestHistory */}
     </HStack>
   );
 }
@@ -696,6 +703,9 @@ export default function CourseLoading() {
   // Swap tray selections (persist across block/program changes)
   const [swapA, setSwapA] = React.useState(null);
   const [swapB, setSwapB] = React.useState(null);
+  // History modal state
+  const [histOpen, setHistOpen] = React.useState(false);
+  const [histScheduleId, setHistScheduleId] = React.useState(null);
 
   // Shared indexes/stats for faculty-view scoring (mirrors block view engine)
 
@@ -818,6 +828,82 @@ export default function CourseLoading() {
       </tbody></table>`,
       buildTable(headers, bodyRows)
     ].join('');
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait' });
+  };
+
+  const onPrintProgram = () => {
+    if (!selectedProgram) return;
+    const title = `Program: ${selectedProgram}`;
+    const subtitle = [`School Year: ${settingsLoad?.school_year || ''}`, `Semester: ${settingsLoad?.semester || ''}`]
+      .filter(Boolean)
+      .join('  |  ');
+    // Match DepartmentSchedule layout (regular)
+    const headers = ['Year Level', 'Block', 'Term', 'Time', 'Code', 'Title', 'Units', 'Room', 'Faculty'];
+    const list = Array.isArray(rows) ? rows.slice() : [];
+    // Group by year level then block
+    const groups = new Map();
+    const yearLabelOf = (r) => String(r.yearlevel || '').trim() || `Year ${extractYearDigits(r.yearlevel) || ''}`;
+    list.forEach((r) => {
+      const yl = yearLabelOf(r) || 'N/A';
+      const sec = String(r.blockCode || r.section || 'N/A');
+      const key = `${yl}|${sec}`;
+      const arr = groups.get(key) || [];
+      arr.push(r);
+      groups.set(key, arr);
+    });
+    // Sort within block like Dept page: term then time
+    const termOrder = (t) => {
+      const v = String(t || '').trim().toLowerCase();
+      if (v.startsWith('1')) return 1; if (v.startsWith('2')) return 2; if (v.startsWith('s')) return 3; return 9;
+    };
+    const timeStart = (tStr) => {
+      const tr = parseTimeBlockToMinutes(String(tStr || '').trim());
+      return Number.isFinite(tr.start) ? tr.start : 99999;
+    };
+    const rowsOut = [];
+    Array.from(groups.entries())
+      .sort((a, b) => {
+        const [ylA] = a[0].split('|');
+        const [ylB] = b[0].split('|');
+        const oA = Number(extractYearDigits(ylA) || 99);
+        const oB = Number(extractYearDigits(ylB) || 99);
+        if (oA !== oB) return oA - oB;
+        return a[0].localeCompare(b[0], undefined, { numeric: true });
+      })
+      .forEach(([key, arr]) => {
+        const [yl, sec] = key.split('|');
+        const sorted = arr.slice().sort((a, b) => {
+          const ta = termOrder(a._term || a.term);
+          const tb = termOrder(b._term || b.term);
+          if (ta !== tb) return ta - tb;
+          const sa = timeStart(a._time || a.time || a.schedule);
+          const sb = timeStart(b._time || b.time || b.schedule);
+          if (sa !== sb) return sa - sb;
+          return String(a.course_name || a.courseName || a.code || '').localeCompare(String(b.course_name || b.courseName || b.code || ''));
+        });
+        sorted.forEach((r) => {
+          // Room: prefer row.room; fallback to Block dataset room by section
+          const sec = String(r.blockCode || r.section || '');
+          const blkRoom = (() => {
+            try {
+              const byCode = (blocks || []).find(b => String(b.blockCode) === sec);
+              return byCode?.room || '';
+            } catch { return ''; }
+          })();
+          rowsOut.push([
+            yl,
+            sec,
+            String(r._term || r.term || ''),
+            String(r._time || r.time || r.schedule || ''),
+            String(r.course_name || r.courseName || r.code || ''),
+            String(r.course_title || r.courseTitle || r.title || ''),
+            String(r.unit ?? ''),
+            String(r.room || blkRoom || ''),
+            String(r._faculty || r.faculty || r.instructor || ''),
+          ]);
+        });
+      });
+    const bodyHtml = buildTable(headers, rowsOut);
     printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait' });
   };
 
@@ -988,6 +1074,7 @@ export default function CourseLoading() {
           _time: hit.schedule || hit.time || '',
           _faculty: hit.facultyName || hit.faculty || hit.instructor || '',
           _day: hit.day || 'MON-FRI',
+          room: hit.room || '',
         } : { _term: '', _time: '', _faculty: '', _day: 'MON-FRI' };
         return {
           ...p,
@@ -1036,6 +1123,7 @@ export default function CourseLoading() {
       const prefillTime = r._time || (hit ? (hit.schedule || hit.time || '') : '');
       const prefillFac = r._faculty || (hit ? (hit.facultyName || hit.faculty || hit.instructor || '') : '');
       const prefillDay = r._day || (hit ? (hit.day || 'MON-FRI') : 'MON-FRI');
+      const prefillRoom = r.room || (hit ? (hit.room || '') : '');
       return {
         ...r,
         _existingId: hit?.id || null,
@@ -1045,6 +1133,7 @@ export default function CourseLoading() {
         _time: prefillTime,
         _faculty: prefillFac,
         _day: prefillDay,
+        room: prefillRoom,
       };
     });
     setRows(next);
@@ -1167,16 +1256,17 @@ export default function CourseLoading() {
             const locked = (() => {
               const v = hit?.lock; if (typeof v === 'boolean') return v; const s = String(v || '').trim().toLowerCase(); return s === 'yes' || s === 'true' || s === '1';
             })();
-            const prefill = hit ? {
-              _term: canonicalTerm(hit.term || ''),
-              _time: hit.schedule || hit.time || '',
-              _faculty: hit.facultyName || hit.faculty || hit.instructor || '',
-              _day: hit.day || 'MON-FRI',
-            } : { _term: '', _time: '', _faculty: '', _day: 'MON-FRI' };
-            rowsByBlock.push({
-              ...p,
-              ...prefill,
-              programcode: p.programcode || prog,
+              const prefill = hit ? {
+                _term: canonicalTerm(hit.term || ''),
+                _time: hit.schedule || hit.time || '',
+                _faculty: hit.facultyName || hit.faculty || hit.instructor || '',
+                _day: hit.day || 'MON-FRI',
+                room: hit.room || '',
+              } : { _term: '', _time: '', _faculty: '', _day: 'MON-FRI' };
+              rowsByBlock.push({
+                ...p,
+                ...prefill,
+                programcode: p.programcode || prog,
               section: sec,
               blockCode: sec,
               _existingId: hit?.id || null,
@@ -1290,6 +1380,15 @@ export default function CourseLoading() {
   const [assignOpen, setAssignOpen] = React.useState(false);
   const [assignIndex, setAssignIndex] = React.useState(null);
   const openAssignForRow = (idx) => { setAssignIndex(idx); setAssignOpen(true); };
+  const openHistoryForRow = (row) => {
+    const id = row?._existingId || row?.id || null;
+    if (!id) {
+      toast({ title: 'No history', description: 'Save this schedule first to track changes.', status: 'info' });
+      return;
+    }
+    setHistScheduleId(id);
+    setHistOpen(true);
+  };
   const scheduleForAssign = React.useMemo(() => {
     if (assignIndex == null) return null;
     const r = rows[assignIndex];
@@ -2544,12 +2643,16 @@ export default function CourseLoading() {
     const payload = preparePayload(chosen);
     setSaving(true);
     try {
+      let createdCount = 0;
+      let updatedCount = 0;
       for (const item of payload) {
         const { _existingId, ...body } = item || {};
         if (_existingId) {
           await api.updateSchedule(_existingId, body);
+          updatedCount++;
         } else {
           await api.createSchedule(body);
+          createdCount++;
         }
       }
       setRows(prev => prev.map(r => r._selected ? { ...r, _status: 'Assigned', _existingId: (r._existingId || null) } : r));
@@ -2566,9 +2669,13 @@ export default function CourseLoading() {
       } catch {}
       // Also refresh global cache for other views
       try { dispatch(loadAllSchedules()); } catch {}
-      toast({ title: 'Courses loaded', description: `${chosen.length} schedule(s) created.`, status: 'success' });
+      const parts = [];
+      if (updatedCount) parts.push(`${updatedCount} updated`);
+      if (createdCount) parts.push(`${createdCount} created`);
+      const desc = parts.length ? parts.join(', ') : `${chosen.length} saved`;
+      toast({ title: 'Schedules saved', description: desc, status: 'success' });
     } catch (e) {
-      toast({ title: 'Save failed', description: e?.message || 'Could not create schedules.', status: 'error' });
+      toast({ title: 'Save failed', description: e?.message || 'Could not save schedules.', status: 'error' });
     } finally {
       setSaving(false);
     }
@@ -2724,6 +2831,9 @@ export default function CourseLoading() {
                   <Heading size="sm">Program:</Heading>
                   <Badge colorScheme="blue">{selectedProgram}</Badge>
                 </HStack>
+                <HStack>
+                  <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintProgram} isDisabled={loading || !rows.length}>Print</Button>
+                </HStack>
               </HStack>
               {loading && (
                 <VStack py={4} spacing={2}>
@@ -2831,6 +2941,8 @@ export default function CourseLoading() {
                                     onRequestAddToSwap={()=>addToSwap(rows[idx])}
                                     onRequestDelete={()=>requestDelete(idx)}
                                     onRequestResolve={()=>requestResolve(idx)}
+                                    onRequestHistory={openHistoryForRow}
+                                    isAdmin={role==='admin' || role==='manager'}
                                   />
                                 );
                               }}
@@ -2887,7 +2999,7 @@ export default function CourseLoading() {
               )}
             </VStack>
           )}
-          {viewMode === 'blocks' && selectedBlock && (
+{viewMode === 'blocks' && selectedBlock && (
             <Box position="relative">
             <VStack align="stretch" spacing={3}>
               <HStack justify="space-between" align="center">
@@ -2984,6 +3096,8 @@ export default function CourseLoading() {
                           onRequestAddToSwap={()=>addToSwap(rows[idx])}
                           onRequestDelete={()=>requestDelete(idx)}
                           onRequestResolve={()=>requestResolve(idx)}
+                          onRequestHistory={openHistoryForRow}
+                          isAdmin={role==='admin' || role==='manager'}
                         />
               );
             })}
@@ -3268,6 +3382,7 @@ export default function CourseLoading() {
       </SimpleGrid>
 
       {/* Assign Faculty Modal for Blocks view */}
+      <ScheduleHistoryModal scheduleId={histScheduleId} isOpen={histOpen} onClose={()=>{ setHistOpen(false); setHistScheduleId(null); }} />
       <AssignFacultyModal
         isOpen={assignOpen}
         onClose={()=>{ setAssignOpen(false); setAssignIndex(null); }}

@@ -438,6 +438,14 @@ class ApiService {
     return this.request(`/${id}`);
   }
 
+  // GET /api/schedules/:id/history - Get long-text schedule history
+  async getScheduleHistory(id) {
+    const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/history`;
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   // GET /api/schedules/program/:programcode - Get schedules by program code
   async getSchedulesByProgramCode(programcode) {
     return this.request(`/program/${programcode}`);
