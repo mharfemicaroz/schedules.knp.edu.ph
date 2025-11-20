@@ -101,10 +101,10 @@ export default function AdminProspectus() {
             {[...new Set([...(opts.programs || []), ...PROGRAM_OPTIONS])].map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
           <Select placeholder="Year Level" value={filters.yearlevel || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ yearlevel: e.target.value } })} maxW="160px">
-            {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
+            {['1st Year','2nd Year','3rd Year','4th Year'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
-          <Select placeholder="Semester" value={filters.semester || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ semester: e.target.value } })} maxW="140px">
-            {[1,2].map(n => <option key={n} value={n}>{n}</option>)}
+          <Select placeholder="Semester" value={filters.semester || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ semester: e.target.value } })} maxW="180px">
+            {['1st Semester','2nd Semester','Summer'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
           <Input placeholder="Curriculum Year" value={filters.curriculum_year || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ curriculum_year: e.target.value } })} maxW="180px" />
           <Button leftIcon={<FiFilter />} onClick={()=>dispatch(loadProspectusThunk(filters))} variant="outline" isLoading={loading}>Apply</Button>
@@ -259,4 +259,3 @@ export default function AdminProspectus() {
     </VStack>
   );
 }
-

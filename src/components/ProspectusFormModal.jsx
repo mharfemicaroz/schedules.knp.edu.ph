@@ -64,16 +64,21 @@ export default function ProspectusFormModal({ isOpen, onClose, onSubmit, initial
               </FormControl>
               <FormControl isRequired>
                 <FormLabel>Year Level</FormLabel>
-                <NumberInput min={1} max={5} value={form.yearlevel ?? ''} onChange={(v)=> setForm(s=>({ ...s, yearlevel: v }))}>
-                  <NumberInputField placeholder="1" />
-                </NumberInput>
+                <Select value={form.yearlevel || ''} onChange={set('yearlevel')}>
+                  <option value="">Select</option>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                </Select>
               </FormControl>
               <FormControl isRequired>
                 <FormLabel>Semester</FormLabel>
                 <Select value={form.semester || ''} onChange={set('semester')}>
                   <option value="">Select</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
+                  <option value="1st Semester">1st Semester</option>
+                  <option value="2nd Semester">2nd Semester</option>
+                  <option value="Summer">Summer</option>
                 </Select>
               </FormControl>
             </HStack>
@@ -91,4 +96,3 @@ export default function ProspectusFormModal({ isOpen, onClose, onSubmit, initial
     </Modal>
   );
 }
-

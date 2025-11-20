@@ -11,6 +11,7 @@ class ApiService {
     this.attendancePath = "/attendance";
     this.authPath = "/auth";
     this.usersPath = "/users";
+    this.userDeptPath = "/userdepartment";
     this.token = null;
     this._didAutoLogout = false;
     this.onUnauthorized = null; // optional callback set from app bootstrap
@@ -308,6 +309,46 @@ class ApiService {
   async deleteProspectus(id) {
     const url = `${this.baseURL}${this.prospectusPath}/${encodeURIComponent(id)}`;
     const res = await fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  // USER-DEPARTMENT API
+  async getUserDeptOptions() {
+    const url = `${this.baseURL}${this.userDeptPath}/options`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+  async listUserDepartments(params = {}) {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') qs.append(k, v); });
+    const url = `${this.baseURL}${this.userDeptPath}${qs.toString() ? `/?${qs.toString()}` : '/'}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+  async getUserDepartmentsByUser(userId) {
+    const url = `${this.baseURL}${this.userDeptPath}/${encodeURIComponent(userId)}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+  async createUserDepartment(payload) {
+    const url = `${this.baseURL}${this.userDeptPath}/`;
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+  async updateUserDepartment(id, payload) {
+    const url = `${this.baseURL}${this.userDeptPath}/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+  async deleteUserDepartment(id) {
+    const url = `${this.baseURL}${this.userDeptPath}/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }

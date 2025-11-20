@@ -394,7 +394,10 @@ const eligibleOptions = React.useMemo(() => {
   scored.sort((a, b) => {
     const sa = typeof a.score === 'number' ? a.score : -1;
     const sb = typeof b.score === 'number' ? b.score : -1;
-    if (sb !== sa) return sb - sa;
+    // Match AssignFacultyModal: sort by displayed precision (2 decimals)
+    const ra = Math.round(sa * 100) / 100;
+    const rb = Math.round(sb * 100) / 100;
+    if (rb !== ra) return rb - ra;
     const la = String(a.label || a.name || a.faculty || '');
     const lb = String(b.label || b.name || b.faculty || '');
     return la.localeCompare(lb);
@@ -1398,9 +1401,11 @@ export default function CourseLoading() {
       code: r.course_name || r.courseName || r.code,
       title: r.course_title || r.courseTitle || r.title,
       section: selectedBlock?.blockCode || r.section || '',
-      term: r._term || r.term || '',
+      term: r._term || r.term || r.semester || '',
       time: r._time || r.time || r.schedule || '',
       schedule: r._time || r.time || r.schedule || '',
+      day: r._day || r.day || '',
+      f2fDays: r._day || r.f2fDays || r.f2fSched || r.f2fsched || r.day || '',
       room: '',
       program: selectedBlock?.program || undefined,
       programcode: parseBlockMeta(selectedBlock?.blockCode || '').programcode || undefined,
@@ -1727,9 +1732,11 @@ export default function CourseLoading() {
       code: it.code || it.courseName,
       title: it.title || it.courseTitle,
       section: it.section || it.blockCode || '',
-      term: it.term || '',
+      term: it.term || it.semester || '',
       time: it.schedule || it.time || '',
       schedule: it.schedule || it.time || '',
+      day: it.day || '',
+      f2fDays: it.f2fDays || it.f2fSched || it.f2fsched || it.day || '',
       room: it.room || '',
       program: it.program || it.programcode || '',
       programcode: it.programcode || it.program || '',

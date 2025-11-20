@@ -7,6 +7,7 @@ import uiReducer, { setError, setToast } from './uiSlice';
 import guestReducer from './guestSlice';
 import blocksReducer from './blockSlice';
 import prospectusReducer from './prospectusSlice';
+import userDeptReducer from './userDeptSlice';
 
 const toastMiddleware = storeAPI => next => action => {
   const result = next(action);
@@ -60,6 +61,7 @@ const store = configureStore({
     guest: guestReducer,
     blocks: blocksReducer,
     prospectus: prospectusReducer,
+    userdept: userDeptReducer,
   },
   middleware: (getDefault) => getDefault().concat(toastMiddleware),
 });

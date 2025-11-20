@@ -23,6 +23,7 @@ import AdminBlockSettings from './pages/AdminBlockSettings';
 import AdminAcademicCalendar from './pages/AdminAcademicCalendar';
 import AdminGradesSubmission from './pages/AdminGradesSubmission';
 import AdminProspectus from './pages/AdminProspectus';
+import AdminUserDepartments from './pages/AdminUserDepartments';
 import AdminSettings from './pages/AdminSettings';
 import CourseLoading from './pages/CourseLoading';
 import ShareVisualMap from './pages/ShareVisualMap';
@@ -85,6 +86,7 @@ function App() {
               <Route path="/admin/v2/grades-submission" element={<RequireRole roles={['admin','manager','registrar']}><AdminGradesSubmission /></RequireRole>} />
               <Route path="/admin/course-loading" element={<RequireRole roles={['admin','manager','registrar']}><CourseLoading /></RequireRole>} />
               <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
+              <Route path="/admin/user-departments" element={<RequireAdmin><AdminUserDepartments /></RequireAdmin>} />
               <Route path="/admin/guest-logs" element={<RequireAdmin><AdminGuestLogs /></RequireAdmin>} />
               <Route path="/reports/faculty-summary" element={<RequireAuth><ReportsFacultySummary /></RequireAuth>} />
               {/* Share/public routes (chrome-less) */}
