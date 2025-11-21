@@ -3,7 +3,7 @@ import {
   Box, Heading, Text, HStack, VStack, Button, useColorModeValue, Input, Select, Tag, TagLabel, TagCloseButton,
   SimpleGrid, IconButton, useDisclosure, useToast, Divider
 } from '@chakra-ui/react';
-import { FiRefreshCw, FiPlus, FiFilter, FiPrinter } from 'react-icons/fi';
+import { FiRefreshCw, FiPlus, FiFilter, FiPrinter, FiExternalLink } from 'react-icons/fi';
 import useAttendance from '../hooks/useAttendance';
 import apiService from '../services/apiService';
 import AttendanceTable from '../components/AttendanceTable';
@@ -100,6 +100,74 @@ export default function Attendance() {
     printContent({ title, subtitle, bodyHtml }, { compact: true, pageSize: 'A4', orientation: 'portrait', margin: '8mm' });
   }, [data, filters]);
 
+  // Build Absent-only grouped summary by faculty (based on current filters)
+  const absentGroups = React.useMemo(() => {
+    const list = Array.isArray(data) ? data : [];
+    const by = new Map();
+    list.forEach((r) => {
+      if (String(r?.status || '').toLowerCase() !== 'absent') return;
+      const sid = r?.schedule;
+      const facId = sid?.facultyId ?? sid?.faculty_id;
+      const name = facId != null ? (facultyById.get(String(facId)) || '') : '';
+      const key = name || '(Unknown Faculty)';
+      const arr = by.get(key) || [];
+      const subj = [sid?.programcode, sid?.courseName, sid?.courseTitle].filter(Boolean).join(' - ');
+      const tm = [sid?.day, sid?.time].filter(Boolean).join(' ');
+      const term = sid?.term || '';
+      arr.push({ date: r.date || '', subject: subj || '-', time: tm || '-', term: term || '' });
+      by.set(key, arr);
+    });
+    // Sort rows within each faculty by date/time
+    by.forEach((arr, k) => {
+      arr.sort((a,b) => {
+        const da = new Date(a.date || '1970-01-01').getTime();
+        const db = new Date(b.date || '1970-01-01').getTime();
+        if (da !== db) return da - db;
+        return String(a.time).localeCompare(String(b.time));
+      });
+    });
+    return by;
+  }, [data, facultyById]);
+
+  const onPrintAbsentConsolidated = React.useCallback(() => {
+    // Build a single printable page with sections per faculty
+    const titleBits = ['Absent Summary (Per Faculty)'];
+    const sub = [];
+    if (filters.startDate || filters.endDate) sub.push(`Dates: ${filters.startDate || '—'} to ${filters.endDate || '—'}`);
+    if (filters.term) sub.push(`Term: ${filters.term}`);
+    const title = titleBits.join('');
+    const subtitle = sub.join('  |  ');
+    let bodyHtml = '';
+    const facNames = Array.from(absentGroups.keys()).sort((a,b)=>a.localeCompare(b));
+    if (facNames.length === 0) {
+      bodyHtml = '<p>No absent records match current filters.</p>';
+    } else {
+      facNames.forEach((name) => {
+        const rows = absentGroups.get(name) || [];
+        const table = buildTable(['Date', 'Subject', 'Time', 'Term'], rows.map(r => [r.date, r.subject, r.time, r.term]));
+        const section = `
+          <div style="margin-bottom: 12px;">
+            <h3 class="prt-fac-name">${name}</h3>
+            ${table}
+          </div>
+        `;
+        bodyHtml += section;
+      });
+    }
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, margin: '10mm' });
+  }, [absentGroups, filters]);
+
+  const onOpenAbsentTabsPerFaculty = React.useCallback(() => {
+    const facNames = Array.from(absentGroups.keys());
+    if (facNames.length === 0) return;
+    facNames.forEach((name) => {
+      const rows = absentGroups.get(name) || [];
+      const bodyHtml = buildTable(['Date', 'Subject', 'Time', 'Term'], rows.map(r => [r.date, r.subject, r.time, r.term]));
+      const subtitle = [filters.startDate || filters.endDate ? `Dates: ${filters.startDate || '—'} to ${filters.endDate || '—'}` : '', filters.term ? `Term: ${filters.term}` : ''].filter(Boolean).join('  |  ');
+      printContent({ title: `Faculty: ${name}`, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, margin: '10mm' });
+    });
+  }, [absentGroups, filters]);
+
   const sortedItems = React.useMemo(() => {
     const items = Array.isArray(data)
       ? data.map((r) => {
@@ -185,6 +253,8 @@ export default function Attendance() {
           <Button as={RouterLink} to="/admin/room-attendance" target="_blank" colorScheme="purple" variant="solid">Open Room Attendance</Button>
           <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={refresh} />
           <Button leftIcon={<FiPrinter />} variant="outline" onClick={onPrint}>Print</Button>
+          <Button leftIcon={<FiPrinter />} colorScheme="blue" variant="solid" onClick={onPrintAbsentConsolidated}>Absent Summary</Button>
+          <IconButton aria-label="Open tabs per faculty" icon={<FiExternalLink />} onClick={onOpenAbsentTabsPerFaculty} title="Open absent summary in tabs per faculty" />
           <Button leftIcon={<FiPlus />} colorScheme="blue" onClick={() => { setEditing(null); modal.onOpen(); }}>Add</Button>
         </HStack>
       </HStack>
