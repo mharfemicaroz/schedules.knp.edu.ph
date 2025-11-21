@@ -20,7 +20,7 @@ export default function useAttendance(params = {}) {
   const fetchList = React.useCallback(async (p) => {
     // Extract UI paging; we'll page client-side when doing faculty filter
     const originalPage = Number(p?.page) || 1;
-    const originalLimit = Number(p?.limit) || 100;
+    const originalLimit = (p?.limit === '' || p?.limit === 'all') ? Infinity : (Number(p?.limit) || 100);
     const hasFacultyFilter = Boolean(p && (p.facultyId || p.faculty || p.faculty_id || p.facultyName || p.instructor));
 
     // Do not forward local-only params to the API
@@ -35,6 +35,10 @@ export default function useAttendance(params = {}) {
       p2.faculty_id = p2.facultyId;
     }
     // Server now supports faculty filters; keep requested page/limit
+    // When UI selects 'All', request a very high limit to approximate no-limit
+    if (p && (p.limit === '' || p.limit === 'all' || p.limit == null)) {
+      p2.limit = 100000;
+    }
 
     let list = [];
     if (p && p.scheduleId) {

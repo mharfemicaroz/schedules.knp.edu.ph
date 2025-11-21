@@ -26,7 +26,8 @@ export default function Attendance() {
   const cardBg = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
   const [page, setPage] = React.useState(1);
-  const [limit, setLimit] = React.useState(100);
+  // '' means All (no limit)
+  const [limit, setLimit] = React.useState('');
   const [filters, setFilters] = React.useState({ startDate: '', endDate: '', status: '', faculty: '', facultyId: '', term: '' });
   const schedules = useSelector(selectAllCourses);
   const { data, loading, error, refresh } = useAttendance({ page, limit, ...filters, schedules });
@@ -295,8 +296,9 @@ export default function Attendance() {
           </Box>
           <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>Page Size</Text>
-            <Select value={String(limit)} onChange={(e) => setLimit(Number(e.target.value))} maxW="120px">
-              {[50,100,200,500,1000].map(n => <option key={n} value={n}>{n}</option>)}
+            <Select value={String(limit)} onChange={(e) => setLimit(e.target.value)} maxW="160px">
+              <option value="">All (no limit)</option>
+              {[50,100,200,500,1000].map(n => <option key={n} value={String(n)}>{n}</option>)}
             </Select>
           </Box>
           <Button leftIcon={<FiFilter />} onClick={onApply}>Apply</Button>
@@ -335,13 +337,15 @@ export default function Attendance() {
           onEdit={(row) => { setEditing(row); modal.onOpen(); }}
           onDelete={onDelete}
         />
-        <HStack justify="space-between" px={4} py={3}>
-          <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>Page {page}</Text>
-          <HStack>
-            <Button size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} isDisabled={page <= 1}>Prev</Button>
-            <Button size="sm" onClick={() => setPage(p => p + 1)} isDisabled={Array.isArray(data) && data.length < limit}>Next</Button>
+        {String(limit) !== '' && (
+          <HStack justify="space-between" px={4} py={3}>
+            <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>Page {page}</Text>
+            <HStack>
+              <Button size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} isDisabled={page <= 1}>Prev</Button>
+              <Button size="sm" onClick={() => setPage(p => p + 1)} isDisabled={Array.isArray(data) && Number(data.length) < Number(limit)}>Next</Button>
+            </HStack>
           </HStack>
-        </HStack>
+        )}
       </Box>
 
       <AttendanceFormModal isOpen={modal.isOpen} onClose={modal.onClose} initial={editing} onSaved={onSaved} />
