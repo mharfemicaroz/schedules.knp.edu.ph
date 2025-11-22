@@ -97,9 +97,16 @@ export default function Attendance() {
       const remarks = String(r.remarks || '').slice(0, 80);
       return [r.date || '', (r.status || '').toUpperCase(), course || '-', schedule || '-', remarks];
     });
-    const bodyHtml = buildTable(headers, rows);
-    printContent({ title, subtitle, bodyHtml }, { compact: true, pageSize: 'A4', orientation: 'portrait', margin: '8mm' });
-  }, [data, filters]);
+    const q = new URLSearchParams();
+    if (filters.startDate) q.set('startDate', filters.startDate);
+    if (filters.endDate) q.set('endDate', filters.endDate);
+    if (filters.term) q.set('term', filters.term);
+    if (filters.facultyId) q.set('facultyId', filters.facultyId);
+    if (filters.faculty) q.set('faculty', filters.faculty);
+    q.set('type', 'all');
+    const href = `${window.location.origin}${window.location.pathname}#/admin/attendance/print?${q.toString()}`;
+    window.open(href, '_blank');
+  }, [filters]);
 
   // Build Absent-only grouped summary by faculty (based on current filters)
   const absentGroups = React.useMemo(() => {
@@ -155,8 +162,14 @@ export default function Attendance() {
         bodyHtml += section;
       });
     }
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, margin: '10mm' });
-  }, [absentGroups, filters]);
+    const q = new URLSearchParams();
+    if (filters.startDate) q.set('startDate', filters.startDate);
+    if (filters.endDate) q.set('endDate', filters.endDate);
+    if (filters.term) q.set('term', filters.term);
+    q.set('type', 'absent');
+    const href = `${window.location.origin}${window.location.pathname}#/admin/attendance/print?${q.toString()}`;
+    window.open(href, '_blank');
+  }, [filters]);
 
   const onOpenAbsentTabsPerFaculty = React.useCallback(() => {
     const facNames = Array.from(absentGroups.keys());

@@ -33,6 +33,7 @@ import RequireAdmin from './components/RequireAdmin';
 import RequireAuth from './components/RequireAuth';
 import RequireRole from './components/RequireRole';
 import Attendance from './pages/Attendance';
+import AttendancePrint from './pages/AttendancePrint';
 import RoomAttendance from './pages/RoomAttendance';
 // DataProvider removed; using Redux directly
 // VisitorProvider removed
@@ -76,6 +77,7 @@ function App() {
               <Route path="/admin/conflicts" element={<RequireAdmin><ConflictSchedules /></RequireAdmin>} />
               <Route path="/admin/unassigned" element={<RequireAdmin><UnassignedSchedules /></RequireAdmin>} />
               <Route path="/admin/attendance" element={<RequireRole roles={['admin','manager','checker']}><Attendance /></RequireRole>} />
+              <Route path="/admin/attendance/print" element={<RequireRole roles={['admin','manager','checker']}><AttendancePrint /></RequireRole>} />
               <Route path="/admin/room-attendance" element={<RequireRole roles={['admin','manager','checker']}><RoomAttendance /></RequireRole>} />
               <Route path="/admin/faculty" element={<RequireAdmin><AdminFaculty /></RequireAdmin>} />
               <Route path="/admin/prospectus" element={<RequireAdmin><AdminProspectus /></RequireAdmin>} />

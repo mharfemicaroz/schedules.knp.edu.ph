@@ -348,6 +348,10 @@ export default function RoomAttendance() {
       <style>
         @page { size: 13in 8.5in; margin: 10mm; }
         body { font-family: Arial, sans-serif; color: #111; }
+        .toolbar { position: sticky; top: 0; background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 8px 10px; display: flex; gap: 8px; z-index: 5; }
+        .toolbar button { background: #2563eb; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; font-weight: 700; cursor: pointer; }
+        .toolbar button:hover { background: #1d4ed8; }
+        @media print { .toolbar { display: none; } }
         /* Ensure a consistent top gap on every new page. Margins can collapse across page breaks, so use padding or a spacer. */
         .section { page-break-inside: avoid; page-break-before: always; margin-top: 0; padding-top: 0; }
         .section:first-child { page-break-before: auto; padding-top: 0; }
@@ -411,20 +415,13 @@ export default function RoomAttendance() {
     const html = `
       <!doctype html><html><head><meta charset="utf-8"/><title>Attendance Sheet</title>${styles}</head>
       <body>
+        <div class="toolbar"><button onclick="window.print()">Print</button></div>
         <div class="head"><div class="left">Attendance Sheet - Day: ${label}</div><div class="right">Generated: ${new Date().toLocaleString()}</div></div>
-            <Text fontSize="sm" color={subtle}>Day: <Text as="span" fontWeight="700">{formatDayLabel(new Date(selectedDate))}</Text></Text>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-        <script>(function(){function download(){try{var jsp=window.jspdf&&window.jspdf.jsPDF?window.jspdf.jsPDF:null;if(!jsp){setTimeout(download,200);return;}var pw=936,ph=612,margin=12;var doc=new jsp({orientation:"landscape",unit:"pt",format:[pw,ph]});var innerW=pw-(margin*2);var ww=Math.max(document.documentElement.scrollWidth,document.body.scrollWidth);if(!ww||ww<innerW) ww=innerW;var scale=innerW/ww;doc.html(document.body,{x:margin,y:margin,width:innerW,windowWidth:ww,autoPaging:"text",html2canvas:{scale:Math.min(1,scale),useCORS:true},callback:function(doc){var fn="Attendance_Sheet_"+(new Date().toISOString().slice(0,10))+".pdf";doc.save(fn);setTimeout(function(){window.close();},300);}});}catch(e){setTimeout(download,200);}}if(document.readyState==="complete")download();else window.addEventListener("load",download);})();</script>
+        ${groupHtml}
       </body></html>
     `;
-    // Convert download-based script into print preview in a robust way
-    const htmlPrint = html
-      .replace(/<script src=\"https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/jspdf\/[\s\S]*?<\/script>\s*/g, '')
-      .replace(/<script src=\"https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/html2canvas\/[\s\S]*?<\/script>\s*/g, '')
-      .replace(/<script>\(function\(\)\{[\s\S]*?\}\)\(\);<\/script>/, '<script>(function(){function triggerPrint(){try{window.focus()}catch(e){} try{window.print()}catch(e){} setTimeout(function(){try{window.close()}catch(e){}},500);} if(document.readyState==="complete") setTimeout(triggerPrint,150); else window.addEventListener("load", function(){ setTimeout(triggerPrint,150); });})();<\/script>');
     const w = window.open('', '_blank');
-    if (w) { w.document.write(htmlPrint); w.document.close(); }
+    if (w) { w.document.write(html); w.document.close(); }
   }
 
   async function onDownloadXlsx() {
