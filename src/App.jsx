@@ -26,6 +26,7 @@ import AdminProspectus from './pages/AdminProspectus';
 import AdminUserDepartments from './pages/AdminUserDepartments';
 import AdminSettings from './pages/AdminSettings';
 import CourseLoading from './pages/CourseLoading';
+import RequireCourseLoadingAccess from './components/RequireCourseLoadingAccess';
 import ShareVisualMap from './pages/ShareVisualMap';
 import ReportsFacultySummary from './pages/ReportsFacultySummary';
 import Unauthorized from './pages/Unauthorized';
@@ -86,7 +87,7 @@ function App() {
               <Route path="/admin/blocks" element={<RequireAdmin><AdminBlockSettings /></RequireAdmin>} />
               <Route path="/admin/grades-submission" element={<RequireRole roles={['admin','manager','registrar']}><AdminGradesSubmission /></RequireRole>} />
               <Route path="/admin/v2/grades-submission" element={<RequireRole roles={['admin','manager','registrar']}><AdminGradesSubmission /></RequireRole>} />
-              <Route path="/admin/course-loading" element={<RequireRole roles={['admin','manager','registrar']}><CourseLoading /></RequireRole>} />
+              <Route path="/admin/course-loading" element={<RequireAuth><RequireCourseLoadingAccess><CourseLoading /></RequireCourseLoadingAccess></RequireAuth>} />
               <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
               <Route path="/admin/user-departments" element={<RequireAdmin><AdminUserDepartments /></RequireAdmin>} />
               <Route path="/admin/guest-logs" element={<RequireAdmin><AdminGuestLogs /></RequireAdmin>} />

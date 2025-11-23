@@ -1,25 +1,24 @@
 import React from 'react';
-import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Button, VStack, HStack, FormControl, FormLabel, Select, Input, Switch } from '@chakra-ui/react';
+import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Button, VStack, HStack, FormControl, FormLabel, Select, Input, Switch, Checkbox, CheckboxGroup, Stack, Text } from '@chakra-ui/react';
 import api from '../services/apiService';
 
 export default function UserDeptFormModal({ isOpen, onClose, onSubmit, initial, options }) {
   const [users, setUsers] = React.useState([]);
   const [loadingUsers, setLoadingUsers] = React.useState(false);
-  const [form, setForm] = React.useState({ userId: '', department: '', position: '', isPrimary: false, isActive: true, assignedAt: '', remarks: '' });
+  const [form, setForm] = React.useState({ userId: '', department: '', departments: [], position: '', isPrimary: false, remarks: '' });
 
   React.useEffect(() => {
     if (initial) {
       setForm({
         userId: initial.userId || '',
         department: initial.department || '',
+        departments: [],
         position: initial.position || '',
         isPrimary: !!initial.isPrimary,
-        isActive: initial.isActive !== false,
-        assignedAt: initial.assignedAt ? String(initial.assignedAt).substring(0,10) : '',
         remarks: initial.remarks || '',
       });
     } else {
-      setForm({ userId: '', department: '', position: '', isPrimary: false, isActive: true, assignedAt: '', remarks: '' });
+      setForm({ userId: '', department: '', departments: [], position: '', isPrimary: false, remarks: '' });
     }
   }, [initial]);
 
@@ -37,13 +36,14 @@ export default function UserDeptFormModal({ isOpen, onClose, onSubmit, initial, 
   }, []);
 
   const set = (k) => (e) => setForm(v => ({ ...v, [k]: e?.target ? (e.target.type === 'checkbox' ? e.target.checked : e.target.value) : e }));
-  const canSave = !!form.userId && !!form.department;
+  const setDepartments = (vals) => setForm(v => ({ ...v, departments: vals }));
+  const canSave = !!form.userId && (initial ? !!form.department : (Array.isArray(form.departments) && form.departments.length > 0));
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} isCentered>
       <ModalOverlay />
       <ModalContent>
-        <ModalHeader>{initial ? 'Edit Assignment' : 'Assign User to Department'}</ModalHeader>
+        <ModalHeader>{initial ? 'Edit Assignment' : 'Assign User to Departments'}</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
           <VStack align="stretch" spacing={3}>
@@ -53,34 +53,56 @@ export default function UserDeptFormModal({ isOpen, onClose, onSubmit, initial, 
                 {users.map(u => <option key={u.id} value={u.id}>{u.username} — {u.first_name || ''} {u.last_name || ''}</option>)}
               </Select>
             </FormControl>
-            <HStack spacing={3} align="start">
-              <FormControl isRequired>
-                <FormLabel>Department</FormLabel>
-                <Select value={form.department} onChange={set('department')} placeholder="Select department">
-                  {(options?.departments || []).map(d => <option key={d} value={d}>{d}</option>)}
-                </Select>
-              </FormControl>
-              <FormControl>
-                <FormLabel>Position</FormLabel>
-                <Select value={form.position} onChange={set('position')} placeholder="Select position">
-                  {(options?.positions || []).map(p => <option key={p} value={p}>{p}</option>)}
-                </Select>
-              </FormControl>
-            </HStack>
-            <HStack spacing={3}>
-              <FormControl display="flex" alignItems="center">
-                <FormLabel mb="0">Primary</FormLabel>
-                <Switch isChecked={form.isPrimary} onChange={set('isPrimary')} />
-              </FormControl>
-              <FormControl display="flex" alignItems="center">
-                <FormLabel mb="0">Active</FormLabel>
-                <Switch isChecked={form.isActive} onChange={set('isActive')} />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Assigned At</FormLabel>
-                <Input type="date" value={form.assignedAt} onChange={set('assignedAt')} />
-              </FormControl>
-            </HStack>
+            {initial ? (
+              <HStack spacing={3} align="start">
+                <FormControl isRequired>
+                  <FormLabel>Department</FormLabel>
+                  <Select value={form.department} onChange={set('department')} placeholder="Select department">
+                    {(options?.departments || []).map(d => <option key={d} value={d}>{d}</option>)}
+                  </Select>
+                </FormControl>
+                <FormControl>
+                  <FormLabel>Position</FormLabel>
+                  <Select value={form.position} onChange={set('position')} placeholder="Select position">
+                    {(options?.positions || []).map(p => <option key={p} value={p}>{p}</option>)}
+                  </Select>
+                </FormControl>
+              </HStack>
+            ) : (
+              <VStack align="stretch" spacing={2}>
+                <FormControl isRequired>
+                  <FormLabel>Departments</FormLabel>
+                  <CheckboxGroup value={form.departments} onChange={setDepartments}>
+                    <Stack spacing={2} direction="column" maxH="180px" overflowY="auto" borderWidth="1px" rounded="md" p={3}>
+                      {(options?.departments || []).map(d => (
+                        <Checkbox key={d} value={d}>{d}</Checkbox>
+                      ))}
+                    </Stack>
+                  </CheckboxGroup>
+                </FormControl>
+                <Text fontSize="sm" color="gray.500">Select multiple departments to create multiple assignments.</Text>
+                <HStack spacing={3} align="start">
+                  <FormControl>
+                    <FormLabel>Position</FormLabel>
+                    <Select value={form.position} onChange={set('position')} placeholder="Select position">
+                      {(options?.positions || []).map(p => <option key={p} value={p}>{p}</option>)}
+                    </Select>
+                  </FormControl>
+                  <FormControl display="flex" alignItems="center">
+                    <FormLabel mb="0">Mark first as Primary</FormLabel>
+                    <Switch isChecked={form.isPrimary} onChange={set('isPrimary')} />
+                  </FormControl>
+                </HStack>
+              </VStack>
+            )}
+            {initial && (
+              <HStack spacing={3}>
+                <FormControl display="flex" alignItems="center">
+                  <FormLabel mb="0">Primary</FormLabel>
+                  <Switch isChecked={form.isPrimary} onChange={set('isPrimary')} />
+                </FormControl>
+              </HStack>
+            )}
             <FormControl>
               <FormLabel>Remarks</FormLabel>
               <Input value={form.remarks} onChange={set('remarks')} placeholder="Optional" />
@@ -95,4 +117,3 @@ export default function UserDeptFormModal({ isOpen, onClose, onSubmit, initial, 
     </Modal>
   );
 }
-

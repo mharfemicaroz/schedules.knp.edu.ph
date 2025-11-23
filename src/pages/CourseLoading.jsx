@@ -637,7 +637,7 @@ export default function CourseLoading() {
   const skEnd = useColorModeValue('gray.200','gray.600');
   const overlayBg = useColorModeValue('whiteAlpha.600','blackAlpha.500');
 
-  const blocks = useSelector(selectBlocks);
+  const blocksAll = useSelector(selectBlocks);
   const facultyAll = useSelector(selectAllFaculty);
   const facultyOpts = useSelector(selectFacultyFilterOptions);
   const blocksLoading = useSelector(s => s.blocks.loading);
@@ -713,6 +713,34 @@ export default function CourseLoading() {
   // Shared indexes/stats for faculty-view scoring (mirrors block view engine)
 
   React.useEffect(() => { dispatch(loadBlocksThunk({})); }, [dispatch]);
+  const isAdmin = role === 'admin' || role === 'manager';
+  const [allowedDepts, setAllowedDepts] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!authUser?.id || isAdmin) { if (alive) setAllowedDepts(null); return; }
+      try {
+        const rows = await api.getUserDepartmentsByUser(authUser.id);
+        const list = Array.isArray(rows) ? rows : [];
+        const codes = Array.from(new Set(list.map(r => String(r.department || '').toUpperCase()).filter(Boolean)));
+        if (alive) setAllowedDepts(codes);
+      } catch { if (alive) setAllowedDepts([]); }
+    })();
+    return () => { alive = false; };
+  }, [authUser?.id, isAdmin]);
+  const blocks = React.useMemo(() => {
+    try {
+      if (isAdmin) return blocksAll;
+      if (!Array.isArray(blocksAll)) return blocksAll;
+      if (!Array.isArray(allowedDepts) || allowedDepts.length === 0) return blocksAll;
+      const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
+      return blocksAll.filter(b => {
+        const meta = parseBlockMeta(b.blockCode || b.section || '');
+        const prog = String(meta.programcode || '').toUpperCase();
+        return allow.has(prog);
+      });
+    } catch { return blocksAll; }
+  }, [blocksAll, allowedDepts, isAdmin]);
   React.useEffect(() => { dispatch(loadFacultiesThunk({})); }, [dispatch]);
 
   React.useEffect(() => {

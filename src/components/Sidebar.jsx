@@ -2,10 +2,12 @@ import React from 'react';
 import { Box, VStack, Text, useColorModeValue, HStack, Icon, Image, Badge } from '@chakra-ui/react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar, FiUserX, FiFileText, FiBook, FiUser, FiActivity, FiSettings, FiCheckSquare } from 'react-icons/fi';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { FiAlertTriangle } from 'react-icons/fi';
 import { selectAllCourses } from '../store/dataSlice';
 import { selectSettings } from '../store/settingsSlice';
+import { getUserDepartmentsByUserThunk } from '../store/userDeptThunks';
+import { selectUserDeptItems } from '../store/userDeptSlice';
 import { buildConflicts, buildCrossFacultyOverlaps, parseTimeBlockToMinutes } from '../utils/conflicts';
 
 function NavItem({ to, icon, children, onClick, badgeCount, chipLabel }) {
@@ -34,9 +36,11 @@ function NavItem({ to, icon, children, onClick, badgeCount, chipLabel }) {
 }
 
 export default function Sidebar({ mobile = false, onNavigate }) {
+  const dispatch = useDispatch();
   const authUser = useSelector(s => s.auth.user);
   const allCourses = useSelector(selectAllCourses);
   const raw = useSelector(s => Array.isArray(s.data.raw) ? s.data.raw : []);
+  const userDeptItems = useSelector(selectUserDeptItems);
   const bg = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
   // Call color mode hooks unconditionally to keep hook order stable
@@ -47,6 +51,17 @@ export default function Sidebar({ mobile = false, onNavigate }) {
   const isRegistrar = !!authUser && roleStr === 'registrar';
   const isChecker = !!authUser && roleStr === 'checker';
   const isUser = !!authUser && !isAdmin && !isChecker;
+
+  // Load current user's department mappings (used to gate Course Loading visibility for non-admins)
+  React.useEffect(() => {
+    try {
+      if (!!authUser?.id && !isAdmin) {
+        dispatch(getUserDepartmentsByUserThunk(authUser.id));
+      }
+    } catch {}
+  }, [dispatch, authUser?.id, isAdmin]);
+
+  const hasDeptMapping = React.useMemo(() => Array.isArray(userDeptItems) && userDeptItems.length > 0, [userDeptItems]);
 
   // Compute conflict count similar to page logic (lightweight but consistent)
   const conflictCount = React.useMemo(() => {
@@ -170,7 +185,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             <NavItem to="/reports/faculty-summary" icon={FiFileText} onClick={onNavigate}>Faculty Summary</NavItem>
           </>
         )}
-        {(isAdmin || isChecker || isRegistrar) && (
+        {(isAdmin || isChecker || isRegistrar || hasDeptMapping) && (
           <>
             <Text fontSize="sm" fontWeight="700" color={sectionHeaderColor} px={2} mt={4} mb={1}>Admin</Text>
             {(isAdmin || isChecker) && (
@@ -179,7 +194,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             {(isAdmin || isRegistrar) && (
               <NavItem to="/admin/grades-submission" icon={FiFileText} onClick={onNavigate} chipLabel={chip}>Grades Submission</NavItem>
             )}
-            {(isAdmin || isRegistrar) && (
+            {(isAdmin || (!isAdmin && hasDeptMapping)) && (
               <NavItem
                 to="/admin/course-loading"
                 icon={FiLayers}

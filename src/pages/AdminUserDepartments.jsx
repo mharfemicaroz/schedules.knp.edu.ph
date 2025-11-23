@@ -56,7 +56,7 @@ export default function AdminUserDepartments() {
   return (
     <VStack align="stretch" spacing={6}>
       <HStack justify="space-between">
-        <Heading size="md">User–Department Management</Heading>
+        <Heading size="md">User-Department Management</Heading>
         <Button colorScheme="blue" leftIcon={<FiPlus />} onClick={()=>{ setEditing(null); formDisc.onOpen(); }}>Assign User</Button>
       </HStack>
 
@@ -124,9 +124,27 @@ export default function AdminUserDepartments() {
         options={options}
         onSubmit={async (payload) => {
           if (editing && editing.id) {
-            await dispatch(updateUserDepartmentThunk({ id: editing.id, changes: payload }));
+            // Do not touch active/assignedAt on edit; only update changed fields
+            const { isActive, assignedAt, departments, ...changes } = payload || {};
+            await dispatch(updateUserDepartmentThunk({ id: editing.id, changes }));
           } else {
-            await dispatch(createUserDepartmentThunk(payload));
+            const depts = Array.isArray(payload.departments) && payload.departments.length > 0 ? payload.departments : (payload.department ? [payload.department] : []);
+            if (depts.length > 0) {
+              const firstPrimary = !!payload.isPrimary;
+              await Promise.all(
+                depts.map((d, idx) =>
+                  dispatch(createUserDepartmentThunk({
+                    userId: payload.userId,
+                    department: d,
+                    position: payload.position || undefined,
+                    isPrimary: idx === 0 ? firstPrimary : false,
+                    isActive: true,
+                    assignedAt: new Date().toISOString(),
+                    remarks: payload.remarks || undefined,
+                  })).unwrap().catch(() => null)
+                )
+              );
+            }
           }
           setEditing(null);
           formDisc.onClose();
