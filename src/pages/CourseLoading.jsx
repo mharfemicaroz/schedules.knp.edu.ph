@@ -874,7 +874,8 @@ export default function CourseLoading() {
       </tbody></table>`,
       buildTable(headers, bodyRows)
     ].join('');
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait' });
+    const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', preparedBy: prep });
   };
 
   const onPrintProgram = () => {
@@ -950,7 +951,8 @@ export default function CourseLoading() {
         });
       });
     const bodyHtml = buildTable(headers, rowsOut);
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait' });
+    const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', preparedBy: prep });
   };
 
   const onPrintFaculty = () => {
@@ -986,7 +988,8 @@ export default function CourseLoading() {
     </tbody></table>`;
     const bodyHtml = [metaHtml, buildTable(headers, bodyRows)].join('');
     // FacultyDetail-style layout triggers conforme signature block (based on title prefix)
-    printContent({ title, subtitle: '', bodyHtml }, { pageSize: 'A4', orientation: 'portrait' });
+    const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
+    printContent({ title, subtitle: '', bodyHtml }, { pageSize: 'A4', orientation: 'portrait', preparedBy: prep });
   };
 
   // Limit load/overload scoring to current load SY/Sem defaults
