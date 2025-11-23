@@ -884,7 +884,7 @@ export default function CourseLoading() {
         return String(primary?.position || any?.position || 'Academic Head');
       } catch { return 'Academic Head'; }
     })();
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
   };
 
   const onPrintProgram = () => {
@@ -969,7 +969,7 @@ export default function CourseLoading() {
         return String(primary?.position || any?.position || 'Academic Head');
       } catch { return 'Academic Head'; }
     })();
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
   };
 
   const onPrintFaculty = () => {
@@ -1014,7 +1014,7 @@ export default function CourseLoading() {
         return String(primary?.position || any?.position || 'Academic Head');
       } catch { return 'Academic Head'; }
     })();
-    printContent({ title, subtitle: '', bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
+    printContent({ title, subtitle: '', bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
   };
 
   // Limit load/overload scoring to current load SY/Sem defaults
