@@ -1749,10 +1749,29 @@ export default function CourseLoading() {
       const res = await api.checkScheduleConflict(id, payload);
       const conflict = !!res?.conflict;
       const details = Array.isArray(res?.details) ? res.details : [];
+      // Inline load limit check for non-admin
+      let loadExceeded = false;
+      if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
+        try {
+          const targetName = e.faculty || '';
+          if (targetName) {
+            const meta = findFacultyById(e.facultyId) || findFacultyByName(targetName);
+            const max = maxUnitsFor(meta);
+            const lr = await api.getInstructorLoad(targetName);
+            const current = Number(lr?.loadUnits || 0);
+            const same = normalizeName(targetName) === normalizeName(base.instructor || base.faculty || '');
+            const addU = same ? 0 : Number(base.unit || 0);
+            if (current + addU > max) {
+              loadExceeded = true;
+              toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}.`, status: 'warning' });
+            }
+          }
+        } catch {}
+      }
       setFacEdits(prev => {
         const curr = prev[id];
         if (verToken != null && curr && curr._ver !== verToken) return prev; // stale result
-        return { ...prev, [id]: { ...curr, _checking: false, _conflict: conflict, _details: details } };
+        return { ...prev, [id]: { ...curr, _checking: false, _conflict: conflict, _details: details, _loadExceeded: loadExceeded } };
       });
     } catch {
       setFacEdits(prev => ({ ...prev, [id]: { ...prev[id], _checking: false } }));
@@ -2271,7 +2290,26 @@ export default function CourseLoading() {
       const res = await api.request(`/${encodeURIComponent(idForCheck)}/check`, { method: 'POST', body: JSON.stringify(payload) });
       const conflict = !!(res?.conflict);
       const details = Array.isArray(res?.details) ? res.details : [];
-      setRows(prev => prev.map((r,i) => i===idx ? { ...r, _status: conflict ? 'Conflict' : (r._existingId ? 'Assigned' : 'Unassigned'), _conflict: conflict, _conflictNote: conflict ? 'Conflicts with an existing schedule for this faculty.' : '', _conflictDetails: details, _checking: false } : r));
+      // Inline load limit check for non-admin
+      let loadExceeded = false;
+      if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
+        try {
+          const targetName = payload.faculty || '';
+          if (targetName) {
+            const meta = findFacultyById(payload.facultyId) || findFacultyByName(targetName);
+            const max = maxUnitsFor(meta);
+            const lr = await api.getInstructorLoad(targetName);
+            const current = Number(lr?.loadUnits || 0);
+            const same = normalizeName(targetName) === normalizeName(row.instructor || row.faculty || '');
+            const addU = same ? 0 : Number(row.unit || 0);
+            if (current + addU > max) {
+              loadExceeded = true;
+              toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}.`, status: 'warning' });
+            }
+          }
+        } catch {}
+      }
+      setRows(prev => prev.map((r,i) => i===idx ? { ...r, _status: conflict ? 'Conflict' : (r._existingId ? 'Assigned' : 'Unassigned'), _conflict: conflict, _conflictNote: conflict ? 'Conflicts with an existing schedule for this faculty.' : '', _conflictDetails: details, _checking: false, _loadExceeded: loadExceeded } : r));
     } catch (e) {
       setRows(prev => prev.map((r,i) => i===idx ? { ...r, _checking: false } : r));
       toast({ title: 'Conflict check failed', description: e?.message || 'Could not check conflicts.', status: 'error' });
