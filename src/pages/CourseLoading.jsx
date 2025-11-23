@@ -606,21 +606,34 @@ const eligibleOptions = React.useMemo(() => {
         </Tooltip>
 
         {row._existingId && (
-          <Tooltip label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}>
-                        <IconButton
-                          aria-label="Delete assignment"
-                          icon={<FiTrash />}
-                          size="sm"
-                          colorScheme="red"
-                          variant="ghost"
-                          onClick={onRequestDelete}
-                          isDisabled={disabled || isLocked}
-                        />
-                        {isAdmin && (
-                          <IconButton aria-label="View history" icon={<FiInfo />} size="sm" variant="ghost" onClick={()=> onRequestHistory && onRequestHistory(row)} isDisabled={!(row?._existingId || row?.id)} />
-                        )}
-          </Tooltip>
+          <>
+            <Tooltip label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}>
+              <IconButton
+                aria-label="Delete assignment"
+                icon={<FiTrash />}
+                size="sm"
+                colorScheme="red"
+                variant="ghost"
+                onClick={onRequestDelete}
+                isDisabled={disabled || isLocked}
+              />
+            </Tooltip>
+
+            {isAdmin && (
+              <Tooltip label="View history">
+                <IconButton
+                  aria-label="View history"
+                  icon={<FiInfo />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onRequestHistory && onRequestHistory(row)}
+                  isDisabled={!(row?._existingId || row?.id)}
+                />
+              </Tooltip>
+            )}
+          </>
         )}
+
       </HStack>
       {/* Admin-only history button is wired by parent via onRequestHistory */}
     </HStack>
