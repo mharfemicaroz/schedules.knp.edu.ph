@@ -502,6 +502,18 @@ class ApiService {
     return this.request(`/instructor/${encodeURIComponent(instructor)}/load`);
   }
 
+  // GET /api/schedules/instructor/:facultyId/load - Get instructor load by facultyId with SY/Sem
+  async getInstructorLoadById(facultyId, { schoolyear, semester } = {}) {
+    const qs = new URLSearchParams();
+    if (schoolyear) qs.set('schoolyear', schoolyear);
+    if (semester) qs.set('semester', semester);
+    const query = qs.toString();
+    const url = `${this.baseURL}${this.schedulesPath}/instructor/${encodeURIComponent(facultyId)}/load${query ? `?${query}` : ''}`;
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   // GET /api/schedules/room/:room - Get schedules by room
   async getSchedulesByRoom(room) {
     return this.request(`/room/${encodeURIComponent(room)}`);

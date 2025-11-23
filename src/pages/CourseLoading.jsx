@@ -1760,8 +1760,7 @@ export default function CourseLoading() {
           if (targetName) {
             const meta = findFacultyById(e.facultyId) || findFacultyByName(targetName);
             const max = maxUnitsFor(meta);
-            const lr = await api.getInstructorLoad(targetName);
-            const current = Number(lr?.loadUnits || 0);
+            const lr = (meta?.id!=null) ? await api.getInstructorLoadById(meta.id, { schoolyear: settingsLoad?.school_year, semester: settingsLoad?.semester }) : await api.getInstructorLoad(targetName); const current = Number(lr?.loadUnits || 0);
             const same = normalizeName(targetName) === normalizeName(base.instructor || base.faculty || '');
             const addU = same ? 0 : Number(base.unit || 0);
             if (current + addU > max) {
@@ -2299,8 +2298,7 @@ export default function CourseLoading() {
           if (targetName) {
             const meta = findFacultyById(payload.facultyId) || findFacultyByName(targetName);
             const max = maxUnitsFor(meta);
-            const lr = await api.getInstructorLoad(targetName);
-            const current = Number(lr?.loadUnits || 0);
+            const lr = (meta?.id!=null) ? await api.getInstructorLoadById(meta.id, { schoolyear: settingsLoad?.school_year, semester: settingsLoad?.semester }) : await api.getInstructorLoad(targetName); const current = Number(lr?.loadUnits || 0);
             const same = normalizeName(targetName) === normalizeName(row.instructor || row.faculty || '');
             const addU = same ? 0 : Number(row.unit || 0);
             if (current + addU > max) {
@@ -3891,6 +3889,7 @@ export default function CourseLoading() {
     </VStack>
   );
 }
+
 
 
 
