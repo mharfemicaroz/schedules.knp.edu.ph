@@ -657,7 +657,7 @@ export default function CourseLoading() {
     const v = String(fac?.employment || '').toLowerCase();
     return v.includes('part') ? 'part-time' : 'full-time';
   };
-  const maxUnitsFor = (fac) => employmentOf(fac) === 'part-time' ? 12 : 6;
+  const maxUnitsFor = (fac) => employmentOf(fac) === 'part-time' ? 12 : 24;
   const getIntendedFacultyName = (r) => {
     if (r._facultyId != null) {
       const fac = findFacultyById(r._facultyId);
@@ -665,7 +665,13 @@ export default function CourseLoading() {
     }
     return r._faculty || r.faculty || r.instructor || '';
   };
+  const getIntendedFacultyId = (r) => {
+    if (r._facultyId != null) return r._facultyId;
+    const fac = findFacultyByName(getIntendedFacultyName(r));
+    return fac?.id ?? null;
+  };
   const getExistingFacultyName = (r) => String(r.instructor || r.faculty || '').trim();
+  const getExistingFacultyId = (r) => (r.facultyId != null ? r.facultyId : (r.faculty_id != null ? r.faculty_id : null));
   const parseUnits = (r) => { const u = Number(r.unit); return Number.isFinite(u) ? u : 0; };
   const ensureFacultyLoadLimitsForRows = async (rowsToApply) => {
     const nonAdminMapped = (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0);
@@ -3889,6 +3895,8 @@ export default function CourseLoading() {
     </VStack>
   );
 }
+
+
 
 
 
