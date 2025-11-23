@@ -667,9 +667,9 @@ export default function CourseLoading() {
   };
   const getExistingFacultyName = (r) => String(r.instructor || r.faculty || '').trim();
   const parseUnits = (r) => { const u = Number(r.unit); return Number.isFinite(u) ? u : 0; };
-  const isNonAdminUserWithMapping = (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0);
   const ensureFacultyLoadLimitsForRows = async (rowsToApply) => {
-    if (!isNonAdminUserWithMapping) return true;
+    const nonAdminMapped = (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0);
+    if (!nonAdminMapped) return true;
     const incByFaculty = new Map();
     for (const r of rowsToApply) {
       const targetName = getIntendedFacultyName(r);
@@ -1770,7 +1770,7 @@ export default function CourseLoading() {
     if ((base.facultyId || base.faculty_id || null) !== (e.facultyId || null)) changes.faculty_id = e.facultyId || null;
     if (Object.keys(changes).length === 0) return;
     try {
-      if (isNonAdminUserWithMapping && changes.faculty_id != null) {
+      if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) && changes.faculty_id != null) {
         const targetFac = findFacultyById(changes.faculty_id);
         const targetName = targetFac?.name || targetFac?.faculty || '';
         const max = maxUnitsFor(targetFac);
@@ -1908,7 +1908,7 @@ export default function CourseLoading() {
     if (idx == null || !it) { setFacAssignOpen(false); setFacAssignIndex(null); return; }
     try {
       // Enforce load limit for non-admin: adding this course to target faculty
-      if (isNonAdminUserWithMapping) {
+      if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0)) {
         const targetName = fac?.name || fac?.faculty || '';
         const meta = findFacultyById(fac?.id) || findFacultyByName(targetName);
         const max = maxUnitsFor(meta);
