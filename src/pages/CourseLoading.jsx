@@ -1321,10 +1321,28 @@ export default function CourseLoading() {
         }
         return hit;
       };
+      // Also include available blocks from the Blocks dataset that match this program + year
+      try {
+        const progNorm = normalizeProgramCode(prog);
+        const fromList = (blocks || [])
+          .filter(b => {
+            const meta = parseBlockMeta(b.blockCode || '');
+            const codeNorm = normalizeProgramCode(meta.programcode || '');
+            const yr = extractYearDigits(meta.yearlevel || '');
+            return codeNorm === progNorm && String(yr) === String(yearDigit);
+          })
+          .map(b => String(b.blockCode || '').trim())
+          .filter(Boolean);
+        for (const sec of fromList) {
+          const s = norm(sec);
+          if (s) blockSet.add(s);
+        }
+      } catch {}
+
       const rowsByBlock = [];
-      const blocks = Array.from(blockSet).sort((a,b) => a.localeCompare(b));
-      if (blocks.length) {
-        for (const sec of blocks) {
+      const blockSections = Array.from(blockSet).sort((a,b) => a.localeCompare(b));
+      if (blockSections.length) {
+        for (const sec of blockSections) {
           for (const p of narrowed) {
             const hit = findExistingForBlock(p, sec);
             const locked = (() => {
