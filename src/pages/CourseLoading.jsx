@@ -643,6 +643,63 @@ const eligibleOptions = React.useMemo(() => {
 export default function CourseLoading() {
   const dispatch = useDispatch();
   const toast = useToast();
+  
+  // ---------------------------- Load Limit Guard (non-admin) ----------------------------
+  const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const findFacultyById = (id) => {
+    try { return (facultyAll || []).find(f => String(f.id) === String(id)) || null; } catch { return null; }
+  };
+  const findFacultyByName = (name) => {
+    const key = normalizeName(name);
+    try { return (facultyAll || []).find(f => normalizeName(f.name || f.faculty) === key) || null; } catch { return null; }
+  };
+  const employmentOf = (fac) => {
+    const v = String(fac?.employment || '').toLowerCase();
+    return v.includes('part') ? 'part-time' : 'full-time';
+  };
+  const maxUnitsFor = (fac) => employmentOf(fac) === 'part-time' ? 12 : 24;
+  const getIntendedFacultyName = (r) => {
+    if (r._facultyId != null) {
+      const fac = findFacultyById(r._facultyId);
+      if (fac?.name || fac?.faculty) return fac.name || fac.faculty;
+    }
+    return r._faculty || r.faculty || r.instructor || '';
+  };
+  const getExistingFacultyName = (r) => String(r.instructor || r.faculty || '').trim();
+  const parseUnits = (r) => { const u = Number(r.unit); return Number.isFinite(u) ? u : 0; };
+  const isNonAdminUserWithMapping = (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0);
+  const ensureFacultyLoadLimitsForRows = async (rowsToApply) => {
+    if (!isNonAdminUserWithMapping) return true;
+    const incByFaculty = new Map();
+    for (const r of rowsToApply) {
+      const targetName = getIntendedFacultyName(r);
+      if (!targetName) continue;
+      const existingName = getExistingFacultyName(r);
+      const creating = !r._existingId;
+      const changingFac = creating || normalizeName(targetName) !== normalizeName(existingName);
+      if (!changingFac) continue;
+      const inc = parseUnits(r);
+      if (inc <= 0) continue;
+      incByFaculty.set(targetName, (incByFaculty.get(targetName) || 0) + inc);
+    }
+    for (const [name, addUnits] of incByFaculty.entries()) {
+      try {
+        const meta = findFacultyByName(name);
+        const max = maxUnitsFor(meta);
+        const res = await api.getInstructorLoad(name);
+        const current = Number(res?.loadUnits || 0);
+        const proposed = current + Number(addUnits || 0);
+        if (proposed > max) {
+          toast({ title: 'Load limit exceeded', description: `${name}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addUnits} ⇒ ${proposed}. Only admin can exceed.`, status: 'warning' });
+          return false;
+        }
+      } catch (e) {
+        toast({ title: 'Load check failed', description: `Could not verify load for ${name}.`, status: 'error' });
+        return false;
+      }
+    }
+    return true;
+  };
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.300');
@@ -1713,6 +1770,19 @@ export default function CourseLoading() {
     if ((base.facultyId || base.faculty_id || null) !== (e.facultyId || null)) changes.faculty_id = e.facultyId || null;
     if (Object.keys(changes).length === 0) return;
     try {
+      if (isNonAdminUserWithMapping && changes.faculty_id != null) {
+        const targetFac = findFacultyById(changes.faculty_id);
+        const targetName = targetFac?.name || targetFac?.faculty || '';
+        const max = maxUnitsFor(targetFac);
+        const res = await api.getInstructorLoad(targetName);
+        const current = Number(res?.loadUnits || 0);
+        const same = normalizeName(targetName) === normalizeName(base.faculty || base.instructor || '');
+        const addU = same ? 0 : Number(base.unit || 0);
+        if (current + addU > max) {
+          toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(targetFac)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}. Only admin can exceed.`, status: 'warning' });
+          return;
+        }
+      }
       await dispatch(updateScheduleThunk({ id, changes }));
       // Refresh schedule list to reflect persisted data
       await fetchFacultySchedules(selectedFaculty);
@@ -1837,6 +1907,21 @@ export default function CourseLoading() {
     const it = facultySchedules.items[idx];
     if (idx == null || !it) { setFacAssignOpen(false); setFacAssignIndex(null); return; }
     try {
+      // Enforce load limit for non-admin: adding this course to target faculty
+      if (isNonAdminUserWithMapping) {
+        const targetName = fac?.name || fac?.faculty || '';
+        const meta = findFacultyById(fac?.id) || findFacultyByName(targetName);
+        const max = maxUnitsFor(meta);
+        const res = await api.getInstructorLoad(targetName);
+        const current = Number(res?.loadUnits || 0);
+        const same = normalizeName(targetName) === normalizeName(it.faculty || it.instructor || '');
+        const addU = same ? 0 : Number(it.unit || 0);
+        if (current + addU > max) {
+          toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}. Only admin can exceed.`, status: 'warning' });
+          setFacAssignOpen(false); setFacAssignIndex(null);
+          return;
+        }
+      }
       await dispatch(updateScheduleThunk({ id: it.id, changes: { faculty_id: fac?.id || null } }));
       await fetchFacultySchedules(selectedFaculty);
       dispatch(loadAllSchedules());
@@ -2719,6 +2804,10 @@ export default function CourseLoading() {
       }
       // Server says OK for all selected rows; continue with save despite local heuristic
     }
+    // Load limit check for non-admin users (fresh server read)
+    const okLimit = await ensureFacultyLoadLimitsForRows(chosen);
+    if (!okLimit) return;
+
     // Server-side parity check per row to avoid false positives/negatives
     try {
       for (let i = 0; i < rows.length; i++) {
