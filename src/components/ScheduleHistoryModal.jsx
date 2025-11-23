@@ -51,6 +51,28 @@ export default function ScheduleHistoryModal({ scheduleId, isOpen, onClose }) {
     return map[m] || m;
   };
 
+  const normalizeTermShort = (v) => {
+    const str = String(v || '').trim().toLowerCase();
+    if (!str) return '';
+    if (str.startsWith('1')) return '1st';
+    if (str.startsWith('2')) return '2nd';
+    if (str.startsWith('s')) return 'Sem';
+    return String(v || '').trim();
+  };
+  const normalizeLock = (v) => {
+    const t = typeof v;
+    if (t === 'boolean') return v ? 'yes' : 'no';
+    const s = String(v || '').trim().toLowerCase();
+    if (['1','true','yes','y'].includes(s)) return 'yes';
+    if (['0','false','no','n',''].includes(s)) return 'no';
+    return s;
+  };
+  const normByLabel = (label, val) => {
+    const l = String(label || '').trim().toLowerCase();
+    if (l === 'term') return normalizeTermShort(val);
+    if (l === 'lock') return normalizeLock(val);
+    return String(val ?? '').trim();
+  };
   const parseUpdateDetails = (s) => {
     const parts = String(s || '').split('|').map(p => p.trim()).filter(Boolean);
     const changes = [];
@@ -59,7 +81,16 @@ export default function ScheduleHistoryModal({ scheduleId, isOpen, onClose }) {
       // Match change: Label: 'from' -> 'to'
       const m = p.match(/^([^:]+):\s*'(.*)'\s*->\s*'(.*)'$/);
       if (m) {
-        changes.push({ label: prettyLabel(m[1]), from: m[2], to: m[3] });
+        const rawLabel = m[1];
+        const label = prettyLabel(rawLabel);
+        const from = m[2];
+        const to = m[3];
+        // Filter out no-op changes (e.g., lock no -> ''), using normalization per label
+        const a = normByLabel(label, from);
+        const b = normByLabel(label, to);
+        if (a !== b) {
+          changes.push({ label, from, to });
+        }
         return;
       }
       // Match assign: Label=Value
