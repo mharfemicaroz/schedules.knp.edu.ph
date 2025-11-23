@@ -686,8 +686,7 @@ export default function CourseLoading() {
       try {
         const meta = findFacultyByName(name);
         const max = maxUnitsFor(meta);
-        const res = await api.getInstructorLoad(name);
-        const current = Number(res?.loadUnits || 0);
+        const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); qs.set("instructor", name); if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
         const proposed = current + Number(addUnits || 0);
         if (proposed > max) {
           toast({ title: 'Load limit exceeded', description: `${name}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addUnits} ⇒ ${proposed}. Only admin can exceed.`, status: 'warning' });
@@ -1793,8 +1792,7 @@ export default function CourseLoading() {
         const targetFac = findFacultyById(changes.faculty_id);
         const targetName = targetFac?.name || targetFac?.faculty || '';
         const max = maxUnitsFor(targetFac);
-        const res = await api.getInstructorLoad(targetName);
-        const current = Number(res?.loadUnits || 0);
+        const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); qs.set("instructor", targetName); if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
         const same = normalizeName(targetName) === normalizeName(base.faculty || base.instructor || '');
         const addU = same ? 0 : Number(base.unit || 0);
         if (current + addU > max) {
@@ -1931,8 +1929,7 @@ export default function CourseLoading() {
         const targetName = fac?.name || fac?.faculty || '';
         const meta = findFacultyById(fac?.id) || findFacultyByName(targetName);
         const max = maxUnitsFor(meta);
-        const res = await api.getInstructorLoad(targetName);
-        const current = Number(res?.loadUnits || 0);
+        const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); qs.set("instructor", targetName); if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
         const same = normalizeName(targetName) === normalizeName(it.faculty || it.instructor || '');
         const addU = same ? 0 : Number(it.unit || 0);
         if (current + addU > max) {
@@ -3890,4 +3887,7 @@ export default function CourseLoading() {
     </VStack>
   );
 }
+
+
+
 
