@@ -664,16 +664,17 @@ export default function CourseLoading() {
   const role = String(authUser?.role || '').toLowerCase();
   const isAdmin = (role === 'admin' || role === 'manager');
   const [allowedDepts, setAllowedDepts] = React.useState(null);
+  const [userDeptRows, setUserDeptRows] = React.useState(null);
   React.useEffect(() => {
     let alive = true;
     (async () => {
-      if (!authUser?.id || isAdmin) { if (alive) setAllowedDepts(null); return; }
+      if (!authUser?.id || isAdmin) { if (alive) { setAllowedDepts(null); setUserDeptRows(null); } return; }
       try {
         const rows = await api.getUserDepartmentsByUser(authUser.id);
         const list = Array.isArray(rows) ? rows : [];
         const codes = Array.from(new Set(list.map(r => String(r.department || '').toUpperCase()).filter(Boolean)));
-        if (alive) setAllowedDepts(codes);
-      } catch { if (alive) setAllowedDepts([]); }
+        if (alive) { setAllowedDepts(codes); setUserDeptRows(list); }
+      } catch { if (alive) { setAllowedDepts([]); setUserDeptRows([]); } }
     })();
     return () => { alive = false; };
   }, [authUser?.id, isAdmin]);
@@ -875,7 +876,15 @@ export default function CourseLoading() {
       buildTable(headers, bodyRows)
     ].join('');
     const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', preparedBy: prep });
+    const preparedRole = (() => {
+      try {
+        const list = Array.isArray(userDeptRows) ? userDeptRows : [];
+        const primary = list.find(r => r && r.isPrimary && String(r.position || '').trim());
+        const any = list.find(r => String(r?.position || '').trim());
+        return String(primary?.position || any?.position || 'Academic Head');
+      } catch { return 'Academic Head'; }
+    })();
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', preparedBy: prep, preparedRole });
   };
 
   const onPrintProgram = () => {
@@ -952,7 +961,15 @@ export default function CourseLoading() {
       });
     const bodyHtml = buildTable(headers, rowsOut);
     const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', preparedBy: prep });
+    const preparedRole = (() => {
+      try {
+        const list = Array.isArray(userDeptRows) ? userDeptRows : [];
+        const primary = list.find(r => r && r.isPrimary && String(r.position || '').trim());
+        const any = list.find(r => String(r?.position || '').trim());
+        return String(primary?.position || any?.position || 'Academic Head');
+      } catch { return 'Academic Head'; }
+    })();
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', preparedBy: prep, preparedRole });
   };
 
   const onPrintFaculty = () => {
@@ -989,7 +1006,15 @@ export default function CourseLoading() {
     const bodyHtml = [metaHtml, buildTable(headers, bodyRows)].join('');
     // FacultyDetail-style layout triggers conforme signature block (based on title prefix)
     const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
-    printContent({ title, subtitle: '', bodyHtml }, { pageSize: 'A4', orientation: 'portrait', preparedBy: prep });
+    const preparedRole = (() => {
+      try {
+        const list = Array.isArray(userDeptRows) ? userDeptRows : [];
+        const primary = list.find(r => r && r.isPrimary && String(r.position || '').trim());
+        const any = list.find(r => String(r?.position || '').trim());
+        return String(primary?.position || any?.position || 'Academic Head');
+      } catch { return 'Academic Head'; }
+    })();
+    printContent({ title, subtitle: '', bodyHtml }, { pageSize: 'A4', orientation: 'portrait', preparedBy: prep, preparedRole });
   };
 
   // Limit load/overload scoring to current load SY/Sem defaults
