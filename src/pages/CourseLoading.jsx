@@ -3232,7 +3232,10 @@ export default function CourseLoading() {
                   <Heading size="sm">Faculty:</Heading>
                   <Badge colorScheme="purple">{selectedFaculty.name || selectedFaculty.faculty}</Badge>
                 </HStack>
-                <HStack />
+                <HStack>
+                  <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintFaculty} isDisabled={loading || (Array.isArray(facultySchedules.items) ? facultySchedules.items.length === 0 : true)}>Print</Button>
+                  <Button leftIcon={<FiRefreshCw />} size="sm" variant="outline" onClick={()=>fetchFacultySchedules(selectedFaculty)} isDisabled={loading}>Reload</Button>
+                </HStack>
               </HStack>
               <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
                 <HStack spacing={3} mb={2} align="center" flexWrap="wrap">
