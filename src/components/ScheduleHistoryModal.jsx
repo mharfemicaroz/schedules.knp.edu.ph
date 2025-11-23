@@ -73,36 +73,36 @@ export default function ScheduleHistoryModal({ scheduleId, isOpen, onClose }) {
     if (l === 'lock') return normalizeLock(val);
     return String(val ?? '').trim();
   };
-  const parseUpdateDetails = (s) => {
-    const parts = String(s || '').split('|').map(p => p.trim()).filter(Boolean);
-    const changes = [];
-    const assigns = [];
-    parts.forEach((p) => {
-      // Match change: Label: 'from' -> 'to'
-      const m = p.match(/^([^:]+):\s*'(.*)'\s*->\s*'(.*)'$/);
-      if (m) {
-        const rawLabel = m[1];
-        const label = prettyLabel(rawLabel);
-        const from = m[2];
-        const to = m[3];
-        // Filter out no-op changes (e.g., lock no -> ''), using normalization per label
-        const a = normByLabel(label, from);
-        const b = normByLabel(label, to);
-        if (a !== b) {
-          changes.push({ label, from, to });
-        }
-        return;
+const parseUpdateDetails = (s) => {
+  const parts = String(s || '').split('|').map(p => p.trim()).filter(Boolean);
+  const changes = [];
+  const assigns = [];
+  parts.forEach((p) => {
+    const m = p.match(/^([^:]+):\s*'(.*)'\s*->\s*'(.*)'$/);
+    if (m) {
+      const rawLabel = m[1];
+      const label = prettyLabel(rawLabel);
+      const from = m[2];
+      const to = m[3];
+
+      const a = normByLabel(label, from);
+      const b = normByLabel(label, to);
+
+      if (b && a !== b) {
+        changes.push({ label, from, to });
       }
-      // Match assign: Label=Value
-      const m2 = p.match(/^([^=]+)=(.*)$/);
-      if (m2) {
-        assigns.push({ label: prettyLabel(m2[1]), value: m2[2] });
-        return;
-      }
-      assigns.push({ label: '', value: p });
-    });
-    return { changes, assigns };
-  };
+      return;
+    }
+    const m2 = p.match(/^([^=]+)=(.*)$/);
+    if (m2) {
+      assigns.push({ label: prettyLabel(m2[1]), value: m2[2] });
+      return;
+    }
+    assigns.push({ label: '', value: p });
+  });
+  return { changes, assigns };
+};
+
 
   const ValueText = ({ value, mutedText }) => (
     <Text fontSize="sm" color={value ? undefined : mutedText}>
