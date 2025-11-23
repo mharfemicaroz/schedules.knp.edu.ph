@@ -657,7 +657,7 @@ export default function CourseLoading() {
     const v = String(fac?.employment || '').toLowerCase();
     return v.includes('part') ? 'part-time' : 'full-time';
   };
-  const maxUnitsFor = (fac) => employmentOf(fac) === 'part-time' ? 12 : 24;
+  const maxUnitsFor = (fac) => employmentOf(fac) === 'part-time' ? 12 : 6;
   const getIntendedFacultyName = (r) => {
     if (r._facultyId != null) {
       const fac = findFacultyById(r._facultyId);
@@ -672,21 +672,25 @@ export default function CourseLoading() {
     if (!nonAdminMapped) return true;
     const incByFaculty = new Map();
     for (const r of rowsToApply) {
+      const targetId = getIntendedFacultyId(r);
       const targetName = getIntendedFacultyName(r);
-      if (!targetName) continue;
+      if (!(targetId || targetName)) continue;
       const existingName = getExistingFacultyName(r);
+      const existingId = getExistingFacultyId(r);
       const creating = !r._existingId;
-      const changingFac = creating || normalizeName(targetName) !== normalizeName(existingName);
+      const changingFac = creating || (targetId != null ? String(targetId) !== String(existingId) : (normalizeName(targetName) !== normalizeName(existingName)));
       if (!changingFac) continue;
       const inc = parseUnits(r);
       if (inc <= 0) continue;
-      incByFaculty.set(targetName, (incByFaculty.get(targetName) || 0) + inc);
+      const key = targetId != null ? `id:${targetId}` : `nm:${normalizeName(targetName)}`;
+      incByFaculty.set(key, (incByFaculty.get(key) || 0) + inc);
     }
-    for (const [name, addUnits] of incByFaculty.entries()) {
+    for (const [key, addUnits] of incByFaculty.entries()) {
       try {
-        const meta = findFacultyByName(name);
+        const meta = key.startsWith('id:') ? findFacultyById(key.slice(3)) : findFacultyByName(key.slice(3));
+        const name = meta?.name || meta?.faculty || '';
         const max = maxUnitsFor(meta);
-        const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); qs.set("instructor", name); if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
+        const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); if (meta?.id != null) { qs.set("facultyId", String(meta.id)); } else { qs.set("instructor", name); } if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
         const proposed = current + Number(addUnits || 0);
         if (proposed > max) {
           toast({ title: 'Load limit exceeded', description: `${name}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addUnits} ⇒ ${proposed}. Only admin can exceed.`, status: 'warning' });
