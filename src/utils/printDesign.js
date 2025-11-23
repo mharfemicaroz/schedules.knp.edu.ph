@@ -1,11 +1,16 @@
 export function buildTable(headers = [], rows = []) {
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const colClasses = headers.map((h) => {
+    const n = norm(h);
+    if (n === 'title') return 'col-title';
+    if (n === 'faculty') return 'col-faculty';
+    return 'col-tight';
+  });
   const thead = `<thead><tr>${headers
-    .map((h) => `<th>${escapeHtml(h)}</th>`)
+    .map((h, i) => `<th class="${colClasses[i]}">${escapeHtml(h)}</th>`)
     .join("")}</tr></thead>`;
   const tbody = `<tbody>${rows
-    .map(
-      (r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`
-    )
+    .map((r) => `<tr>${r.map((c, i) => `<td class="${colClasses[i]}">${escapeHtml(c)}</td>`).join("")}</tr>`)
     .join("")}</tbody>`;
   return `<table class="prt-table">${thead}${tbody}</table>`;
 }
@@ -77,12 +82,14 @@ export function printContent(
     .prt-body { padding: ${compact ? "8px 12px 12px" : "16px 24px 24px"}; }
     .prt-table { width: 100%; border-collapse: collapse; margin-top: ${
       compact ? "4px" : "8px"
-    }; table-layout: fixed; }
+    }; table-layout: auto; }
     .prt-table th, .prt-table td { border: 1px solid #ddd; padding: ${
       compact ? "3px 6px" : "8px 10px"
     }; font-size: 12px; line-height: ${
       compact ? "1.15" : "1.3"
-    }; vertical-align: top; }
+    }; vertical-align: top; white-space: nowrap; }
+    .prt-table .col-title, .prt-table .col-faculty { white-space: normal; }
+    .prt-table .col-tight { width: 1%; }
     .prt-table th { background: #f6f9fc; text-align: left; font-weight: 700; }
     .prt-footer { padding: 0 ${compact ? "12px" : "24px"} ${
     compact ? "8px" : "16px"
