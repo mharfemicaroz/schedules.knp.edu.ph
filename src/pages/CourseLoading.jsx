@@ -444,7 +444,7 @@ const eligibleOptions = React.useMemo(() => {
 
       {row._existingId && (
         isLocked ? (
-          <Tooltip label="Locked. Click to unlock.">
+          <Tooltip label={isAdmin ? 'Locked. Click to unlock.' : 'Locked. Only admin can unlock.'}>
             <IconButton
               aria-label="Unlock"
               icon={<FiLock />}
@@ -452,6 +452,7 @@ const eligibleOptions = React.useMemo(() => {
               colorScheme="red"
               variant="ghost"
               onClick={() => onRequestLockChange(false)}
+              isDisabled={disabled || !isAdmin}
             />
           </Tooltip>
         ) : (
@@ -462,6 +463,7 @@ const eligibleOptions = React.useMemo(() => {
               size="sm"
               variant="ghost"
               onClick={() => onRequestLockChange(true)}
+              isDisabled={disabled}
             />
           </Tooltip>
         )
@@ -647,7 +649,22 @@ export default function CourseLoading() {
   const dataFaculties = useSelector(s => s.data.faculties);
   const authUser = useSelector(s => s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
-  const canLoad = (role === 'admin' || role === 'manager' || role === 'registrar');
+  const isAdmin = (role === 'admin' || role === 'manager');
+  const [allowedDepts, setAllowedDepts] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!authUser?.id || isAdmin) { if (alive) setAllowedDepts(null); return; }
+      try {
+        const rows = await api.getUserDepartmentsByUser(authUser.id);
+        const list = Array.isArray(rows) ? rows : [];
+        const codes = Array.from(new Set(list.map(r => String(r.department || '').toUpperCase()).filter(Boolean)));
+        if (alive) setAllowedDepts(codes);
+      } catch { if (alive) setAllowedDepts([]); }
+    })();
+    return () => { alive = false; };
+  }, [authUser?.id, isAdmin]);
+  const canLoad = (isAdmin || role === 'registrar' || (Array.isArray(allowedDepts) && allowedDepts.length > 0));
 
   const [viewMode, setViewMode] = React.useState('blocks'); // 'blocks' | 'faculty'
   const [selectedBlock, setSelectedBlock] = React.useState(null);
@@ -713,21 +730,6 @@ export default function CourseLoading() {
   // Shared indexes/stats for faculty-view scoring (mirrors block view engine)
 
   React.useEffect(() => { dispatch(loadBlocksThunk({})); }, [dispatch]);
-  const isAdmin = role === 'admin' || role === 'manager';
-  const [allowedDepts, setAllowedDepts] = React.useState(null);
-  React.useEffect(() => {
-    let alive = true;
-    (async () => {
-      if (!authUser?.id || isAdmin) { if (alive) setAllowedDepts(null); return; }
-      try {
-        const rows = await api.getUserDepartmentsByUser(authUser.id);
-        const list = Array.isArray(rows) ? rows : [];
-        const codes = Array.from(new Set(list.map(r => String(r.department || '').toUpperCase()).filter(Boolean)));
-        if (alive) setAllowedDepts(codes);
-      } catch { if (alive) setAllowedDepts([]); }
-    })();
-    return () => { alive = false; };
-  }, [authUser?.id, isAdmin]);
   const blocks = React.useMemo(() => {
     try {
       if (isAdmin) return blocksAll;
@@ -1799,6 +1801,12 @@ export default function CourseLoading() {
     setFacLockOpen(true);
   };
   const confirmFacultyBulkLockChange = async () => {
+    if (!isAdmin && !facLockTarget) {
+      setFacLockOpen(false);
+      setFacLockTarget(null);
+      toast({ title: 'Unauthorized', description: 'Only admin can unlock schedules.', status: 'warning' });
+      return;
+    }
     const nextLocked = !!facLockTarget;
     setFacLockBusy(true);
     try {
@@ -1944,6 +1952,14 @@ export default function CourseLoading() {
   };
 
   const confirmLockChange = async () => {
+    if (!isAdmin && !lockDialogTarget) {
+      setLockDialogOpen(false);
+      setLockDialogIndex(null);
+      setLockDialogBulkIdxs([]);
+      setLockDialogTarget(null);
+      toast({ title: 'Unauthorized', description: 'Only admin can unlock schedules.', status: 'warning' });
+      return;
+    }
     const idxs = lockDialogBulkIdxs.length ? lockDialogBulkIdxs : (lockDialogIndex != null ? [lockDialogIndex] : []);
     if (idxs.length === 0) { setLockDialogOpen(false); return; }
     const nextLocked = !!lockDialogTarget;
@@ -2914,7 +2930,7 @@ export default function CourseLoading() {
                   <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
                     Lock Selected
                   </Button>
-                  <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
+                  <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
                     Unlock Selected
                   </Button>
                 </HStack>
@@ -3093,7 +3109,7 @@ export default function CourseLoading() {
                   <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
                     Lock Selected
                   </Button>
-                  <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
+                  <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
                     Unlock Selected
                   </Button>
                 </HStack>
@@ -3207,7 +3223,7 @@ export default function CourseLoading() {
                     );
                   })()}
                   <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(true)} isDisabled={!canLoad || facSelectedIds.length === 0 || allSelectedLocked}>Lock Selected</Button>
-                  <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(false)} isDisabled={!canLoad || facSelectedIds.length === 0 || allSelectedUnlocked}>Unlock Selected</Button>
+                  <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(false)} isDisabled={!isAdmin || facSelectedIds.length === 0 || allSelectedUnlocked}>Unlock Selected</Button>
                 </HStack>
                 {facultySchedules.items.length === 0 ? (
                   <VStack py={8}><Text color={subtle}>No schedules assigned for the selected school year.</Text></VStack>
@@ -3362,9 +3378,13 @@ export default function CourseLoading() {
                                       <Button size="sm" variant="outline" onClick={()=>updateFacEdit(c.id, { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), faculty: c.faculty || c.instructor || '', facultyId: c.facultyId || c.faculty_id || null, _conflict:false, _details:[] })} isDisabled={!dirty || isLocked}>Revert</Button>
                                       <Button size="sm" colorScheme="blue" onClick={()=>saveFacultyEdit(c.id)} isDisabled={!canSave || isLocked}>Save</Button>
                                       {isLocked ? (
-                                        <Tooltip label="Locked. Click to unlock."><IconButton aria-label="Unlock" icon={<FiLock />} size="sm" colorScheme="red" variant="ghost" onClick={()=>toggleFacultyLock(c.id, false)} /></Tooltip>
+                                        <Tooltip label={isAdmin ? 'Locked. Click to unlock.' : 'Locked. Only admin can unlock.'}>
+                                          <IconButton aria-label="Unlock" icon={<FiLock />} size="sm" colorScheme="red" variant="ghost" onClick={()=>toggleFacultyLock(c.id, false)} isDisabled={!isAdmin} />
+                                        </Tooltip>
                                       ) : (
-                                        <Tooltip label="Unlocked. Click to lock."><IconButton aria-label="Lock" icon={<FiLock />} size="sm" variant="ghost" onClick={()=>toggleFacultyLock(c.id, true)} /></Tooltip>
+                                        <Tooltip label="Unlocked. Click to lock.">
+                                          <IconButton aria-label="Lock" icon={<FiLock />} size="sm" variant="ghost" onClick={()=>toggleFacultyLock(c.id, true)} />
+                                        </Tooltip>
                                       )}
                                       <Tooltip label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}>
                                         <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={()=>requestFacultyDelete(facultySchedules.items.indexOf(c))} isDisabled={isLocked} />
