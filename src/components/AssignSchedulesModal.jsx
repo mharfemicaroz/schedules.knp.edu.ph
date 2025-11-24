@@ -2,223 +2,221 @@ import React from 'react';
 import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   VStack, HStack, FormControl, FormLabel, Input, Select, Button, Checkbox, Table, Thead, Tbody, Tr, Th, Td,
-  Text, useColorModeValue, Spinner, IconButton, Box, Switch
+  Text, useColorModeValue, Spinner, IconButton, Box, Tag, TagLabel
 } from '@chakra-ui/react';
 import { FiRefreshCw, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
-import { getTimeOptions } from '../utils/timeOptions';
 import apiService from '../services/apiService';
 import { selectSettings } from '../store/settingsSlice';
 import Pagination from './Pagination';
 import useFaculties from '../hooks/useFaculties';
-import { updateScheduleThunk, loadAllSchedules } from '../store/dataThunks';
-import { selectAllCourses } from '../store/dataSlice';
-import { normalizeTimeBlock } from '../utils/timeNormalize';
-
-function isUnassigned(row) {
-  const facIdNull = row.faculty_id == null || row.facultyId == null;
-  const instr = String(row.instructor || row.faculty || '').trim();
-  return facIdNull && (!instr || /^(unknown|unassigned|n\/?a|none|no\s*faculty|not\s*assigned|tba|-)$/i.test(instr));
-}
+import { loadAllSchedules } from '../store/dataThunks';
+import { normalizeSem } from '../utils/facultyScoring';
+import { loadBlocksThunk } from '../store/blockThunks';
+import { selectBlocks } from '../store/blockSlice';
+import { loadProspectusThunk } from '../store/prospectusThunks';
+import { selectAllProspectus } from '../store/prospectusSlice';
+// no block filtering here per request
 
 export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyName }) {
   const dispatch = useDispatch();
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
 
-  // Load faculty list to resolve target ID by name
+  // Target faculty
   const { data: facultyOptions } = useFaculties();
-  const allCourses = useSelector(selectAllCourses);
   const target = React.useMemo(() => {
     const name = String(currentFacultyName || '').trim();
     const found = (facultyOptions || []).find(o => String(o.label).trim() === name);
     return { id: found?.id || null, name };
   }, [facultyOptions, currentFacultyName]);
 
+  // Global settings (use schedulesLoad for creation context)
+  const settings = useSelector(selectSettings);
+  const settingsLoad = settings?.schedulesLoad || {};
+
+  // Source data: prospectus + blocks
+  const prospectus = useSelector(selectAllProspectus);
+  const blocksAll = useSelector(selectBlocks);
+  const [loading, setLoading] = React.useState(false);
+  const [existing, setExisting] = React.useState([]);
+
   // Filters
   const [program, setProgram] = React.useState('');
-  const [term, setTerm] = React.useState('');
-  const [time, setTime] = React.useState('');
+  const [yearlevel, setYearlevel] = React.useState('');
+  const [blockCode, setBlockCode] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [programOptions, setProgramOptions] = React.useState([]);
-  const [strictMode, setStrictMode] = React.useState(false);
+  const [yearOptions, setYearOptions] = React.useState([]);
+  const [blockOptions, setBlockOptions] = React.useState([]);
 
-  const [loading, setLoading] = React.useState(false);
-  const settings = useSelector(selectSettings);
+  // Table state
   const [rows, setRows] = React.useState([]);
   const [selected, setSelected] = React.useState(new Set());
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(10);
-  const [sortBy, setSortBy] = React.useState(''); // '', or column key
+  const [sortBy, setSortBy] = React.useState('code');
   const [sortDir, setSortDir] = React.useState('asc');
 
-  // Strict-mode helpers
-  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
-  const sameFaculty = React.useCallback((row) => {
-    const rId = row && (row.facultyId ?? row.faculty_id);
-    const tId = target.id;
-    if (tId != null && rId != null && String(tId) === String(rId)) return true;
-    const rName = row && (row.facultyName || row.instructor || row.faculty);
-    return !!norm(rName) && norm(rName) === norm(target.name);
-  }, [target]);
+  // Load source data when opening
+  React.useEffect(() => {
+    if (!isOpen) return;
+    dispatch(loadProspectusThunk({}));
+    dispatch(loadBlocksThunk({}));
+  }, [isOpen, dispatch]);
 
-  const facultyScheds = React.useMemo(() => (allCourses || []).filter(s => sameFaculty(s)), [allCourses, sameFaculty]);
+  // Build program/year options from prospectus
+  React.useEffect(() => {
+    const progs = Array.from(new Set((prospectus || []).map(p => p.programcode || p.program || '').filter(Boolean))).sort();
+    setProgramOptions(progs);
+    const yrs = Array.from(new Set((prospectus || []).map(p => String(p.yearlevel ?? '').trim()).filter(Boolean))).sort((a,b)=>Number(a)-Number(b));
+    setYearOptions(yrs);
+  }, [prospectus]);
 
-  const timeEquals = (aStart, aEnd, bStart, bEnd, aStr, bStr) => {
-    if (Number.isFinite(aStart) && Number.isFinite(aEnd) && Number.isFinite(bStart) && Number.isFinite(bEnd)) {
-      return aStart === bStart && aEnd === bEnd;
-    }
-    return aStr && bStr && String(aStr).trim() === String(bStr).trim();
-  };
+  // Build block options for selected program/year
+  React.useEffect(() => {
+    const up = (s) => String(s || '').toUpperCase();
+    const prog = up(program);
+    // extract digits from yearlevel, e.g., "3rd Year" -> "3"
+    const ydig = (String(yearlevel || '').match(/(\d+)/) || [,''])[1];
+    const opts = (blocksAll || [])
+      .map(b => String(b.blockCode || b.block_code || '').trim())
+      .filter(Boolean)
+      .filter(code => {
+        const u = up(code);
+        const hasProg = prog ? u.includes(up(prog)) : true;
+        const hasYear = ydig ? u.includes(ydig) : true;
+        return hasProg && hasYear;
+      })
+      .sort((a,b) => a.localeCompare(b));
+    setBlockOptions(opts);
+    if (blockCode && !opts.includes(blockCode)) setBlockCode('');
+  }, [blocksAll, program, yearlevel]);
 
-  const candidateNoConflict = (cand) => {
-    // Only check when candidate has valid term + time; otherwise allow
-    const term = String(cand.term || '').trim().toLowerCase();
-    const tn = normalizeTimeBlock(cand.time);
-    if (!term || !tn) return true;
-    const candStart = tn.start, candEnd = tn.end, candKey = tn.key;
-    const candSec = norm(cand.block_code || cand.blockCode || cand.section);
-    for (const r of facultyScheds) {
-      const rTerm = String(r.term || '').trim().toLowerCase();
-      if (!rTerm || rTerm !== term) continue;
-      const rStart = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : undefined;
-      const rEnd = Number.isFinite(r.timeEndMinutes) ? r.timeEndMinutes : undefined;
-      const rKey = String(r.scheduleKey || r.schedule || r.time || '').trim();
-      const sameTime = timeEquals(candStart, candEnd, rStart, rEnd, candKey, rKey);
-      if (!sameTime) continue;
-      const rSec = norm(r.section || '');
-      // If same section, it's a merged duplicate (allowed)
-      if (rSec && candSec && rSec === candSec) continue;
-      // Otherwise, it would be a conflict
-      return false;
-    }
-    return true;
-  };
-
-  const fetchData = React.useCallback(async () => {
+  // Fetch existing schedules for current SY/Sem (settingsLoad)
+  const refreshExisting = React.useCallback(async () => {
     setLoading(true);
     try {
-      const filters = {};
-      if (program) filters.programcode = program;
-      if (term) filters.term = term;
-      if (time) filters.time = time;
-      // Enforce view filters from settings
-      const sy = settings?.schedulesView?.school_year;
-      const sem = settings?.schedulesView?.semester;
-      if (sy) filters.sy = sy;
-      if (sem) filters.sem = sem;
-      const res = await apiService.getAllSchedules(filters);
-      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
-      // derive program options from fetched list
-      const progs = Array.from(new Set(list.map(r => r.programcode).filter(Boolean))).sort();
-      setProgramOptions(progs);
-      // client-side search
-      const q = String(search || '').trim().toLowerCase();
-      const filtered = q
-        ? list.filter(r => [
-            r.programcode,
-            r.courseName, r.course_name,
-            r.courseTitle, r.course_title,
-            r.blockCode, r.block_code,
-            r.dept,
-            r.room,
-            r.session,
-            r.time,
-            r.day,
-          ].some(v => String(v || '').toLowerCase().includes(q)))
-        : list;
-      // Exclude schedules already under the current faculty
-      const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
-      const tgtId = target.id != null ? String(target.id) : '';
-      const tgtName = norm(target.name);
-      const notCurrentFaculty = (r) => {
-        const rId = r.faculty_id != null ? String(r.faculty_id) : (r.facultyId != null ? String(r.facultyId) : '');
-        if (tgtId && rId && rId === tgtId) return false;
-        const rName = norm(r.instructor || r.faculty || r.facultyName);
-        if (tgtName && rName && rName === tgtName) return false;
-        return true;
-      };
-      let filtered2 = filtered.filter(notCurrentFaculty);
-      // strict mode: only unassigned and no-conflict with current faculty
-      if (strictMode) {
-        filtered2 = filtered2.filter(r => isUnassigned(r) && candidateNoConflict(r));
-      }
-      // sorting
-      const cmp = (a, b) => {
-        const dir = sortDir === 'desc' ? -1 : 1;
-        const val = (row, key) => {
-          switch (key) {
-            case 'avail': return isUnassigned(row) ? 0 : 1;
-            case 'term': return String(row.term || '').toLowerCase();
-            case 'time': return String(row.time || '');
-            case 'program': return String(row.programcode || '');
-            case 'code': return String(row.course_name || row.courseName || '');
-            case 'title': return String(row.course_title || row.courseTitle || '');
-            case 'section': return String(row.block_code || row.blockCode || '');
-            case 'room': return String(row.room || '');
-            case 'faculty': return String(row.instructor || row.faculty || '');
-            default: return null;
-          }
-        };
-        if (sortBy) {
-          const va = val(a, sortBy);
-          const vb = val(b, sortBy);
-          if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-          return String(va).localeCompare(String(vb)) * dir;
-        }
-        // default multi-key sort (unassigned, term, time, code)
-        const ua = isUnassigned(a) ? 0 : 1;
-        const ub = isUnassigned(b) ? 0 : 1;
-        if (ua !== ub) return ua - ub;
-        const ta = String(a.term||'').toLowerCase();
-        const tb = String(b.term||'').toLowerCase();
-        if (ta !== tb) return ta.localeCompare(tb);
-        const sa = String(a.time||'');
-        const sb = String(b.time||'');
-        if (sa !== sb) return sa.localeCompare(sb);
-        return String(a.course_name||'').localeCompare(String(b.course_name||''));
-      };
-      filtered2.sort(cmp);
-      setRows(filtered2);
-      setPage(1);
+      const sy = settingsLoad?.school_year || settings?.school_year || '';
+      const sem = settingsLoad?.semester || settings?.semester || '';
+      const params = {};
+      if (sy) params.sy = sy;
+      if (sem) params.sem = sem;
+      const res = await apiService.getAllSchedules(params);
+      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || []));
+      setExisting(list || []);
     } finally {
       setLoading(false);
     }
-  }, [program, term, time, search, sortBy, sortDir, target, strictMode, facultyScheds]);
+  }, [settingsLoad, settings]);
 
-  React.useEffect(() => { if (isOpen) fetchData(); }, [isOpen, fetchData]);
+  React.useEffect(() => { if (isOpen) refreshExisting(); }, [isOpen, refreshExisting]);
 
-  const toggleOne = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // Build prospectus candidates that are not yet mapped to schedules for current load semester
+  React.useEffect(() => {
+    const semRaw = String(settingsLoad?.semester || '').trim();
+    const semNorm = normalizeSem(semRaw) || '';
+    const q = String(search || '').toLowerCase();
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const codeOf = (r) => norm(r.course_name || r.courseName || '');
+    if (!blockCode) { setRows([]); setSelected(new Set()); return; }
+    const blkNorm = norm(blockCode);
+    // Build sets of existing course codes/titles for the selected block & semester
+    const codeSet = new Set();
+    const titleSet = new Set();
+    (existing || [])
+      .filter(s => {
+        if (!semNorm) return true;
+        const t = normalizeSem(s.term || s.sem || '');
+        return t === semNorm;
+      })
+      .filter(s => {
+        const sb = norm(s.blockCode || s.block_code || s.section || s.block);
+        return sb === blkNorm;
+      })
+      .forEach(s => {
+        const c1 = norm(s.code);
+        const c2 = norm(s.courseName || s.course_name);
+        const t1 = norm(s.title);
+        const t2 = norm(s.courseTitle || s.course_title);
+        if (c1) codeSet.add(c1);
+        if (c2) codeSet.add(c2);
+        if (t1) titleSet.add(t1);
+        if (t2) titleSet.add(t2);
+      });
+    let base = (prospectus || []).filter(p =>
+      (!program || norm(p.programcode || p.program) === norm(program)) &&
+      (!yearlevel || String(p.yearlevel || '') === String(yearlevel)) &&
+      (!semNorm || normalizeSem(p.semester || '') === semNorm)
+    );
+    if (q) base = base.filter(p => [p.course_name, p.course_title, p.programcode, p.program].some(v => norm(v).includes(q)));
+    const out = base.filter(p => {
+      const pCode = norm(p.course_name || p.courseName);
+      const pTitle = norm(p.course_title || p.courseTitle);
+      const inCode = pCode && codeSet.has(pCode);
+      const inTitle = pTitle && titleSet.has(pTitle);
+      return !(inCode || inTitle);
+    });
+    const dir = (sortDir === 'asc') ? 1 : -1;
+    const key = (r) => {
+      switch (sortBy) {
+        case 'program': return String(r.programcode || r.program || '');
+        case 'code': return String(r.course_name || r.courseName || '');
+        case 'title': return String(r.course_title || r.courseTitle || '');
+        case 'unit': return String(r.unit ?? '');
+        case 'year': return String(r.yearlevel ?? '');
+        default: return String(r.course_name || r.courseName || '');
+      }
+    };
+    out.sort((a,b) => key(a).localeCompare(key(b)) * dir);
+    setRows(out);
+    setPage(1);
+    setSelected(new Set());
+  }, [prospectus, existing, program, yearlevel, blockCode, search, sortBy, sortDir, settingsLoad]);
+
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
-  const paged = React.useMemo(() => rows.slice((page - 1) * pageSize, page * pageSize), [rows, page, pageSize]);
+  const paged = React.useMemo(() => rows.slice((page-1)*pageSize, (page-1)*pageSize + pageSize), [rows, page, pageSize]);
 
-  const headerChecked = paged.length > 0 && paged.every(r => selected.has(r.id));
-  const headerIndeterminate = paged.some(r => selected.has(r.id)) && !headerChecked;
+  const headerChecked = rows.length > 0 && selected.size === rows.length;
+  const headerIndeterminate = selected.size > 0 && selected.size < rows.length;
   const toggleAll = () => {
-    if (headerChecked) {
-      const next = new Set(selected);
-      paged.forEach(r => next.delete(r.id));
-      setSelected(next);
-    } else {
-      const next = new Set(selected);
-      paged.forEach(r => next.add(r.id));
-      setSelected(next);
-    }
+    if (headerChecked) setSelected(new Set());
+    else setSelected(new Set(rows.map((r, idx) => r.id ?? idx)));
+  };
+  const toggleOne = (id) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelected(next);
   };
 
-  const canAssign = selected.size > 0 && (!!target.id || !!target.name);
+  const canAssign = selected.size > 0 && !!blockCode && !!(target.id || target.name);
 
+  // Create schedules for selected prospectus rows and assign to faculty
   const assignSelected = async () => {
     if (!canAssign) return;
-    const idList = Array.from(selected);
+    const sy = settingsLoad?.school_year || settings?.school_year || '';
+    const sem = settingsLoad?.semester || settings?.semester || '';
+    const items = rows.filter((r, idx) => selected.has(r.id ?? idx)).map(r => ({
+      programcode: r.programcode || r.program,
+      courseName: r.course_name || r.courseName,
+      courseTitle: r.course_title || r.courseTitle,
+      unit: r.unit,
+      blockCode: blockCode,
+      semester: sem,
+      schoolyear: sy,
+      facultyId: target.id ?? undefined,
+      faculty: target.id ? undefined : target.name,
+    }));
+    if (!items.length) return;
+    setLoading(true);
     try {
-      await Promise.all(idList.map(id => dispatch(updateScheduleThunk({ id, changes: { facultyId: target.id ?? null, instructor: target.name } }))));
-      setSelected(new Set());
+      await apiService.bulkCreateSchedules(items);
       await dispatch(loadAllSchedules());
       onClose?.();
-    } catch {}
+    } finally {
+      setLoading(false);
+    }
   };
-
 
   const headerClick = (key) => {
     if (sortBy === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
@@ -244,77 +242,64 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
         <ModalBody>
           <VStack align="stretch" spacing={4}>
             <HStack spacing={3} wrap="wrap">
-              <FormControl maxW="240px">
+              <FormControl maxW="220px">
                 <FormLabel m={0} fontSize="xs" color="gray.500">Program</FormLabel>
                 <Select size="sm" value={program} onChange={(e)=>setProgram(e.target.value)}>
                   <option value="">All</option>
                   {programOptions.map(p => (<option key={p} value={p}>{p}</option>))}
                 </Select>
               </FormControl>
-              <FormControl maxW="160px">
-                <FormLabel m={0} fontSize="xs" color="gray.500">Term</FormLabel>
-                <Select size="sm" value={term} onChange={(e)=>setTerm(e.target.value)}>
+              <FormControl maxW="140px">
+                <FormLabel m={0} fontSize="xs" color="gray.500">Year Level</FormLabel>
+                <Select size="sm" value={yearlevel} onChange={(e)=>setYearlevel(e.target.value)}>
                   <option value="">All</option>
-                  <option value="1st">1st</option>
-                  <option value="2nd">2nd</option>
-                  <option value="Sem">Sem</option>
+                  {yearOptions.map(y => (<option key={y} value={y}>{y}</option>))}
                 </Select>
               </FormControl>
-              <FormControl maxW="180px">
-                <FormLabel m={0} fontSize="xs" color="gray.500">Time</FormLabel>
-                <Select size="sm" value={time} onChange={(e)=>setTime(e.target.value)}>
-                  <option value="">All</option>
-                  {getTimeOptions().map((t,i)=>(<option key={`${t}-${i}`} value={t}>{t || '-'}</option>))}
+              <FormControl minW="240px" flex="1">
+                <FormLabel m={0} fontSize="xs" color="gray.500">Block</FormLabel>
+                <Select size="sm" value={blockCode} onChange={(e)=>setBlockCode(e.target.value)} placeholder="Select block">
+                  {blockOptions.map(b => (<option key={b} value={b}>{b}</option>))}
                 </Select>
               </FormControl>
               <FormControl flex="1">
                 <FormLabel m={0} fontSize="xs" color="gray.500">Search</FormLabel>
-                <Input size="sm" value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Program / Code / Title / Section / Room" />
+                <Input size="sm" value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Code / Title / Program" />
               </FormControl>
-              <IconButton aria-label="Refresh" icon={<FiRefreshCw />} size="sm" onClick={fetchData} isDisabled={loading} />
-              <HStack ml="auto" spacing={3} align="center">
-                <FormControl display="flex" alignItems="center" w="auto">
-                  <FormLabel htmlFor="strict-mode" m={0} fontSize="xs" color="gray.500">All</FormLabel>
-                  <Switch id="strict-mode" size="md" colorScheme="blue" isChecked={strictMode} onChange={(e)=>setStrictMode(e.target.checked)} />
-                  <FormLabel htmlFor="strict-mode" m={0} fontSize="xs" color="gray.500" ml={2}>Strict</FormLabel>
-                </FormControl>
-              </HStack>
+              <IconButton aria-label="Refresh" icon={<FiRefreshCw />} size="sm" onClick={refreshExisting} isDisabled={loading} />
+              <Tag colorScheme="blue" variant="subtle"><TagLabel>Sem: {settingsLoad?.semester || '-'}</TagLabel></Tag>
             </HStack>
 
             <Box borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} overflowX="auto">
               {loading ? (
-                <HStack p={4}><Spinner size="sm" /><Text>Loading…</Text></HStack>
+                <HStack p={4}><Spinner size="sm" /><Text>Loading...</Text></HStack>
               ) : (
                 <Table size="sm">
                   <Thead>
                     <Tr>
                       <Th width="1%"><Checkbox isChecked={headerChecked} isIndeterminate={headerIndeterminate} onChange={toggleAll} /></Th>
-                      <Th cursor="pointer" onClick={()=>headerClick('avail')}><SortLabel label="Avail" col="avail" /></Th>
-                      <Th cursor="pointer" onClick={()=>headerClick('term')}><SortLabel label="Term" col="term" /></Th>
-                      <Th cursor="pointer" onClick={()=>headerClick('time')}><SortLabel label="Time" col="time" /></Th>
                       <Th cursor="pointer" onClick={()=>headerClick('program')}><SortLabel label="Program" col="program" /></Th>
                       <Th cursor="pointer" onClick={()=>headerClick('code')}><SortLabel label="Code" col="code" /></Th>
                       <Th cursor="pointer" onClick={()=>headerClick('title')}><SortLabel label="Title" col="title" /></Th>
-                      <Th cursor="pointer" onClick={()=>headerClick('section')}><SortLabel label="Section" col="section" /></Th>
-                      <Th cursor="pointer" onClick={()=>headerClick('room')}><SortLabel label="Room" col="room" /></Th>
-                      <Th cursor="pointer" onClick={()=>headerClick('faculty')}><SortLabel label="Faculty" col="faculty" /></Th>
+                      <Th cursor="pointer" onClick={()=>headerClick('unit')}><SortLabel label="Units" col="unit" /></Th>
+                      <Th cursor="pointer" onClick={()=>headerClick('year')}><SortLabel label="Year" col="year" /></Th>
                     </Tr>
                   </Thead>
                   <Tbody>
-                    {paged.map(r => (
-                      <Tr key={r.id}>
-                        <Td><Checkbox isChecked={selected.has(r.id)} onChange={()=>toggleOne(r.id)} /></Td>
-                        <Td color={isUnassigned(r)?'green.500':'gray.500'}>{isUnassigned(r)?'Unassigned':'Assigned'}</Td>
-                        <Td>{r.term || '-'}</Td>
-                        <Td>{r.time || '-'}</Td>
-                        <Td>{r.programcode || '-'}</Td>
-                        <Td>{r.courseName || r.course_name || '-'}</Td>
-                        <Td maxW="380px"><Text noOfLines={1}>{r.courseTitle || r.course_title || '-'}</Text></Td>
-                        <Td>{r.blockCode || r.block_code || '-'}</Td>
-                        <Td>{r.room || '-'}</Td>
-                        <Td>{r.instructor || r.faculty || '-'}</Td>
-                      </Tr>
-                    ))}
+                    {paged.map((r, idx) => {
+                      const key = r.id ?? `${r.programcode}-${r.course_name}-${idx}`;
+                      const id = r.id ?? idx;
+                      return (
+                        <Tr key={key}>
+                          <Td><Checkbox isChecked={selected.has(id)} onChange={()=>toggleOne(id)} /></Td>
+                          <Td>{r.programcode || r.program || '-'}</Td>
+                          <Td>{r.course_name || r.courseName || '-'}</Td>
+                          <Td maxW="420px"><Text noOfLines={1}>{r.course_title || r.courseTitle || '-'}</Text></Td>
+                          <Td>{r.unit ?? '-'}</Td>
+                          <Td>{r.yearlevel ?? '-'}</Td>
+                        </Tr>
+                      );
+                    })}
                   </Tbody>
                 </Table>
               )}
@@ -324,7 +309,7 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
         </ModalBody>
         <ModalFooter gap={3}>
           <Button variant="ghost" onClick={onClose}>Close</Button>
-          <Button colorScheme="blue" onClick={assignSelected} isDisabled={!canAssign}>Assign to {currentFacultyName}</Button>
+          <Button colorScheme="blue" onClick={assignSelected} isDisabled={!canAssign}>Create & Assign to {currentFacultyName}</Button>
         </ModalFooter>
       </ModalContent>
     </Modal>

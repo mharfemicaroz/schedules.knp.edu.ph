@@ -21,6 +21,7 @@ import { selectAllCourses } from '../store/dataSlice';
 import api from '../services/apiService';
 import FacultySelect from '../components/FacultySelect';
 import AssignFacultyModal from '../components/AssignFacultyModal';
+import AssignSchedulesModal from '../components/AssignSchedulesModal';
 import { updateScheduleThunk, deleteScheduleThunk, loadAllSchedules } from '../store/dataThunks';
 import { getTimeOptions } from '../utils/timeOptions';
 import { normalizeTimeBlock } from '../utils/timeNormalize';
@@ -657,7 +658,7 @@ export default function CourseLoading() {
     const v = String(fac?.employment || '').toLowerCase();
     return v.includes('part') ? 'part-time' : 'full-time';
   };
-  const maxUnitsFor = (fac) => employmentOf(fac) === 'part-time' ? 12 : 24;
+  const maxUnitsFor = (fac) => employmentOf(fac) === 'part-time' ? 12 : 6;
   const getIntendedFacultyName = (r) => {
     if (r._facultyId != null) {
       const fac = findFacultyById(r._facultyId);
@@ -779,6 +780,7 @@ export default function CourseLoading() {
   const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
   // Faculty-view suggestions
   const [facSuggOpen, setFacSuggOpen] = React.useState(false);
+  const [schedAssignOpen, setSchedAssignOpen] = React.useState(false);
   const [facSuggBusy, setFacSuggBusy] = React.useState(false);
   const [facSuggPlans, setFacSuggPlans] = React.useState([]);
   const [facSuggTargetId, setFacSuggTargetId] = React.useState(null);
@@ -3385,6 +3387,7 @@ export default function CourseLoading() {
                 <HStack>
                   <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintFaculty} isDisabled={loading || (Array.isArray(facultySchedules.items) ? facultySchedules.items.length === 0 : true)}>Print</Button>
                   <Button leftIcon={<FiRefreshCw />} size="sm" variant="outline" onClick={()=>fetchFacultySchedules(selectedFaculty)} isDisabled={loading}>Reload</Button>
+                  <Button size="sm" colorScheme="blue" variant="solid" onClick={()=>setSchedAssignOpen(true)}>Assign Schedules</Button>
                 </HStack>
               </HStack>
               <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
@@ -3892,6 +3895,11 @@ export default function CourseLoading() {
           </ModalBody>
         </ModalContent>
       </Modal>
+      <AssignSchedulesModal
+        isOpen={schedAssignOpen}
+        onClose={()=>setSchedAssignOpen(false)}
+        currentFacultyName={selectedFaculty ? (selectedFaculty.name || selectedFaculty.faculty) : ''}
+      />
     </VStack>
   );
 }

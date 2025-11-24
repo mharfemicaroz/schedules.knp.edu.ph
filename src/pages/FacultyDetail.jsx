@@ -700,6 +700,12 @@ export default function FacultyDetail() {
 
     </VStack>
     )}
+    {/* Assign Schedules (prospectus → create schedules) */}
+    <AssignSchedulesModal
+      isOpen={assignDisc.isOpen}
+      onClose={assignDisc.onClose}
+      currentFacultyName={f?.name || f?.faculty || ''}
+    />
     {/* Edit/Assign modals removed: handled in Course Loading */}
     <Modal isOpen={confDisc.isOpen} onClose={confDisc.onClose} size="4xl" isCentered>
       <ModalOverlay backdropFilter="blur(6px)" />
