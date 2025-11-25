@@ -422,6 +422,8 @@ const eligibleOptions = React.useMemo(() => {
   // Render
   // ---------------------------------------------------------------------------
 
+  // (Draft badge removed in block view per request)
+
   return (
     <HStack spacing={2} py={2} borderBottomWidth="1px" borderColor={rowBorder}>
       <Checkbox
@@ -546,6 +548,8 @@ const eligibleOptions = React.useMemo(() => {
             {row._status || 'Unassigned'}
           </Badge>
         )}
+
+        {/* Draft badge removed */}
 
         {row._status === 'Conflict' && (
           <>
@@ -781,6 +785,48 @@ export default function CourseLoading() {
   // Faculty-view suggestions
   const [facSuggOpen, setFacSuggOpen] = React.useState(false);
   const [schedAssignOpen, setSchedAssignOpen] = React.useState(false);
+  const handleCreateFromAssignModal = React.useCallback(async (payload) => {
+    try {
+      const blk = String(payload?.blockCode || '').trim();
+      const fid = payload?.facultyId ?? (selectedFaculty?.id ?? null);
+      const fname = payload?.facultyName ?? (selectedFaculty?.name || selectedFaculty?.faculty || '');
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      if (!blk || !fname || items.length === 0) return;
+      const now = Date.now();
+      const makeId = (i) => `tmp:${now}:${i}`;
+      const newRows = items.map((r, i) => ({
+        id: makeId(i),
+        code: r.courseName,
+        courseName: r.courseName,
+        title: r.courseTitle,
+        courseTitle: r.courseTitle,
+        unit: r.unit,
+        programcode: r.programcode,
+        yearlevel: r.yearlevel,
+        semester: r.semester,
+        prospectusId: r.id,
+        section: blk,
+        blockCode: blk,
+        term: '',
+        schedule: '',
+        time: '',
+        day: 'MON-FRI',
+        facultyId: fid,
+        faculty: fname,
+        instructor: fname,
+        lock: false,
+        _locked: false,
+        _draft: true,
+      }));
+      setFacultySchedules((prev) => ({
+        ...prev,
+        items: [...(prev?.items || []), ...newRows],
+        loading: false,
+      }));
+    } finally {
+      setSchedAssignOpen(false);
+    }
+  }, [selectedFaculty]);
   const [facSuggBusy, setFacSuggBusy] = React.useState(false);
   const [facSuggPlans, setFacSuggPlans] = React.useState([]);
   const [facSuggTargetId, setFacSuggTargetId] = React.useState(null);
@@ -1792,6 +1838,62 @@ export default function CourseLoading() {
     const base = facultySchedules.items.find(x => String(x.id) === String(id));
     const e = facEdits[id];
     if (!base || !e) return;
+    const isDraft = String(base.id || '').startsWith('tmp:') || !!base._draft;
+    if (isDraft) {
+      try {
+        const yrLabel = (() => {
+          const raw = String(base.yearlevel ?? '').trim();
+          if (!raw) return '';
+          const m = raw.match(/(\d+)/);
+          const n = m ? parseInt(m[1], 10) : NaN;
+          if (!Number.isFinite(n)) return raw; // already labeled
+          const ord = (k) => {
+            const sfx = (k % 10 === 1 && k % 100 !== 11) ? 'st' : (k % 10 === 2 && k % 100 !== 12) ? 'nd' : (k % 10 === 3 && k % 100 !== 13) ? 'rd' : 'th';
+            return `${k}${sfx}`;
+          };
+          return `${ord(n)} Year`;
+        })();
+        const semLabel = (() => {
+          const raw = String(settingsLoad?.semester || '').trim();
+          const v = raw.toLowerCase();
+          if (!v) return '';
+          if (/(^|[^a-z])1(st)?([^a-z]|$)|\bfirst\b/.test(v)) return '1st Semester';
+          if (/(^|[^a-z])2(nd)?([^a-z]|$)|\bsecond\b/.test(v)) return '2nd Semester';
+          if (/summer|mid\s*year|midyear|(^|[^a-z])3(rd)?([^a-z]|$)/.test(v)) return '3rd Semester';
+          // If the string already contains 'semester', return with capitalized first letter
+          if (v.includes('semester')) return raw;
+          // Fallback: pass through as is
+          return raw;
+        })();
+        const blkCode = base.blockCode || base.section || '';
+        const blkMeta = (blocksAll || []).find(b => String(b.blockCode || '').trim().toLowerCase() === String(blkCode).trim().toLowerCase());
+        const session = blkMeta?.session || '';
+        const payload = {
+          programcode: base.programcode,
+          courseName: base.courseName || base.code,
+          courseTitle: base.courseTitle || base.title,
+          unit: base.unit,
+          day: base.day || 'MON-FRI',
+          time: e.time,
+          term: e.term,
+          schoolyear: settingsLoad?.school_year || '',
+          semester: semLabel,
+          yearlevel: yrLabel || base.yearlevel,
+          blockCode: blkCode,
+          session: session,
+          facultyId: (e.facultyId != null ? e.facultyId : (base.facultyId ?? null)),
+          faculty: base.faculty || base.instructor || selectedFaculty?.name || selectedFaculty?.faculty || '',
+          prospectusId: base.prospectusId || base.prospectus_id || undefined,
+        };
+        await api.createSchedule(payload);
+        await fetchFacultySchedules(selectedFaculty);
+        dispatch(loadAllSchedules());
+        toast({ title: 'Saved', description: `${payload.courseName} created.`, status: 'success' });
+      } catch (e2) {
+        toast({ title: 'Save failed', description: e2?.message || 'Could not create schedule.', status: 'error' });
+      }
+      return;
+    }
     const changes = {};
     if (canonicalTerm(base.term || '') !== e.term) changes.term = e.term;
     const baseTime = String(base.schedule || base.time || '').trim();
@@ -1867,7 +1969,32 @@ export default function CourseLoading() {
   const [facDelBusy, setFacDelBusy] = React.useState(false);
   const [facDelIndex, setFacDelIndex] = React.useState(null);
   const facDelCancelRef = React.useRef();
-  const requestFacultyDelete = (idx) => { setFacDelIndex(idx); setFacDelOpen(true); };
+  const requestFacultyDelete = (idx) => {
+    const item = facultySchedules.items[idx];
+    if (!item) return;
+    const isDraft = !!item._draft || String(item.id || '').startsWith('tmp:');
+    if (isDraft) {
+      // Remove draft locally without confirmation or API call
+      setFacultySchedules(prev => ({
+        ...prev,
+        items: prev.items.filter((_, i) => i !== idx),
+      }));
+      setFacEdits(prev => {
+        const next = { ...prev };
+        try { delete next[item.id]; } catch {}
+        return next;
+      });
+      setFacSelected(prev => {
+        const next = new Set(prev);
+        try { next.delete(item.id); } catch {}
+        return next;
+      });
+      try { toast({ title: 'Removed draft', description: `${item.code || item.courseName} removed.`, status: 'success' }); } catch {}
+      return;
+    }
+    setFacDelIndex(idx);
+    setFacDelOpen(true);
+  };
   const confirmFacultyDelete = async () => {
     const idx = facDelIndex;
     const item = facultySchedules.items[idx];
@@ -3439,24 +3566,50 @@ export default function CourseLoading() {
                           <VStack align="stretch" spacing={2}>
                             {arr.map((c, i) => {
                               const e = facEdits[c.id] || { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), faculty: c.faculty || c.instructor || '', facultyId: c.facultyId || c.faculty_id || null };
-                              const dirty = canonicalTerm(c.term || '') !== e.term || String(c.schedule || c.time || '').trim() !== e.time || (c.facultyId || c.faculty_id || null) !== (e.facultyId || null);
-                              const canSave = dirty && !e._checking && !e._conflict;
+                              const dirty =
+                                canonicalTerm(c.term || '') !== e.term ||
+                                String(c.schedule || c.time || '').trim() !== e.time ||
+                                (c.facultyId || c.faculty_id || null) !== (e.facultyId || null);
+                              const termFilled = String(e.term || '').trim().length > 0;
+                              const timeFilled = String(e.time || '').trim().length > 0;
+                              const facultyFilled = (e.facultyId != null) || String(e.faculty || c.faculty || c.instructor || '').trim().length > 0;
+                              const canSave = dirty && termFilled && timeFilled && facultyFilled && !e._checking && !e._conflict;
                               const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock || c.is_locked);
                               return (
                                 <Box key={`${term}-${i}`} p={2} borderWidth="1px" rounded="md">
                                   <HStack spacing={3} align="center">
                                     <Checkbox isChecked={facSelected.has(c.id)} onChange={(e)=>toggleFacSelect(c.id, e.target.checked)} isDisabled={isLocked} />
                                     <Badge>{c.code || c.courseName}</Badge>
+                                    {String(c.id || '').startsWith('tmp:') && <Badge colorScheme="pink">Draft</Badge>}
                                     <Text noOfLines={1} flex="1">{c.title || c.courseTitle}</Text>
                                     <Badge colorScheme="orange">{c.blockCode || c.section || '—'}</Badge>
                                   </HStack>
                                   <HStack mt={2} spacing={2} align="center" flexWrap="wrap">
-                                    <Select size="sm" value={e.term} onChange={(ev)=>updateFacEdit(c.id, { term: ev.target.value })} maxW="120px" isDisabled={isLocked}>
-                                      {['1st','2nd','Sem'].map(v => <option key={v} value={v}>{v}</option>)}
-                                    </Select>
-                                    <Select size="sm" value={e.time} onChange={(ev)=>updateFacEdit(c.id, { time: ev.target.value })} maxW="160px" isDisabled={isLocked}>
-                                      {getTimeOptions().map(t => <option key={t} value={t}>{t || 'Time'}</option>)}
-                                    </Select>
+                                  <Select
+                                    size="sm"
+                                    value={e.term}
+                                    onChange={(ev)=>updateFacEdit(c.id, { term: ev.target.value })}
+                                    maxW="120px"
+                                    isDisabled={isLocked}
+                                  >
+                                    <option value="">Term</option>
+                                    {['1st','2nd','Sem'].map(v => (
+                                      <option key={v} value={v}>{v}</option>
+                                    ))}
+                                  </Select>
+
+                                  <Select
+                                    size="sm"
+                                    value={e.time}
+                                    onChange={(ev)=>updateFacEdit(c.id, { time: ev.target.value })}
+                                    maxW="160px"
+                                    isDisabled={isLocked}
+                                  >
+                                    {getTimeOptions().map(t => (
+                                      <option key={t} value={t}>{t || 'Time'}</option>
+                                    ))}
+                                  </Select>
+
                                     <Box minW="220px">
                                       {(() => {
                                         const normTerm = (v) => { const s=String(v||'').trim().toLowerCase(); if (s.startsWith('1')) return '1st'; if (s.startsWith('2')) return '2nd'; if (s.startsWith('s')) return 'Sem'; return String(v||''); };
@@ -3570,8 +3723,8 @@ export default function CourseLoading() {
                                           <Button size="sm" variant="outline" onClick={()=>openFacultyResolve(facultySchedules.items.indexOf(c))} isDisabled={isLocked}>Resolve</Button>
                                         </>
                                       )}
-                                      <Button size="sm" variant="outline" onClick={()=>addFacultyItemToSwap(facultySchedules.items.indexOf(c))} isDisabled={isLocked}>Add to Swap</Button>
-                                      <Button size="sm" leftIcon={<FiUserPlus />} variant="outline" onClick={()=>openFacAssign(facultySchedules.items.indexOf(c))} isDisabled={isLocked}>Assign</Button>
+                                      <Button size="sm" variant="outline" onClick={()=>addFacultyItemToSwap(facultySchedules.items.indexOf(c))} isDisabled={isLocked || String(c.id || '').startsWith('tmp:') || !!c._draft}>Add to Swap</Button>
+                                      {/* Inline Assign action removed per request */}
                                       <Button size="sm" variant="outline" onClick={()=>updateFacEdit(c.id, { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), faculty: c.faculty || c.instructor || '', facultyId: c.facultyId || c.faculty_id || null, _conflict:false, _details:[] })} isDisabled={!dirty || isLocked}>Revert</Button>
                                       <Button size="sm" colorScheme="blue" onClick={()=>saveFacultyEdit(c.id)} isDisabled={!canSave || isLocked}>Save</Button>
                                       {isLocked ? (
@@ -3899,6 +4052,7 @@ export default function CourseLoading() {
         isOpen={schedAssignOpen}
         onClose={()=>setSchedAssignOpen(false)}
         currentFacultyName={selectedFaculty ? (selectedFaculty.name || selectedFaculty.faculty) : ''}
+        onCreate={handleCreateFromAssignModal}
       />
     </VStack>
   );

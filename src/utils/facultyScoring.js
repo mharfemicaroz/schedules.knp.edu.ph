@@ -2,14 +2,32 @@
 import { parseF2FDays, parseTimeBlockToMinutes } from "../utils/conflicts";
 
 export const normalizeSem = (s) => {
-  const v = String(s || "")
-    .trim()
-    .toLowerCase();
+  const v = String(s || "").trim().toLowerCase();
   if (!v) return "";
-  if (v.startsWith("1")) return "1st";
-  if (v.startsWith("2")) return "2nd";
-  if (v.startsWith("s")) return "Sem";
-  return s;
+  // Handle summer / mid-year terms explicitly
+  if (/summer|mid\s*year|midyear/.test(v)) return "3rd";
+  // Common patterns for 2nd semester/term
+  if (
+    /(^|[^a-z0-9])2(nd)?([^a-z0-9]|$)/.test(v) ||
+    /\bsecond\b/.test(v) ||
+    /\bsem\s*2\b/.test(v) ||
+    /\bterm\s*2\b/.test(v)
+  )
+    return "2nd";
+  // Common patterns for 1st semester/term
+  if (
+    /(^|[^a-z0-9])1(st)?([^a-z0-9]|$)/.test(v) ||
+    /\bfirst\b/.test(v) ||
+    /\bsem\s*1\b/.test(v) ||
+    /\bterm\s*1\b/.test(v)
+  )
+    return "1st";
+  // Fallback: if it starts with a digit (e.g., "2nd Semester" already handled above),
+  // attempt to map to 1st/2nd by the leading number
+  if (/^\s*2/.test(v)) return "2nd";
+  if (/^\s*1/.test(v)) return "1st";
+  // Unknown format: return empty to avoid false positives in equality checks
+  return "";
 };
 
 export const buildIndexes = (courses) => {

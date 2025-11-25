@@ -18,7 +18,7 @@ import { loadProspectusThunk } from '../store/prospectusThunks';
 import { selectAllProspectus } from '../store/prospectusSlice';
 // no block filtering here per request
 
-export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyName }) {
+export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyName, onCreate }) {
   const dispatch = useDispatch();
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
@@ -112,23 +112,25 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
 
   React.useEffect(() => { if (isOpen) refreshExisting(); }, [isOpen, refreshExisting]);
 
-  // Build prospectus candidates that are not yet mapped to schedules for current load semester
+  // Build prospectus candidates that are not yet mapped to schedules for current load semester (per selected block)
   React.useEffect(() => {
     const semRaw = String(settingsLoad?.semester || '').trim();
     const semNorm = normalizeSem(semRaw) || '';
     const q = String(search || '').toLowerCase();
     const norm = (s) => String(s || '').trim().toLowerCase();
     const codeOf = (r) => norm(r.course_name || r.courseName || '');
-    if (!blockCode) { setRows([]); setSelected(new Set()); return; }
+    // Require both semester and block to proceed
+    if (!semNorm || !blockCode) { setRows([]); setSelected(new Set()); return; }
     const blkNorm = norm(blockCode);
-    // Build sets of existing course codes/titles for the selected block & semester
+    // Build sets of existing course codes/titles for the selected semester and block
     const codeSet = new Set();
     const titleSet = new Set();
     (existing || [])
       .filter(s => {
-        if (!semNorm) return true;
-        const t = normalizeSem(s.term || s.sem || '');
-        return t === semNorm;
+        // Consider both `sem` and `term` fields when matching current semester
+        const tSem = normalizeSem(s.sem || '');
+        const tTerm = normalizeSem(s.term || '');
+        return tSem === semNorm || tTerm === semNorm;
       })
       .filter(s => {
         const sb = norm(s.blockCode || s.block_code || s.section || s.block);
@@ -147,7 +149,7 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
     let base = (prospectus || []).filter(p =>
       (!program || norm(p.programcode || p.program) === norm(program)) &&
       (!yearlevel || String(p.yearlevel || '') === String(yearlevel)) &&
-      (!semNorm || normalizeSem(p.semester || '') === semNorm)
+      (normalizeSem(p.semester || '') === semNorm)
     );
     if (q) base = base.filter(p => [p.course_name, p.course_title, p.programcode, p.program].some(v => norm(v).includes(q)));
     const out = base.filter(p => {
@@ -197,24 +199,31 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
     const sy = settingsLoad?.school_year || settings?.school_year || '';
     const sem = settingsLoad?.semester || settings?.semester || '';
     const items = rows.filter((r, idx) => selected.has(r.id ?? idx)).map(r => ({
+      id: r.id,
       programcode: r.programcode || r.program,
       courseName: r.course_name || r.courseName,
       courseTitle: r.course_title || r.courseTitle,
       unit: r.unit,
-      blockCode: blockCode,
-      semester: sem,
-      schoolyear: sy,
-      facultyId: target.id ?? undefined,
-      faculty: target.id ? undefined : target.name,
+      yearlevel: r.yearlevel,
+      semester: r.semester,
     }));
     if (!items.length) return;
-    setLoading(true);
-    try {
-      await apiService.bulkCreateSchedules(items);
-      await dispatch(loadAllSchedules());
+    // Delegate creation to parent (CourseLoading) for efficient local insert
+    if (typeof onCreate === 'function') {
+      try {
+        await onCreate({
+          blockCode,
+          facultyId: target.id ?? null,
+          facultyName: target.name,
+          schoolyear: sy,
+          semester: sem,
+          items,
+        });
+      } finally {
+        onClose?.();
+      }
+    } else {
       onClose?.();
-    } finally {
-      setLoading(false);
     }
   };
 
