@@ -29,6 +29,8 @@ import {
   Alert,
   AlertIcon,
   Center,
+  Wrap,
+  WrapItem,
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import apiService from '../services/apiService';
@@ -258,15 +260,21 @@ function EvaluationView() {
 
                   <Divider my={6} />
 
-                  <HStack spacing={4} align="center">
-                    <Avatar name={schedule.faculty || schedule.instructor || 'Faculty'} size="lg" />
-                    <VStack align="start" spacing={0}>
+                  <Stack direction={{ base: 'column', md: 'row' }} spacing={{ base: 3, md: 4 }} align={{ base: 'flex-start', md: 'center' }}>
+                    <Avatar name={schedule.faculty || schedule.instructor || 'Faculty'} size={{ base: 'md', md: 'lg' }} />
+                    <VStack align="start" spacing={0} flex={1} minW={0}>
                       <Text fontWeight="700">{schedule.faculty || schedule.instructor || '—'}</Text>
                       <Text fontSize="sm" color={subtle}>{schedule.dept || '—'}</Text>
                     </VStack>
-                    {schedule.designation && <Badge>{schedule.designation}</Badge>}
-                    {schedule.employment && <Badge colorScheme="purple" variant="subtle">{schedule.employment}</Badge>}
-                  </HStack>
+                    <Wrap spacing={{ base: 2, md: 3 }}>
+                      {schedule.designation && (
+                        <WrapItem><Badge>{schedule.designation}</Badge></WrapItem>
+                      )}
+                      {schedule.employment && (
+                        <WrapItem><Badge colorScheme="purple" variant="subtle">{schedule.employment}</Badge></WrapItem>
+                      )}
+                    </Wrap>
+                  </Stack>
                 </>
               ) : (
                 <Text>No data.</Text>
@@ -308,17 +316,19 @@ function EvaluationView() {
             <Box px={{ base: 4, md: 6 }} py={{ base: 5, md: 6 }}>
               <VStack align="stretch" spacing={5}>
                 {QUESTIONS.map((q, idx) => (
-                  <Box key={idx} p={4} borderWidth="1px" borderColor={border} rounded="md" _hover={{ bg: useColorModeValue('gray.50','gray.700') }}>
-                    <HStack justify="space-between" align="flex-start" spacing={4}>
-                      <Text flex={1}>{idx + 1}. {q}</Text>
+                  <Box key={idx} p={{ base: 3, md: 4 }} borderWidth="1px" borderColor={border} rounded="md" _hover={{ bg: useColorModeValue('gray.50','gray.700') }}>
+                    <Stack direction={{ base: 'column', md: 'row' }} align={{ base: 'flex-start', md: 'center' }} justify="space-between" spacing={{ base: 3, md: 4 }}>
+                      <Text flex={1} wordBreak="break-word">{idx + 1}. {q}</Text>
                       <RadioGroup value={answers[idx] ?? ''} onChange={(v) => setAnswers((s) => ({ ...s, [idx]: v }))}>
-                        <Stack direction="row" spacing={4}>
+                        <Wrap spacing={{ base: 2, md: 4 }}>
                           {[1,2,3,4,5].map((v) => (
-                            <Radio key={v} value={String(v)}>{v}</Radio>
+                            <WrapItem key={v}>
+                              <Radio size={{ base: 'sm', md: 'md' }} value={String(v)}>{v}</Radio>
+                            </WrapItem>
                           ))}
-                        </Stack>
+                        </Wrap>
                       </RadioGroup>
-                    </HStack>
+                    </Stack>
                   </Box>
                 ))}
 
