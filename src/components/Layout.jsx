@@ -163,6 +163,7 @@ export default function Layout({ children }) {
   const [routeBusy, setRouteBusy] = React.useState(false);
   const isPublicRoomAuto = /^\/views\/rooms\/[^/]+\/auto$/.test(loc.pathname || '');
   const isRoomAttendance = /^\/admin\/room-attendance$/.test(loc.pathname || '');
+  const isEvaluationPublic = /^\/evaluation(\/|$)/.test(loc.pathname || '');
   const isSharePublic = /^\/share\//.test(loc.pathname || '');
   const currentPath = `${loc.pathname || ''}${loc.hash || ''}`;
   const isUnauthorizedRoute = /(?:^|#)\/unauthorized$/.test(currentPath);
@@ -316,7 +317,7 @@ export default function Layout({ children }) {
     );
   }
 
-  if (isPublicRoomAuto || isSharePublic || isRoomAttendance) {
+  if (isPublicRoomAuto || isSharePublic || isRoomAttendance || isEvaluationPublic) {
     // Public-facing view without app chrome (sidebar/topbar/footer)
     if (isSharePublic) {
       // Special-case: full-bleed canvas for Share Visual Map (landscape doc preview)

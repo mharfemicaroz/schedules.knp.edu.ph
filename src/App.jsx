@@ -23,6 +23,7 @@ import AdminBlockSettings from './pages/AdminBlockSettings';
 import AdminAcademicCalendar from './pages/AdminAcademicCalendar';
 import AdminGradesSubmission from './pages/AdminGradesSubmission';
 import AdminProspectus from './pages/AdminProspectus';
+import AdminEvaluations from './pages/AdminEvaluations';
 import AdminUserDepartments from './pages/AdminUserDepartments';
 import AdminSettings from './pages/AdminSettings';
 import CourseLoading from './pages/CourseLoading';
@@ -36,6 +37,8 @@ import RequireRole from './components/RequireRole';
 import Attendance from './pages/Attendance';
 import AttendancePrint from './pages/AttendancePrint';
 import RoomAttendance from './pages/RoomAttendance';
+import Evaluation from './pages/Evaluation';
+import EvaluationView from './pages/EvaluationView';
 // DataProvider removed; using Redux directly
 // VisitorProvider removed
 import { useDispatch, useSelector } from 'react-redux';
@@ -64,6 +67,8 @@ function App() {
           <Layout>
             <Routes>
               <Route path="/" element={<VisualMap />} />
+              <Route path="/evaluation" element={<Evaluation />} />
+              <Route path="/evaluation/:token" element={<EvaluationView />} />
               <Route path="/overview/calendar" element={<AcademicCalendar />} />
               <Route path="/faculty/:id" element={<RequireAuth><FacultyDetail /></RequireAuth>} />
               <Route path="/views/faculty" element={<RequireAuth><Dashboard /></RequireAuth>} />
@@ -82,6 +87,7 @@ function App() {
               <Route path="/admin/room-attendance" element={<RequireRole roles={['admin','manager','checker']}><RoomAttendance /></RequireRole>} />
               <Route path="/admin/faculty" element={<RequireAdmin><AdminFaculty /></RequireAdmin>} />
               <Route path="/admin/prospectus" element={<RequireAdmin><AdminProspectus /></RequireAdmin>} />
+              <Route path="/admin/evaluations" element={<RequireAdmin><AdminEvaluations /></RequireAdmin>} />
               <Route path="/admin/academic-calendar" element={<RequireAdmin><AdminAcademicCalendar /></RequireAdmin>} />
               <Route path="/admin/settings" element={<RequireAdmin><AdminSettings /></RequireAdmin>} />
               <Route path="/admin/blocks" element={<RequireAdmin><AdminBlockSettings /></RequireAdmin>} />

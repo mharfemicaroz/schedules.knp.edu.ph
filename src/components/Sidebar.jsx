@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, VStack, Text, useColorModeValue, HStack, Icon, Image, Badge } from '@chakra-ui/react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar, FiUserX, FiFileText, FiBook, FiUser, FiActivity, FiSettings, FiCheckSquare } from 'react-icons/fi';
+import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar, FiUserX, FiFileText, FiBook, FiUser, FiActivity, FiSettings, FiCheckSquare, FiBarChart2 } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { FiAlertTriangle } from 'react-icons/fi';
 import { selectAllCourses } from '../store/dataSlice';
@@ -213,6 +213,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             {isAdmin && (
               <>
                 <NavItem to="/admin/faculty" icon={FiUsers} onClick={onNavigate}>Faculty</NavItem>
+                <NavItem to="/admin/evaluations" icon={FiBarChart2} onClick={onNavigate}>Evaluations</NavItem>
                 <NavItem to="/admin/prospectus" icon={FiBook} onClick={onNavigate}>Prospectus</NavItem>
                 <NavItem to="/admin/user-departments" icon={FiBook} onClick={onNavigate}>User Departments</NavItem>
                 <NavItem to="/admin/academic-calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>

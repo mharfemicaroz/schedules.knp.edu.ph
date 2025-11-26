@@ -662,6 +662,13 @@ class ApiService {
     return await res.json();
   }
 
+  async getFaculty(id) {
+    const url = `${this.baseURL}/faculty/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   async createFaculty(payload) {
     const url = `${this.baseURL}/faculty/`;
     const body = JSON.stringify(this.#normalizeFacultyPayload(payload));
