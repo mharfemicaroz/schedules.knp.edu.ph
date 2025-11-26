@@ -8,6 +8,10 @@ import {
   Text,
   FormControl,
   FormErrorMessage,
+  Input,
+  InputGroup,
+  InputRightElement,
+  IconButton,
   Button,
   useColorModeValue,
   HStack,
@@ -20,16 +24,41 @@ import {
   Badge,
 } from '@chakra-ui/react';
 import apiService from '../services/apiService';
+import { FiCalendar } from 'react-icons/fi';
 
 function Evaluation() {
   const [code, setCode] = React.useState('');
   const [touched, setTouched] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  const [studentId, setStudentId] = React.useState('');
+  const [birthDate, setBirthDate] = React.useState(''); // MM/DD/YYYY (display)
+  const dateInputRef = React.useRef(null);
   const toast = useToast();
   const navigate = useNavigate();
 
   const isValid = /^[A-Za-z0-9]{6}$/.test(code);
   const showError = touched && !isValid && code.length > 0;
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const isValidMDY = (s) => {
+    const m = String(s || '').trim().match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (!m) return false;
+    const mm = Number(m[1]);
+    const dd = Number(m[2]);
+    const yyyy = Number(m[3]);
+    if (mm < 1 || mm > 12) return false;
+    if (yyyy < 1900 || yyyy > new Date().getFullYear()) return false;
+    const dt = new Date(`${yyyy}-${pad2(mm)}-${pad2(dd)}`);
+    return dt.getFullYear() === yyyy && dt.getMonth() + 1 === mm && dt.getDate() === dd;
+  };
+  const mdyToDmy = (s) => {
+    const m = String(s || '').trim().match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (!m) return '';
+    const mm = Number(m[1]);
+    const dd = Number(m[2]);
+    const yyyy = Number(m[3]);
+    return isValidMDY(s) ? `${pad2(dd)}/${pad2(mm)}/${yyyy}` : '';
+  };
+  const studentOk = String(studentId).trim().length > 0 && isValidMDY(String(birthDate).trim());
 
   const pageBg = useColorModeValue('white', 'gray.900');
   const gradientBg = useColorModeValue(
@@ -47,13 +76,112 @@ function Evaluation() {
     setCode(cleaned);
   };
 
+  const onStudentIdChange = (e) => {
+    const raw = e?.target?.value ?? '';
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 0) {
+      setStudentId('');
+      return;
+    }
+    if (digits.length <= 3) {
+      setStudentId(digits);
+      return;
+    }
+    if (digits.length <= 7) {
+      const formatted = `${digits.slice(0,3)}-${digits.slice(3)}`;
+      setStudentId(formatted);
+      return;
+    }
+    // Exceeds 7 digits: remove dash, keep digits only
+    setStudentId(digits);
+  };
+
+  const formatIsoToMDY = (iso) => {
+    // iso: YYYY-MM-DD -> MM/DD/YYYY
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+    const [y, m, d] = iso.split('-');
+    return `${m}/${d}/${y}`;
+  };
+
+  const openDatePicker = () => {
+    const el = dateInputRef.current;
+    if (!el) return;
+    if (typeof el.showPicker === 'function') {
+      try { el.showPicker(); return; } catch {}
+    }
+    el.click();
+  };
+
+  const formatMDYMask = (value) => {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 8); // MMDDYYYY -> up to 8
+    if (!digits) return '';
+
+    let out = '';
+
+    // Month
+    if (digits.length === 1) {
+      const a = digits[0];
+      if (a === '0' || a === '1') {
+        out = a; // wait for second digit
+      } else {
+        out = `0${a}/`; // auto-complete month and add slash
+      }
+      return out;
+    }
+
+    let mm = digits.slice(0, 2);
+    let mNum = Math.max(1, Math.min(12, parseInt(mm, 10) || 0));
+    mm = String(mNum).padStart(2, '0');
+    out = `${mm}/`;
+
+    const rest = digits.slice(2);
+    if (!rest) return out;
+
+    // Day
+    if (rest.length === 1) {
+      const b = rest[0];
+      if (b === '0' || b === '1' || b === '2' || b === '3') {
+        out += b; // wait for second digit
+        return out;
+      } else {
+        out += `0${b}/`; // auto-complete day and add slash
+        return out;
+      }
+    }
+
+    let dd = rest.slice(0, 2);
+    let dNum = Math.max(1, Math.min(31, parseInt(dd, 10) || 0));
+    dd = String(dNum).padStart(2, '0');
+    out += `${dd}/`;
+
+    // Year (up to 4)
+    const yyyy = rest.slice(2, 6);
+    out += yyyy;
+
+    return out;
+  };
+
   const encodeToken = (s) => {
     try { return btoa(s).replace(/=+$/,''); } catch { return ''; }
+  };
+
+  const formatStudentName = (s) => {
+    if (!s) return '';
+    const ln = s.last_name || s.lastname || '';
+    const fn = s.first_name || s.firstname || '';
+    const mn = s.middle_name || s.midname || '';
+    const ne = s.name_ext || s.nameext || '';
+    const parts = [fn, mn && (mn[0] + '.').toUpperCase(), ln, ne].filter(Boolean);
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
   };
 
   const handleProceed = async () => {
     setTouched(true);
     if (!isValid) return;
+    if (!studentOk) {
+      toast({ title: 'Enter valid Student ID and Birthdate (MM/DD/YYYY).', status: 'warning', duration: 2200 });
+      return;
+    }
     setSubmitting(true);
     try {
       const params = new URLSearchParams({ accessCode: code });
@@ -65,15 +193,46 @@ function Evaluation() {
         toast({ title: 'Schedule not found', status: 'error', duration: 2000 });
         return;
       }
+      const birthDMY = mdyToDmy(String(birthDate).trim());
+      const v = await apiService.verifyStudent(String(studentId).trim(), birthDMY);
+      if (!v?.exists) {
+        toast({ title: 'Student record not found', description: 'Check your Student ID and birthdate.', status: 'error', duration: 2500 });
+        return;
+      }
+      // Check if evaluation already exists for this student + code
+      const studentName = formatStudentName(v.data || v);
+      try {
+        const ex = await apiService.checkEvaluationExists(code, studentName);
+        if (ex?.exists) {
+          toast({
+            title: 'Already Submitted',
+            description: 'You have already completed this evaluation. Thank you!',
+            status: 'info',
+            duration: 3500,
+          });
+          return;
+        }
+      } catch {}
+      try { sessionStorage.setItem('evaluation:student', JSON.stringify(v.data || v)); } catch {}
       const token = encodeToken(code);
       navigate(`/evaluation/${encodeURIComponent(token)}`);
     } catch (e) {
-      toast({
-        title: 'Unable to validate access code',
-        description: e?.message || 'Please try again.',
-        status: 'error',
-        duration: 2500,
-      });
+      if (e && Number(e.status) === 429) {
+        const secs = Math.max(1, Number(e.retryAfter) || 60);
+        toast({
+          title: 'Too many attempts',
+          description: `Please wait ${secs}s before trying again.`,
+          status: 'warning',
+          duration: Math.min(9000, (secs + 2) * 1000),
+        });
+      } else {
+        toast({
+          title: 'Unable to validate access code',
+          description: e?.message || 'Please try again.',
+          status: 'error',
+          duration: 2500,
+        });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -171,15 +330,68 @@ function Evaluation() {
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="widest" color={accent} fontWeight="semibold">
                     Step 1
                   </Text>
-                  <Heading size="md" fontWeight="semibold" color={textMain}>
-                    Enter your access code
+            <Heading size="md" fontWeight="semibold" color={textMain}>
+                    Enter your details
                   </Heading>
                   <Text fontSize="sm" color={textSubtle}>
-                    Type the 6-character code given by your instructor. Letters are not case-sensitive.
+                    Provide your Student ID and birthdate, then the 6-character access code from your instructor.
                   </Text>
                 </VStack>
 
-                <FormControl isInvalid={showError}>
+                <VStack align="stretch" spacing={4}>
+                  <FormControl>
+                    <Text fontSize="sm" fontWeight="600">Student ID</Text>
+                    <Text fontSize="xs" color={textSubtle} mb={1}>As shown in your ID card or certificate of registration form.</Text>
+                    <Input
+                      value={studentId}
+                      onChange={onStudentIdChange}
+                      placeholder="e.g., 251-1234"
+                      autoComplete="off"
+                      inputMode="numeric"
+                      pattern="[0-9-]*"
+                    />
+                  </FormControl>
+                  <FormControl>
+                    <Text fontSize="sm" fontWeight="600">Birthdate</Text>
+                    <Text fontSize="xs" color={textSubtle} mb={1}>Format: MM/DD/YYYY</Text>
+                    <InputGroup>
+                      <Input
+                        value={birthDate}
+                        onChange={(e)=>setBirthDate(formatMDYMask(e.target.value))}
+                        placeholder="MM/DD/YYYY"
+                        autoComplete="off"
+                        inputMode="numeric"
+                        maxLength={10}
+                      />
+                      <InputRightElement width="3rem">
+                        <IconButton
+                          aria-label="Select birthdate"
+                          variant="ghost"
+                          size="sm"
+                          icon={<FiCalendar />}
+                          onClick={openDatePicker}
+                        />
+                      </InputRightElement>
+                    </InputGroup>
+                    {/* hidden native date input to open system date picker */}
+                    <Input
+                      ref={dateInputRef}
+                      type="date"
+                      position="absolute"
+                      opacity={0}
+                      pointerEvents="none"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      max={new Date().toISOString().split('T')[0]}
+                      onChange={(e)=>{
+                        const iso = e.target.value;
+                        setBirthDate(formatIsoToMDY(iso));
+                      }}
+                    />
+                  </FormControl>
+                </VStack>
+
+                <FormControl isInvalid={showError} pt={2}>
                   <HStack justify="center" spacing={2}>
                     <PinInput
                       otp
@@ -219,7 +431,7 @@ function Evaluation() {
                     type="submit"
                     colorScheme="blue"
                     size="lg"
-                    isDisabled={!isValid || submitting}
+                    isDisabled={!isValid || !studentOk || submitting}
                     borderRadius="lg"
                     fontWeight="semibold"
                     w="full"

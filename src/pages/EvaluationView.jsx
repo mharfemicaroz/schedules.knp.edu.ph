@@ -67,10 +67,7 @@ function EvaluationView() {
   const [error, setError] = React.useState('');
   const [schedule, setSchedule] = React.useState(null);
   const [answers, setAnswers] = React.useState({});
-  const [studentName, setStudentName] = React.useState('');
-  const [selectedProgram, setSelectedProgram] = React.useState('');
-  const [programs, setPrograms] = React.useState([]);
-  const [programsLoading, setProgramsLoading] = React.useState(false);
+  const [student, setStudent] = React.useState(null);
   const [feedback, setFeedback] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
   const paper = useColorModeValue('white', 'gray.800');
@@ -107,43 +104,24 @@ function EvaluationView() {
     })();
   }, [token, malformed, decoded]);
 
-  // Load program options from prospectus (efficient: single fetch after schedule is set)
+  // Load student from sessionStorage
   React.useEffect(() => {
-    if (!schedule) return;
-    setPrograms([]);
-    setSelectedProgram('');
-    (async () => {
-      try {
-        setProgramsLoading(true);
-        const resp = await apiService.getProspectus({});
-        const list = Array.isArray(resp) ? resp : (Array.isArray(resp?.items) ? resp.items : []);
-        const options = Array.from(new Set(list.map(x => String(x.programcode || x.program || '').trim()).filter(Boolean))).sort();
-        setPrograms(options);
-        const schedProgram = String(schedule.programcode || schedule.program || '').trim();
-        if (schedProgram && options.includes(schedProgram)) setSelectedProgram(schedProgram);
-      } catch (_) {
-        setPrograms([]);
-      } finally {
-        setProgramsLoading(false);
-      }
-    })();
-  }, [schedule]);
+    try {
+      const raw = sessionStorage.getItem('evaluation:student');
+      if (raw) setStudent(JSON.parse(raw));
+    } catch {}
+  }, []);
 
   const allAnswered = React.useMemo(() => {
     const qOk = QUESTIONS.every((_, idx) => answers[idx] != null);
-    const pOk = !!selectedProgram; // program is required
-    const nOk = String(studentName).trim().length > 0; // name required
+    const sOk = !!student; // student verification required
     const fOk = String(feedback).trim().length > 0; // feedback required
-    return qOk && pOk && nOk && fOk;
-  }, [answers, selectedProgram, studentName, feedback]);
+    return qOk && sOk && fOk;
+  }, [answers, student, feedback]);
 
   const submitEval = async () => {
-    if (!String(studentName).trim()) {
-      toast({ title: 'Please enter your name.', status: 'warning', duration: 1600 });
-      return;
-    }
-    if (!selectedProgram) {
-      toast({ title: 'Please select your program.', status: 'warning', duration: 1600 });
+    if (!student) {
+      toast({ title: 'Student verification missing', description: 'Return to previous page to verify.', status: 'warning', duration: 2000 });
       return;
     }
     if (!QUESTIONS.every((_, idx) => answers[idx] != null)) {
@@ -158,8 +136,8 @@ function EvaluationView() {
       setSubmitting(true);
       const payload = {
         token: String(token || '').trim(),
-        studentName: String(studentName).trim(),
-        program: selectedProgram,
+        studentName: formatStudentName(student),
+        program: String(student?.programcode || student?.course || schedule?.programcode || '').trim(),
         answers: QUESTIONS.map((_, idx) => Number(answers[idx])),
         feedback: String(feedback).trim(),
       };
@@ -167,7 +145,7 @@ function EvaluationView() {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      toast({ title: 'Evaluation submitted', description: `Thank you${studentName ? `, ${studentName}` : ''}!`, status: 'success', duration: 1800 });
+      toast({ title: 'Evaluation submitted', description: `Thank you${student ? `, ${formatStudentName(student)}` : ''}!`, status: 'success', duration: 1800 });
       setTimeout(() => navigate('/evaluation'), 900);
     } catch (e) {
       toast({ title: 'Submission failed', description: e?.message || 'Please try again.', status: 'error', duration: 2200 });
@@ -282,28 +260,30 @@ function EvaluationView() {
             </Box>
           </Box>
 
-          {/* Student details */}
+          {/* Student details (read-only) */}
           {!loading && schedule && (
             <Box bg={paper} borderWidth="1px" borderColor={border} rounded="xl" boxShadow={{ base: 'md', md: 'lg' }} overflow="hidden">
               <Box px={{ base: 4, md: 6 }} py={{ base: 4, md: 5 }} borderBottomWidth="1px" borderColor={border}>
                 <Heading size="md">Student Details</Heading>
-                <Text fontSize="sm" color={subtle}>Enter your name and select your program to proceed.</Text>
+                <Text fontSize="sm" color={subtle}>Verified from student records.</Text>
               </Box>
               <Box px={{ base: 4, md: 6 }} py={{ base: 5, md: 6 }}>
-                <SimpleGrid columns={{ base: 1, md: 2 }} spacing={5}>
-                  <FormControl isRequired>
-                    <FormLabel>Student Name</FormLabel>
-                    <Input placeholder="Juan Dela Cruz" value={studentName} onChange={(e)=>setStudentName(e.target.value)} />
-                  </FormControl>
-                  <FormControl isRequired>
-                    <FormLabel>Program</FormLabel>
-                    <Select placeholder={programsLoading ? 'Loading programs…' : 'Select program'} value={selectedProgram} onChange={(e)=>setSelectedProgram(e.target.value)} isDisabled={programsLoading || (programs.length===0)}>
-                      {programs.map((p) => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </SimpleGrid>
+                {student ? (
+                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={5}>
+                    <Stat p={0}>
+                      <StatLabel>Name</StatLabel>
+                      <StatNumber fontSize="lg">{formatStudentName(student)}</StatNumber>
+                      <StatHelpText>ID {student.studentid}</StatHelpText>
+                    </Stat>
+                    <Stat p={0}>
+                      <StatLabel>Program</StatLabel>
+                      <StatNumber fontSize="lg">{student.programcode || student.course || '-'}</StatNumber>
+                      <StatHelpText>{student.major || student.dept || '-'}</StatHelpText>
+                    </Stat>
+                  </SimpleGrid>
+                ) : (
+                  <Alert status="warning" rounded="md"><AlertIcon />Student verification missing. Please go back and verify.</Alert>
+                )}
               </Box>
             </Box>
           )}
@@ -368,3 +348,13 @@ function EvaluationView() {
 }
 
 export default EvaluationView;
+
+function formatStudentName(s) {
+  if (!s) return '';
+  const ln = s.last_name || s.lastname || '';
+  const fn = s.first_name || s.firstname || '';
+  const mn = s.middle_name || s.midname || '';
+  const ne = s.name_ext || s.nameext || '';
+  const parts = [fn, mn && (mn[0] + '.').toUpperCase(), ln, ne].filter(Boolean);
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}

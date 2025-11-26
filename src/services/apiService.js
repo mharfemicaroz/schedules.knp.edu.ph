@@ -127,7 +127,14 @@ class ApiService {
       const response = await this._fetch(url, config);
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        let raw = '';
+        try { raw = await response.text(); } catch {}
+        const err = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        err.status = response.status;
+        try { err.retryAfter = response.headers.get('Retry-After'); } catch {}
+        err.body = raw;
+        try { err.headers = response.headers; } catch {}
+        throw err;
       }
 
       return await response.json();
@@ -664,6 +671,36 @@ class ApiService {
 
   async getFaculty(id) {
     const url = `${this.baseURL}/faculty/${encodeURIComponent(id)}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  // STUDENTS API
+  async verifyStudent(studentid, birthDateDMY) {
+    // Convert DD/MM/YYYY to YYYY-MM-DD
+    const s = String(birthDateDMY || '').trim();
+    let iso = s;
+    const m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (m) {
+      const dd = m[1].padStart(2,'0'); const mm = m[2].padStart(2,'0'); const yyyy = m[3];
+      iso = `${yyyy}-${mm}-${dd}`;
+    }
+    const body = JSON.stringify({ studentid, birth_date: iso });
+    const url = `${this.baseURL}/students/verify`;
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    if (res.status === 404) return { exists: false };
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  // EVALUATIONS API
+  async checkEvaluationExists(accessCode, studentName) {
+    const search = new URLSearchParams();
+    if (accessCode) search.set('accessCode', String(accessCode).trim());
+    if (studentName) search.set('studentName', String(studentName).trim());
+    const qs = search.toString();
+    const url = `${this.baseURL}/evaluations/exists${qs ? `?${qs}` : ''}`;
     const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
