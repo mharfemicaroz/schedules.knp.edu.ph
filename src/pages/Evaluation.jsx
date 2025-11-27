@@ -335,8 +335,9 @@ function Evaluation() {
                 Student Access
               </Badge>
               <Text fontSize="xs" color={textSubtle}>
-                Secure â€¢ Fast â€¢ Confidential
+                Secure • Fast • Confidential
               </Text>
+
             </HStack>
           </VStack>
 
