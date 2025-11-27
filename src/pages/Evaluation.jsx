@@ -471,7 +471,7 @@ function Evaluation() {
                     _active={{ transform: 'translateY(0)' }}
                     transition="all 0.15s ease"
                   >
-                    {submitting ? 'Checkingâ€¦' : 'Continue to Evaluation'}
+                    {submitting ? 'Checking...' : 'Continue to Evaluation'}
                   </Button>
                   <Text fontSize="xs" textAlign="center" color={textSubtle}>
                     Having trouble with your code? Kindly contact your program chair.

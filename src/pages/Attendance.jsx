@@ -80,10 +80,10 @@ export default function Attendance() {
   const onPrint = React.useCallback(() => {
     const titleParts = ['Attendance Report'];
     if (filters.faculty) titleParts.push(`Faculty: ${filters.faculty}`);
-    const title = titleParts.join(' â€” ');
+    const title = titleParts.join(' • ');
     const subParts = [];
     if (filters.startDate || filters.endDate) {
-      subParts.push(`Dates: ${filters.startDate || 'â€¦'} to ${filters.endDate || 'â€¦'}`);
+      subParts.push(`Dates: ${filters.startDate || '…'} to ${filters.endDate || '…'}`);
     }
     if (filters.status) subParts.push(`Status: ${filters.status}`);
     if (filters.term) subParts.push(`Term: ${filters.term}`);
