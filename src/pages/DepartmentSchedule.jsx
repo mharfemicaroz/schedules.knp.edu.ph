@@ -55,7 +55,7 @@ export default function DepartmentSchedule() {
   );
   const [showAccessCodes, setShowAccessCodes] = useLocalStorage(
     'departmentScheduleShowAccessCodes',
-    false
+    true
   );
 
   const border = useColorModeValue('gray.200', 'gray.700');

@@ -22,6 +22,15 @@ import {
   Divider,
   Stack,
   Badge,
+  Link,
+  useDisclosure,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalCloseButton,
+  ModalBody,
+  ModalFooter,
 } from '@chakra-ui/react';
 import apiService from '../services/apiService';
 import { FiCalendar } from 'react-icons/fi';
@@ -70,6 +79,28 @@ function Evaluation() {
   const cardBg = useColorModeValue('white', 'gray.800');
   const cardBorder = useColorModeValue('rgba(148, 163, 184, 0.4)', 'whiteAlpha.200');
   const accent = useColorModeValue('blue.500', 'blue.300');
+  // Modals: Guidelines & Privacy
+  const { isOpen: isGuideOpen, onOpen: onGuideOpen, onClose: onGuideClose } = useDisclosure();
+  const { isOpen: isPrivacyOpen, onOpen: onPrivacyOpen, onClose: onPrivacyClose } = useDisclosure();
+
+  // Always show the policy modals on load (sequential)
+  React.useEffect(() => {
+    onGuideOpen();
+    // Privacy opens after acknowledging guidelines
+  }, []);
+
+  const handleDontAgree = () => {
+    try { window.location.reload(); } catch {}
+  };
+
+  const handleGuideAgree = () => {
+    onGuideClose();
+    setTimeout(() => onPrivacyOpen(), 0);
+  };
+
+  const handlePrivacyAgree = () => {
+    onPrivacyClose();
+  };
 
   const onPinChange = (val) => {
     const cleaned = (val || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 6).toUpperCase();
@@ -304,7 +335,7 @@ function Evaluation() {
                 Student Access
               </Badge>
               <Text fontSize="xs" color={textSubtle}>
-                Secure • Fast • Confidential
+                Secure â€¢ Fast â€¢ Confidential
               </Text>
             </HStack>
           </VStack>
@@ -439,7 +470,7 @@ function Evaluation() {
                     _active={{ transform: 'translateY(0)' }}
                     transition="all 0.15s ease"
                   >
-                    {submitting ? 'Checking…' : 'Continue to Evaluation'}
+                    {submitting ? 'Checkingâ€¦' : 'Continue to Evaluation'}
                   </Button>
                   <Text fontSize="xs" textAlign="center" color={textSubtle}>
                     Having trouble with your code? Kindly contact your program chair.
@@ -448,19 +479,121 @@ function Evaluation() {
 
                 <Divider />
 
+                {/* Policy acknowledgments with modal links */}
                 <VStack spacing={1} align="flex-start" fontSize="xs" color={textSubtle}>
                   <Text>
-                    By continuing, you agree to the institution’s evaluation guidelines and data privacy policy.
+                    By continuing, you agree to the institution's <Link color={accent} onClick={onGuideOpen}>evaluation guidelines</Link> and <Link color={accent} onClick={onPrivacyOpen}>data privacy policy</Link>.
                   </Text>
                   <Text>
                     This system is developed and managed by the Office of the VPAA.
                   </Text>
                 </VStack>
+
               </VStack>
             </Box>
           </Box>
         </Stack>
       </Container>
+
+      {/* Institution Evaluation Guidelines Modal */}
+      <Modal isOpen={isGuideOpen} onClose={onGuideClose} size="xl" scrollBehavior="inside" isCentered closeOnOverlayClick={false} closeOnEsc={false}>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Institution Evaluation Guidelines</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack align="stretch" spacing={4} fontSize="sm" color={textMain}>
+              <Text>
+                These guidelines outline the standard evaluation practices of Kolehiyo ng Pantukan (KNP) for collecting student feedback on teaching and learning.
+              </Text>
+              <VStack align="stretch" spacing={3} as="ul" pl={4}>
+                <Text as="li">Purpose: Improve instruction, curriculum design, and service quality.</Text>
+                <Text as="li">Scope: Each evaluation relates to a specific class and faculty member.</Text>
+                <Text as="li">Honesty: Provide fair, truthful, and constructive feedback.</Text>
+                <Text as="li">Respect: Avoid offensive or discriminatory remarks.</Text>
+                <Text as="li">Confidentiality: Individual responses are confidential and reported in aggregate.</Text>
+                <Text as="li">No Retaliation: No adverse action for submitting honest feedback.</Text>
+                <Text as="li">Timeliness: Submit within the announced evaluation window.</Text>
+                <Text as="li">Assistance: Contact your Program Chair or the Office of the VPAA.</Text>
+              </VStack>
+              <Text color={textSubtle}>By continuing, you acknowledge these guidelines.</Text>
+            </VStack>
+          </ModalBody>
+          <ModalFooter display="block" w="full">
+            <VStack align="stretch" spacing={2} w="full">
+              <Button
+                colorScheme="blue"
+                onClick={handleGuideAgree}
+                w="full"
+                whiteSpace="normal"
+                textAlign="center"
+              >
+                I have read and understood, and agree
+              </Button>
+              <Button
+                variant="outline"
+                colorScheme="red"
+                onClick={handleDontAgree}
+                w="full"
+                whiteSpace="normal"
+                textAlign="center"
+              >
+                I have read and understood, and don’t agree
+              </Button>
+            </VStack>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Data Privacy Policy Modal */}
+      <Modal isOpen={isPrivacyOpen} onClose={onPrivacyClose} size="xl" scrollBehavior="inside" isCentered closeOnOverlayClick={false} closeOnEsc={false}>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Data Privacy Policy</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack align="stretch" spacing={4} fontSize="sm" color={textMain}>
+              <Text>
+                Kolehiyo ng Pantukan (KNP) protects your personal information in compliance with the Data Privacy Act of 2012 (RA 10173).
+              </Text>
+              <VStack align="stretch" spacing={3} as="ul" pl={4}>
+                <Text as="li">Data: Student ID, birthdate (for verification), evaluation responses, submission metadata.</Text>
+                <Text as="li">Purpose: Authenticate access, administer evaluations, generate aggregated reports, improve services.</Text>
+                <Text as="li">Legal Basis: Your consent and legitimate interests in quality assurance.</Text>
+                <Text as="li">Retention: Kept only as long as necessary for reporting and audit.</Text>
+                <Text as="li">Sharing: Limited to authorized KNP offices; not sold to third parties.</Text>
+                <Text as="li">Security: Organizational, physical, and technical safeguards are applied.</Text>
+                <Text as="li">Your Rights: Access, correction, or deletion subject to policy and law.</Text>
+                <Text as="li">Contact: VPAA / Data Protection Officer @ vpaa@knp.edu.ph.</Text>
+              </VStack>
+              <Text color={textSubtle}>By continuing, you consent to this data processing.</Text>
+            </VStack>
+          </ModalBody>
+          <ModalFooter display="block" w="full">
+            <VStack align="stretch" spacing={2} w="full">
+              <Button
+                colorScheme="blue"
+                onClick={handlePrivacyAgree}
+                w="full"
+                whiteSpace="normal"
+                textAlign="center"
+              >
+                I have read and understood, and agree
+              </Button>
+              <Button
+                variant="outline"
+                colorScheme="red"
+                onClick={handleDontAgree}
+                w="full"
+                whiteSpace="normal"
+                textAlign="center"
+              >
+                I have read and understood, and don’t agree
+              </Button>
+            </VStack>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   );
 }
