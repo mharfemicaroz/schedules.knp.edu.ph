@@ -53,6 +53,10 @@ export default function DepartmentSchedule() {
     'departmentScheduleViewMode',
     getInitialToggleState(acadData, 'departmentScheduleViewMode', 'regular')
   );
+  const [showAccessCodes, setShowAccessCodes] = useLocalStorage(
+    'departmentScheduleShowAccessCodes',
+    false
+  );
 
   const border = useColorModeValue('gray.200', 'gray.700');
   const tableBg = useColorModeValue('white', 'gray.800');
@@ -133,41 +137,52 @@ export default function DepartmentSchedule() {
   }, [allCourses, dept]);
 
   function onPrint() {
-    const headers =
-      viewMode === 'examination'
-        ? ['Year Level', 'Block', 'Term', 'Time', 'Code', 'Title', 'Units', 'Room', 'Faculty', 'Exam Day', 'Exam Session', 'Exam Room']
-        : ['Year Level', 'Block', 'Term', 'Time', 'Code', 'Title', 'Units', 'Room', 'Faculty'];
+    const baseHeadersRegular = ['Year Level', 'Block', 'Term', 'Time', 'Code'];
+    if (showAccessCodes) baseHeadersRegular.push('Access Code');
+    baseHeadersRegular.push('Title', 'Units', 'Room', 'Faculty');
+    const baseHeadersExam = ['Year Level', 'Block', 'Term', 'Time', 'Code'];
+    if (showAccessCodes) baseHeadersExam.push('Access Code');
+    baseHeadersExam.push('Title', 'Units', 'Room', 'Faculty', 'Exam Day', 'Exam Session', 'Exam Room');
+    const headers = viewMode === 'examination' ? baseHeadersExam : baseHeadersRegular;
     const rows = [];
     groups.forEach((g) => {
       g.blocks.forEach((b) => {
         b.items.forEach((c) => {
           if (viewMode === 'examination') {
-            rows.push([
+            const row = [
               g.yl,
               b.block,
               c.term,
               c.schedule || '',
               c.code,
+            ];
+            if (showAccessCodes) row.push(c.accessCode || '');
+            row.push(
               c.title,
               String(c.unit ?? c.hours ?? ''),
               c.room || '',
               c.facultyName,
               c.examDay || '',
               c.examSession || '',
-              c.examRoom || '',
-            ]);
+              c.examRoom || ''
+            );
+            rows.push(row);
           } else {
-            rows.push([
+            const row = [
               g.yl,
               b.block,
               c.term,
               c.schedule || '',
               c.code,
+            ];
+            if (showAccessCodes) row.push(c.accessCode || '');
+            row.push(
               c.title,
               String(c.unit ?? c.hours ?? ''),
               c.room || '',
-              c.facultyName,
-            ]);
+              c.facultyName
+            );
+            rows.push(row);
           }
         });
       });
@@ -203,6 +218,18 @@ export default function DepartmentSchedule() {
               </FormLabel>
             </FormControl>
           )}
+          <FormControl display="flex" alignItems="center" w="auto">
+            <FormLabel htmlFor="toggle-accesscodes" mb="0" fontSize="sm" fontWeight="medium">
+              Access Codes
+            </FormLabel>
+            <Switch
+              id="toggle-accesscodes"
+              colorScheme="blue"
+              size="lg"
+              isChecked={!!showAccessCodes}
+              onChange={(e) => setShowAccessCodes(!!e.target.checked)}
+            />
+          </FormControl>
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">
             Print
           </Button>
@@ -258,6 +285,7 @@ export default function DepartmentSchedule() {
                       <Th>Term</Th>
                       <Th>Time</Th>
                       <Th>Code</Th>
+                      {showAccessCodes && <Th>Access Code</Th>}
                       <Th>Title</Th>
                       <Th>Units</Th>
                       <Th>Room</Th>
@@ -283,6 +311,9 @@ export default function DepartmentSchedule() {
                         <Td>{c.term}</Td>
                         <Td>{c.schedule || ''}</Td>
                         <Td>{c.code}</Td>
+                        {showAccessCodes && (
+                          <Td>{c.accessCode || ''}</Td>
+                        )}
                         <Td maxW={{ base: '220px', md: '420px' }}>
                           <Text noOfLines={{ base: 2, md: 1 }}>{c.title}</Text>
                         </Td>
@@ -316,4 +347,3 @@ export default function DepartmentSchedule() {
     </VStack>
   );
 }
-

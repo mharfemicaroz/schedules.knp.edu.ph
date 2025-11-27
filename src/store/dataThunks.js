@@ -101,6 +101,7 @@ function transformSchedulesToFacultyDataset(schedules) {
     const course = {
       id: schedule.id,
       facultyId: schedule.facultyId || schedule.faculty_id || null,
+      accessCode: schedule.accessCode || schedule.accesscode || '',
       courseName: p.courseName || schedule.courseName,
       courseTitle: p.courseTitle || schedule.courseTitle,
       unit: (p.unit != null ? p.unit : schedule.unit),
