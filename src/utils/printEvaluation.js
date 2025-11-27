@@ -58,6 +58,7 @@ function buildDetails(mode, ctx) {
   return [
     ['Program', ctx.programcode || '-'],
     ['Course', ctx.course_name || ctx.course || '-'],
+    ['Course Title', ctx.course_title || ctx.courseTitle || '-'],
     ['Faculty', ctx.instructor || ctx.faculty || '-'],
     ['Term', buildTermStr(ctx)],
   ];

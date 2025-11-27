@@ -147,6 +147,38 @@ export default function AdminEvaluations() {
         } catch {}
         setSummaryCtx(ctx);
       }
+      if (mode === 'schedule') {
+        try {
+          const sched = await apiService.getScheduleById(id);
+          const fid = ctx.faculty_id || ctx.facultyId || sched?.facultyId || sched?.faculty_id;
+          ctx = {
+            ...ctx,
+            faculty_id: fid || ctx.faculty_id,
+            dept: ctx.dept || sched?.dept || sched?.department,
+            instructor: ctx.instructor || sched?.instructor || sched?.faculty,
+            course_title: ctx.course_title || sched?.course_title || sched?.courseTitle,
+            course_name: ctx.course_name || sched?.course_name || sched?.courseName,
+          };
+          if (fid) {
+            try {
+              const fac = await apiService.getFaculty(fid);
+              if (fac) {
+                ctx = {
+                  ...ctx,
+                  designation: ctx.designation ?? fac.designation,
+                  employment: ctx.employment ?? fac.employment,
+                  load_release_units: ctx.load_release_units ?? (fac.load_release_units ?? fac.loadReleaseUnits),
+                  dept: ctx.dept || fac.dept || fac.department,
+                  faculty: ctx.instructor || ctx.faculty || fac.faculty || fac.name,
+                  email: ctx.email || fac.email,
+                  rank: ctx.rank || fac.rank,
+                };
+              }
+            } catch {}
+          }
+          setSummaryCtx(ctx);
+        } catch {}
+      }
       const search = new URLSearchParams({ mode, id: String(id) });
       const data = await apiService.requestAbs(`/evaluations/summary?${search.toString()}`, { method: 'GET' });
       setSummary(data || null);
@@ -246,12 +278,12 @@ export default function AdminEvaluations() {
                       <Text fontSize="sm" color={subtle} noOfLines={1}>{r.schedule?.course_title || ''}</Text>
                     </VStack>
                   </Td>
-                  <Td><Text>{r.schedule?.instructor || '-'}</Text></Td>
+                  <Td><Text>{r.faculty?.faculty || r.schedule?.instructor || '-'}</Text></Td>
                   <Td><Text>{r.schedule?.term || '-'}{r.schedule?.sy ? ` • SY ${r.schedule.sy}` : ''}{r.schedule?.sem ? ` • ${r.schedule.sem}` : ''}</Text></Td>
                   <Td isNumeric><Text fontWeight="700">{r.total}</Text></Td>
                   <Td>
                     <Button size="sm" leftIcon={<FiEye />} onClick={()=>openSummary('schedule', r.schedule_id, `${r.schedule?.course_name} • ${r.schedule?.instructor || ''}`,
-                      { programcode: r.schedule?.programcode, course_name: r.schedule?.course_name, instructor: r.schedule?.instructor, term: r.schedule?.term, sy: r.schedule?.sy, sem: r.schedule?.sem }
+                      { programcode: r.schedule?.programcode, course_name: r.schedule?.course_name, course_title: r.schedule?.course_title, instructor: r.schedule?.instructor, term: r.schedule?.term, sy: r.schedule?.sy, sem: r.schedule?.sem, dept: r.schedule?.dept, faculty_id: r.schedule?.faculty_id }
                     )}>View</Button>
                   </Td>
                 </Tr>
@@ -259,11 +291,11 @@ export default function AdminEvaluations() {
             ) : (
               rows.map((r, idx) => (
                 <Tr key={`${r.faculty_id || 'x'}-${idx}`}>
-                  <Td><Text fontWeight="600">{r.instructor || 'Unassigned'}</Text></Td>
-                  <Td><Text>{r.dept || '-'}</Text></Td>
+                  <Td><Text fontWeight="600">{r.faculty?.faculty || r.instructor || 'Unassigned'}</Text></Td>
+                  <Td><Text>{r.faculty?.dept || r.dept || '-'}</Text></Td>
                   <Td isNumeric><Text fontWeight="700">{r.total}</Text></Td>
                   <Td>
-                    <Button size="sm" leftIcon={<FiEye />} isDisabled={!r.faculty_id} onClick={()=>openSummary('faculty', r.faculty_id, r.instructor || 'Faculty', { instructor: r.instructor, dept: r.dept })}>View</Button>
+                    <Button size="sm" leftIcon={<FiEye />} isDisabled={!r.faculty_id} onClick={()=>openSummary('faculty', r.faculty_id, (r.faculty?.faculty || r.instructor || 'Faculty'), { instructor: r.faculty?.faculty || r.instructor, dept: r.faculty?.dept || r.dept, faculty: r.faculty?.faculty, designation: r.faculty?.designation, employment: r.faculty?.employment, load_release_units: r.faculty?.loadReleaseUnits, email: r.faculty?.email, rank: r.faculty?.rank })}>View</Button>
                   </Td>
                 </Tr>
               ))
@@ -275,9 +307,54 @@ export default function AdminEvaluations() {
       <Modal isOpen={summaryDisc.isOpen} onClose={summaryDisc.onClose} size="xl">
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>{summaryTitle || 'Summary'}</ModalHeader>
+          <ModalHeader>{summaryTitle || 'Summary'} {summaryCtx.course_title}</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
+            {summaryMode !== 'faculty' && summaryCtx && (summaryCtx.faculty_id || summaryCtx.faculty) && (
+              <Box mb={4} p={3} borderWidth="1px" borderColor={border} rounded="md">
+                <VStack align="start" spacing={1}>
+                  {summaryCtx.faculty && (
+                    <Text fontWeight="700">{summaryCtx.faculty}</Text>
+                  )}
+
+                  <HStack spacing={3} wrap="wrap">
+                    {summaryCtx.faculty_id && (
+                      <Badge colorScheme="blue" variant="subtle">ID #{summaryCtx.faculty_id}</Badge>
+                    )}
+                    {summaryCtx.dept && <Badge variant="subtle">{summaryCtx.dept}</Badge>}
+                    {summaryCtx.designation && <Badge variant="subtle" colorScheme="purple">{summaryCtx.designation}</Badge>}
+                    {summaryCtx.employment && <Badge variant="subtle" colorScheme="green">{summaryCtx.employment}</Badge>}
+                    {summaryCtx.load_release_units != null && (
+                      <Badge variant="subtle" colorScheme="orange">LRU: {summaryCtx.load_release_units}</Badge>
+                    )}
+                  </HStack>
+                  {summaryCtx.email && (
+                    <Text fontSize="sm" color={subtle}>Email: {summaryCtx.email}</Text>
+                  )}
+                </VStack>
+              </Box>
+            )}
+            {summaryMode === 'faculty' && (
+              <Box mb={4} p={3} borderWidth="1px" borderColor={border} rounded="md">
+                <VStack align="start" spacing={1}>
+                  <HStack spacing={3} wrap="wrap">
+                    <Badge colorScheme="blue" variant="subtle">ID #{summaryId}</Badge>
+                    {summaryCtx.dept && <Badge variant="subtle">{summaryCtx.dept}</Badge>}
+                    {summaryCtx.designation && <Badge variant="subtle" colorScheme="purple">{summaryCtx.designation}</Badge>}
+                    {summaryCtx.employment && <Badge variant="subtle" colorScheme="green">{summaryCtx.employment}</Badge>}
+                    {summaryCtx.load_release_units != null && (
+                      <Badge variant="subtle" colorScheme="orange">LRU: {summaryCtx.load_release_units}</Badge>
+                    )}
+                    {(summaryCtx.sy || summaryCtx.sem) && (
+                      <Badge variant="subtle" colorScheme="gray">{[summaryCtx.sy && `SY ${summaryCtx.sy}`, summaryCtx.sem].filter(Boolean).join(' • ')}</Badge>
+                    )}
+                  </HStack>
+                  {summaryCtx.email && (
+                    <Text fontSize="sm" color={subtle}>Email: {summaryCtx.email}</Text>
+                  )}
+                </VStack>
+              </Box>
+            )}
             {summaryLoading ? (
               <VStack align="stretch" spacing={3}>
                 {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height="24px" />)}
