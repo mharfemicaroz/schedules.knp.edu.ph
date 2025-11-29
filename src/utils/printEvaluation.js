@@ -9,6 +9,25 @@ export function printEvaluationSummary({
   context = {},
   mode = 'schedule',
 }) {
+  // Student mode: print only evaluated courses list
+  if (mode === 'student') {
+    const courses = Array.isArray(context?.courses) ? context.courses : [];
+    const hdrs = ['Program', 'Course', 'Title', 'Term', 'Day/Time', 'Faculty'];
+    const rows = courses.map((c) => [
+      String(c.programcode || ''),
+      String(c.course_name || ''),
+      String(c.course_title || ''),
+      buildTermStr({ term: c.term, sy: c.sy, sem: c.sem }),
+      [c.day, c.time].filter(Boolean).join(' · '),
+      String(c.instructor || ''),
+    ]);
+
+    const tableHtml = buildTable(hdrs, rows);
+    const bodyHtml = tableHtml;
+    printContent({ title, subtitle, bodyHtml }, { orientation: 'portrait', compact: false });
+    return;
+  }
+
   const rows = questions.map((q, i) => {
     const key = `q${i + 1}`;
     const avg = stats && stats[key] != null ? Number(stats[key]).toFixed(2) : '-';

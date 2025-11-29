@@ -63,8 +63,8 @@ export default function AdminEvaluations() {
   const feedbackBg = useColorModeValue('gray.50','gray.700');
 
   const dispatch = useDispatch();
-  const [view, setView] = React.useState('course'); // 'course' | 'faculty'
-  const [filters, setFilters] = React.useState({ programcode: '', coursecode: '', faculty: '', term: '' });
+  const [view, setView] = React.useState('course'); // 'course' | 'faculty' | 'student'
+  const [filters, setFilters] = React.useState({ programcode: '', coursecode: '', faculty: '', term: '', student: '' });
   const [loading, setLoading] = React.useState(true);
   const [rows, setRows] = React.useState([]);
 
@@ -82,7 +82,11 @@ export default function AdminEvaluations() {
     try {
       const search = new URLSearchParams();
       Object.entries(filters).forEach(([k, v]) => { if (v) search.set(k, v); });
-      const path = view === 'course' ? '/evaluations/aggregate/schedule' : '/evaluations/aggregate/faculty';
+      const path = view === 'course'
+        ? '/evaluations/aggregate/schedule'
+        : view === 'faculty'
+        ? '/evaluations/aggregate/faculty'
+        : '/evaluations/aggregate/student';
       const data = await apiService.requestAbs(`${path}${search.toString() ? `?${search.toString()}` : ''}`, { method: 'GET' });
       setRows(Array.isArray(data) ? data : []);
     } catch {
@@ -190,6 +194,15 @@ export default function AdminEvaluations() {
   };
 
   const onPrint = () => {
+    if (summaryMode === 'student') {
+      printEvaluationSummary({
+        title: 'Student Evaluation — Courses',
+        subtitle: summaryTitle || '',
+        context: { ...summaryCtx, courses: Array.isArray(summary?.courses) ? summary.courses : [] },
+        mode: 'student',
+      });
+      return;
+    }
     const title = `Evaluation Summary`;
     const subtitle = summaryTitle;
     printEvaluationSummary({
@@ -207,6 +220,7 @@ export default function AdminEvaluations() {
     <HStack spacing={2}>
       <Button size="sm" variant={view==='course'?'solid':'outline'} colorScheme="blue" onClick={()=>setView('course')}>By Course</Button>
       <Button size="sm" variant={view==='faculty'?'solid':'outline'} colorScheme="blue" onClick={()=>setView('faculty')}>By Faculty</Button>
+      <Button size="sm" variant={view==='student'?'solid':'outline'} colorScheme="blue" onClick={()=>setView('student')}>By Students</Button>
     </HStack>
   );
 
@@ -231,6 +245,9 @@ export default function AdminEvaluations() {
           <Select value={filters.faculty} onChange={(e)=>setFilters(s=>({...s, faculty: e.target.value }))} maxW="260px" placeholder="All faculty">
             {facultyOptions.map(f => <option key={f} value={f}>{f}</option>)}
           </Select>
+          {view==='student' && (
+            <Input value={filters.student} onChange={(e)=>setFilters(s=>({...s, student: e.target.value }))} maxW="260px" placeholder="Search student (ID or name)" />
+          )}
           <Select value={filters.term} onChange={(e)=>setFilters(s=>({...s, term: e.target.value }))} maxW="160px">
             {termOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </Select>
@@ -251,10 +268,17 @@ export default function AdminEvaluations() {
                   <Th isNumeric>Evaluations</Th>
                   <Th>Action</Th>
                 </>
-              ) : (
+              ) : view==='faculty' ? (
                 <>
                   <Th>Faculty</Th>
                   <Th>Department</Th>
+                  <Th isNumeric>Evaluations</Th>
+                  <Th>Action</Th>
+                </>
+              ) : (
+                <>
+                  <Th>Student</Th>
+                  <Th>Program</Th>
                   <Th isNumeric>Evaluations</Th>
                   <Th>Action</Th>
                 </>
@@ -288,7 +312,7 @@ export default function AdminEvaluations() {
                   </Td>
                 </Tr>
               ))
-            ) : (
+            ) : view==='faculty' ? (
               rows.map((r, idx) => (
                 <Tr key={`${r.faculty_id || 'x'}-${idx}`}>
                   <Td><Text fontWeight="600">{r.faculty?.faculty || r.instructor || 'Unassigned'}</Text></Td>
@@ -299,7 +323,28 @@ export default function AdminEvaluations() {
                   </Td>
                 </Tr>
               ))
-            )}
+            ) : view==='student' ? (
+              rows.map((r, idx) => {
+                const sid = r.student_id || r.student?.id || r.id || idx;
+                const sname = r.student_name || r.student?.name || r.name || 'Student';
+                const program = r.program || r.student?.program || r.programcode || '-';
+                return (
+                  <Tr key={`stu-${sid}`}>
+                    <Td>
+                      <VStack align="start" spacing={0}>
+                        <Text fontWeight="600">{sname}</Text>
+                        <Text fontSize="sm" color={subtle}>{sid ? `ID #${sid}` : ''}</Text>
+                      </VStack>
+                    </Td>
+                    <Td><Tag variant="subtle"><TagLabel>{program}</TagLabel></Tag></Td>
+                    <Td isNumeric><Text fontWeight="700">{r.total}</Text></Td>
+                    <Td>
+                      <Button size="sm" leftIcon={<FiEye />} onClick={()=>openSummary('student', sid, sname, { program })}>View</Button>
+                    </Td>
+                  </Tr>
+                );
+              })
+            ) : null}
           </Tbody>
         </Table>
       </Box>
@@ -355,13 +400,56 @@ export default function AdminEvaluations() {
                 </VStack>
               </Box>
             )}
+            {summaryMode === 'student' && (
+              <Box mb={4} p={3} borderWidth="1px" borderColor={border} rounded="md">
+                <VStack align="start" spacing={1}>
+                  <HStack spacing={3} wrap="wrap">
+                    <Badge colorScheme="blue" variant="subtle">ID #{summaryId}</Badge>
+                    {summaryCtx.program && <Badge variant="subtle">{summaryCtx.program}</Badge>}
+                    {(summaryCtx.sy || summaryCtx.sem) && (
+                      <Badge variant="subtle" colorScheme="gray">{[summaryCtx.sy && `SY ${summaryCtx.sy}`, summaryCtx.sem].filter(Boolean).join(' �?� ')}</Badge>
+                    )}
+                  </HStack>
+                </VStack>
+              </Box>
+            )}
+            {summaryMode === 'student' && summary && (
+              <Box>
+                <Heading size="sm" mb={2}>Evaluated Courses</Heading>
+                <VStack align="stretch" spacing={2}>
+                  {(summary.courses || []).map((c) => (
+                    <Box key={c.id} p={3} borderWidth="1px" borderColor={border} rounded="md" bg={feedbackBg}>
+                      <HStack justify="space-between" align="start">
+                        <VStack align="start" spacing={0}>
+                          <Text fontWeight="600">{c.course_name || '-'}</Text>
+                          <Text fontSize="sm" color={subtle} noOfLines={2}>{c.course_title || ''}</Text>
+                          <HStack spacing={2} pt={1}>
+                            {c.programcode && <Badge variant="subtle">{c.programcode}</Badge>}
+                            {(c.term || c.sy || c.sem) && (
+                              <Badge variant="subtle" colorScheme="gray">{[c.term, c.sy && `SY ${c.sy}`, c.sem].filter(Boolean).join(' · ')}</Badge>
+                            )}
+                          </HStack>
+                        </VStack>
+                        <VStack align="end" spacing={0}>
+                          <Text fontSize="sm" color={subtle}>Faculty</Text>
+                          <Text fontWeight="600">{c.instructor || '-'}</Text>
+                        </VStack>
+                      </HStack>
+                    </Box>
+                  ))}
+                  {(summary.courses || []).length === 0 && (
+                    <Text color={subtle}>No courses found for this student.</Text>
+                  )}
+                </VStack>
+              </Box>
+            )}
             {summaryLoading ? (
               <VStack align="stretch" spacing={3}>
                 {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height="24px" />)}
               </VStack>
             ) : !summary ? (
               <Text color={subtle}>No summary available.</Text>
-            ) : (
+            ) : summaryMode === 'student' ? null : (
               <VStack align="stretch" spacing={5}>
                 <Box>
                   <Heading size="sm" mb={2}>Averages</Heading>
