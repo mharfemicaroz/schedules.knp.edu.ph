@@ -7,6 +7,7 @@ import {
   Heading,
   Text,
   FormControl,
+  FormLabel,
   FormErrorMessage,
   Input,
   InputGroup,
@@ -424,6 +425,8 @@ function Evaluation() {
                 </VStack>
 
                 <FormControl isInvalid={showError} pt={2}>
+                  <FormLabel mb={1} fontSize="sm" fontWeight="600">Access Code</FormLabel>
+                  <Text fontSize="xs" color={textSubtle} mb={2}>Enter the 6-character code provided by your instructor.</Text>
                   <HStack justify="center" spacing={2}>
                     <PinInput
                       otp
