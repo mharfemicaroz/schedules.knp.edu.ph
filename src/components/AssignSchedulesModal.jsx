@@ -38,6 +38,10 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
   // Source data: prospectus + blocks
   const prospectus = useSelector(selectAllProspectus);
   const blocksAll = useSelector(selectBlocks);
+  const authUser = useSelector(s => s.auth.user);
+  const role = String(authUser?.role || '').toLowerCase();
+  const isAdmin = (role === 'admin' || role === 'manager');
+  const [allowedDepts, setAllowedDepts] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [existing, setExisting] = React.useState([]);
 
@@ -58,6 +62,38 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
   const [sortBy, setSortBy] = React.useState('code');
   const [sortDir, setSortDir] = React.useState('asc');
 
+  // Fetch allowed departments for non-admin users when opening
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!isOpen) return;
+      if (!authUser?.id || isAdmin) { if (alive) setAllowedDepts(null); return; }
+      try {
+        const rows = await apiService.getUserDepartmentsByUser(authUser.id);
+        const list = Array.isArray(rows) ? rows : [];
+        const codes = Array.from(new Set(list.map(r => String(r.department || '').toUpperCase()).filter(Boolean)));
+        if (alive) setAllowedDepts(codes);
+      } catch { if (alive) setAllowedDepts([]); }
+    })();
+    return () => { alive = false; };
+  }, [isOpen, authUser?.id, isAdmin]);
+
+  // Helper to parse block program code similar to CourseLoading
+  const parseBlockMeta = React.useCallback((blockCode) => {
+    const s = String(blockCode || '').trim();
+    if (!s) return { programcode: '', yearlevel: '' };
+    let m = s.match(/^([A-Z0-9-]+)\s+(\d+)/i);
+    if (m) return { programcode: (m[1] || '').toUpperCase(), yearlevel: m[2] || '' };
+    const [head, rest] = s.split('-');
+    if (rest) {
+      const m2 = rest.match(/(\d+)/);
+      return { programcode: (head || '').toUpperCase(), yearlevel: m2 ? (m2[1] || '') : '' };
+    }
+    const m3 = s.match(/^(\D+?)(\d+)/);
+    if (m3) return { programcode: (m3[1] || '').replace(/[-\s]+$/, '').toUpperCase(), yearlevel: m3[2] || '' };
+    return { programcode: s.toUpperCase(), yearlevel: '' };
+  }, []);
+
   // Load source data when opening
   React.useEffect(() => {
     if (!isOpen) return;
@@ -65,21 +101,42 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
     dispatch(loadBlocksThunk({}));
   }, [isOpen, dispatch]);
 
+  const allowedReady = isAdmin || allowedDepts !== null;
+
   // Build program/year options from prospectus
   React.useEffect(() => {
-    const progs = Array.from(new Set((prospectus || []).map(p => p.programcode || p.program || '').filter(Boolean))).sort();
+    if (!allowedReady && !isAdmin) { setProgramOptions([]); return; }
+    let progs = Array.from(new Set((prospectus || []).map(p => p.programcode || p.program || '').filter(Boolean))).sort();
+    if (!isAdmin && Array.isArray(allowedDepts)) {
+      const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
+      progs = progs.filter(p => allow.size === 0 ? false : allow.has(String(p).toUpperCase()));
+    }
     setProgramOptions(progs);
-    const yrs = Array.from(new Set((prospectus || []).map(p => String(p.yearlevel ?? '').trim()).filter(Boolean))).sort((a,b)=>Number(a)-Number(b));
-    setYearOptions(yrs);
-  }, [prospectus]);
+    // Year options: normalize to digits and sort 1,2,3,4; display as '1st Year' etc.
+    const toDigit = (v) => { const m = String(v ?? '').match(/(\d+)/); return m ? parseInt(m[1], 10) : NaN; };
+    const digits = Array.from(new Set((prospectus || [])
+      .map(p => toDigit(p.yearlevel))
+      .filter((n) => Number.isFinite(n))))
+      .sort((a,b) => a - b);
+    const label = (n) => {
+      const sfx = (n % 10 === 1 && n % 100 !== 11) ? 'st' : (n % 10 === 2 && n % 100 !== 12) ? 'nd' : (n % 10 === 3 && n % 100 !== 13) ? 'rd' : 'th';
+      return `${n}${sfx} Year`;
+    };
+    setYearOptions(digits.map(n => ({ value: String(n), label: label(n) })));
+    // Reset selected program if no longer allowed
+    if (program && progs.length && !progs.includes(program)) {
+      setProgram('');
+    }
+  }, [prospectus, isAdmin, allowedDepts, allowedReady]);
 
   // Build block options for selected program/year
   React.useEffect(() => {
+    if (!allowedReady && !isAdmin) { setBlockOptions([]); if (blockCode) setBlockCode(''); return; }
     const up = (s) => String(s || '').toUpperCase();
     const prog = up(program);
     // extract digits from yearlevel, e.g., "3rd Year" -> "3"
     const ydig = (String(yearlevel || '').match(/(\d+)/) || [,''])[1];
-    const opts = (blocksAll || [])
+    let opts = (blocksAll || [])
       .map(b => String(b.blockCode || b.block_code || '').trim())
       .filter(Boolean)
       .filter(code => {
@@ -89,9 +146,13 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
         return hasProg && hasYear;
       })
       .sort((a,b) => a.localeCompare(b));
+    if (!isAdmin && Array.isArray(allowedDepts)) {
+      const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
+      opts = opts.filter(code => allow.size === 0 ? false : allow.has(String(parseBlockMeta(code).programcode || '').toUpperCase()));
+    }
     setBlockOptions(opts);
     if (blockCode && !opts.includes(blockCode)) setBlockCode('');
-  }, [blocksAll, program, yearlevel]);
+  }, [blocksAll, program, yearlevel, isAdmin, allowedDepts, parseBlockMeta, allowedReady]);
 
   // Fetch existing schedules for current SY/Sem (settingsLoad)
   const refreshExisting = React.useCallback(async () => {
@@ -114,6 +175,7 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
 
   // Build prospectus candidates that are not yet mapped to schedules for current load semester (per selected block)
   React.useEffect(() => {
+    if (!allowedReady && !isAdmin) { setRows([]); setSelected(new Set()); return; }
     const semRaw = String(settingsLoad?.semester || '').trim();
     const semNorm = normalizeSem(semRaw) || '';
     const q = String(search || '').toLowerCase();
@@ -146,11 +208,16 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
         if (t1) titleSet.add(t1);
         if (t2) titleSet.add(t2);
       });
+    const ysel = (String(yearlevel || '').match(/(\d+)/) || [,''])[1];
     let base = (prospectus || []).filter(p =>
       (!program || norm(p.programcode || p.program) === norm(program)) &&
-      (!yearlevel || String(p.yearlevel || '') === String(yearlevel)) &&
+      (!ysel || String((String(p.yearlevel||'').match(/(\d+)/)||[,''])[1]||'') === String(ysel)) &&
       (normalizeSem(p.semester || '') === semNorm)
     );
+    if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
+      const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
+      base = base.filter(p => allow.has(String(p.programcode || p.program || '').toUpperCase()));
+    }
     if (q) base = base.filter(p => [p.course_name, p.course_title, p.programcode, p.program].some(v => norm(v).includes(q)));
     const out = base.filter(p => {
       const pCode = norm(p.course_name || p.courseName);
@@ -258,11 +325,11 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
                   {programOptions.map(p => (<option key={p} value={p}>{p}</option>))}
                 </Select>
               </FormControl>
-              <FormControl maxW="140px">
+              <FormControl maxW="160px">
                 <FormLabel m={0} fontSize="xs" color="gray.500">Year Level</FormLabel>
                 <Select size="sm" value={yearlevel} onChange={(e)=>setYearlevel(e.target.value)}>
                   <option value="">All</option>
-                  {yearOptions.map(y => (<option key={y} value={y}>{y}</option>))}
+                  {yearOptions.map(y => (<option key={y.value} value={y.value}>{y.label}</option>))}
                 </Select>
               </FormControl>
               <FormControl minW="240px" flex="1">

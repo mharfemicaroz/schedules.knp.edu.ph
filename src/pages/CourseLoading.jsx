@@ -1631,16 +1631,52 @@ export default function CourseLoading() {
   const filteredFaculty = React.useMemo(() => {
     const norm = (s) => String(s || '').toLowerCase();
     const q = norm(facQ);
+    const ALWAYS = new Set(['GENED','KNP PARTTIME','PARTTIME','PE']);
+    // Build allowed programcode bases (e.g., BSED-MATH -> BSED, BSBA-FM -> BSBA)
+    const allowSet = (!isAdmin && Array.isArray(allowedDepts))
+      ? new Set(
+          allowedDepts
+            .map(s => String(s || '').toUpperCase())
+            .map(s => (s.split('-')[0] || s).replace(/[^A-Z0-9]/g, ''))
+            .filter(Boolean)
+        )
+      : null;
+    const matchesAllowed = (deptRaw) => {
+      const U = String(deptRaw || '').toUpperCase().trim();
+      if (ALWAYS.has(U)) return true;
+      if (!allowSet) return false;
+      if (allowSet.size === 0) return false;
+      const stripped = U.replace(/[^A-Z0-9]/g, '');
+      const head = (U.split('-')[0] || U).replace(/[^A-Z0-9]/g, '');
+      for (const code of allowSet) {
+        const C = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (!C) continue;
+        if (head === C) return true;
+        if (stripped.includes(C)) return true;
+      }
+      return false;
+    };
     return (facultyAll || []).filter(f => {
       const name = norm(f.name || f.faculty || f.instructorName || f.instructor || f.full_name);
-      const dept = norm(f.department || f.dept || f.department_name || f.departmentName);
+      const deptRaw = String(f.department || f.dept || f.department_name || f.departmentName || '').toUpperCase();
+      const dept = deptRaw.toLowerCase();
       const emp = norm(f.employment);
+      // Role-based: non-admins see only assigned programcodes and whitelist
+      if (!isAdmin) {
+        if (allowSet === null) {
+          if (!ALWAYS.has(deptRaw.trim())) return false;
+        } else if (allowSet.size === 0) {
+          if (!ALWAYS.has(deptRaw.trim())) return false;
+        } else if (!matchesAllowed(deptRaw)) {
+          return false;
+        }
+      }
       if (facDeptFilter && dept !== norm(facDeptFilter)) return false;
       if (facEmpFilter && emp !== norm(facEmpFilter)) return false;
       if (q && !(name.includes(q) || dept.includes(q))) return false;
       return true;
     });
-  }, [facultyAll, facDeptFilter, facEmpFilter, facQ]);
+  }, [facultyAll, facDeptFilter, facEmpFilter, facQ, isAdmin, allowedDepts]);
 
   const [facultySchedules, setFacultySchedules] = React.useState({ items: [], loading: false });
   const [facSelected, setFacSelected] = React.useState(new Set());
@@ -1729,6 +1765,14 @@ export default function CourseLoading() {
         });
       }
 
+      // Limit by assigned program codes for non-admin users
+      if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
+        try {
+          const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
+          list = (list || []).filter(s => allow.has(String(s.programcode || s.program || '').toUpperCase()));
+        } catch {}
+      }
+
       const sorted = (list || []).slice().sort((a, b) => {
         const ka = parseKey(a), kb = parseKey(b);
         for (let i = 0; i < ka.length; i++) { if (ka[i] !== kb[i]) return ka[i] - kb[i]; }
@@ -1746,6 +1790,7 @@ export default function CourseLoading() {
             time: String(s.schedule || s.time || '').trim(),
             faculty: s.faculty || s.instructor || '',
             facultyId: s.facultyId || s.faculty_id || null,
+            day: s.day || 'MON-FRI',
             _checking: false,
             _conflict: false,
             _details: [],
@@ -1785,18 +1830,20 @@ export default function CourseLoading() {
     if (!base || !e) return;
     const term = String(e.term || '').trim();
     const timeStr = String(e.time || '').trim();
-    const facName = String(e.faculty || '').trim();
+    const facName = String((e.faculty ?? base.instructor ?? base.faculty ?? '')).trim();
     if (!term || !timeStr || !facName) {
       setFacEdits(prev => ({ ...prev, [id]: { ...prev[id], _checking: false, _conflict: false, _details: [] } }));
       return;
     }
     setFacEdits(prev => ({ ...prev, [id]: { ...prev[id], _checking: true } }));
     try {
+      const parsedId = (() => { const n = Number(e.facultyId ?? base.facultyId ?? base.faculty_id); return Number.isFinite(n) ? n : undefined; })();
       const payload = {
         term,
         time: timeStr,
         faculty: facName,
-        facultyId: facName,
+        facultyId: parsedId,
+        day: e.day || base.day || undefined,
         schoolyear: settingsLoad.school_year || undefined,
         semester: settingsLoad.semester || undefined,
         blockCode: base.blockCode || base.section || '',
@@ -1804,8 +1851,14 @@ export default function CourseLoading() {
         session: base.session || '',
       };
       const res = await api.checkScheduleConflict(id, payload);
-      const conflict = !!res?.conflict;
-      const details = Array.isArray(res?.details) ? res.details : [];
+      let conflict = !!res?.conflict;
+      let details = Array.isArray(res?.details) ? res.details.slice() : [];
+
+      // Department-agnostic fallback using instructor schedules
+      if (!conflict) {
+        const fb = await detectConflictViaInstructor({ facultyName: payload.faculty, term, timeStr, excludeId: id });
+        if (fb.conflict) { conflict = true; details = details.concat(fb.details); }
+      }
       // Inline load limit check for non-admin
       let loadExceeded = false;
       if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
@@ -1873,7 +1926,7 @@ export default function CourseLoading() {
           courseName: base.courseName || base.code,
           courseTitle: base.courseTitle || base.title,
           unit: base.unit,
-          day: base.day || 'MON-FRI',
+          day: e.day || base.day || 'MON-FRI',
           time: e.time,
           term: e.term,
           schoolyear: settingsLoad?.school_year || '',
@@ -1898,7 +1951,8 @@ export default function CourseLoading() {
     if (canonicalTerm(base.term || '') !== e.term) changes.term = e.term;
     const baseTime = String(base.schedule || base.time || '').trim();
     if (baseTime !== e.time) changes.time = e.time;
-    if ((base.facultyId || base.faculty_id || null) !== (e.facultyId || null)) changes.faculty_id = e.facultyId || null;
+    if (String(base.day || '').trim() !== String(e.day || '').trim()) changes.day = e.day || '';
+    // In faculty view, faculty is implicit; do not change faculty assignment inline
     if (Object.keys(changes).length === 0) return;
     try {
       if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) && changes.faculty_id != null) {
@@ -1933,8 +1987,8 @@ export default function CourseLoading() {
         const payload = {
           term: e.term,
           time: e.time,
-          faculty: e.faculty,
-          facultyId: e.facultyId || null,
+          faculty: base.faculty || base.instructor || '',
+          facultyId: base.facultyId || base.faculty_id || null,
           schoolyear: settingsLoad.school_year || undefined,
           semester: settingsLoad.semester || undefined,
           blockCode: base.blockCode || base.section || '',
@@ -1995,6 +2049,16 @@ export default function CourseLoading() {
     setFacDelIndex(idx);
     setFacDelOpen(true);
   };
+
+  // Re-apply programcode filter when user departments load/change for non-admins
+  React.useEffect(() => {
+    try {
+      if (isAdmin) return;
+      if (!selectedFaculty) return;
+      if (allowedDepts === null) return; // wait until loaded
+      fetchFacultySchedules(selectedFaculty);
+    } catch {}
+  }, [allowedDepts, isAdmin, selectedFaculty]);
   const confirmFacultyDelete = async () => {
     const idx = facDelIndex;
     const item = facultySchedules.items[idx];
@@ -2376,6 +2440,50 @@ export default function CourseLoading() {
     }
   };
 
+  // Fallback: department-agnostic conflict detection via instructor schedules
+  const detectConflictViaInstructor = async ({ facultyName, term, timeStr, excludeId }) => {
+    try {
+      const sy = settingsLoad.school_year || '';
+      const sem = settingsLoad.semester || '';
+      const list = await fetchInstructorSchedulesTry([facultyName], { sy, sem });
+      if (!Array.isArray(list) || list.length === 0) return { conflict: false, details: [] };
+      const candRange = getTimeRange(timeStr) || {};
+      const termN = normalizeTermForCompare(term).toLowerCase();
+      const details = [];
+      let conflict = false;
+      for (const s of list) {
+        const sid = s?.id;
+        if (excludeId != null && String(sid) === String(excludeId)) continue;
+        const sTerm = normalizeTermForCompare(s.term || s.sem || s.semester).toLowerCase();
+        if (sTerm !== termN) continue;
+        const sRange = getTimeRange(String(s.schedule || s.time || s.scheduleKey || ''));
+        if (!sRange) continue;
+        if (timeRangesOverlap(candRange, sRange)) {
+          conflict = true;
+          details.push({
+            reason: 'Double-booked: same faculty (other section/department)',
+            item: {
+              id: s.id,
+              code: s.courseName || s.code || '-',
+              title: s.title || s.courseTitle || '-',
+              section: s.section || s.blockCode || s.block || '-',
+              term: s.term || s.sem || s.semester || '-',
+              time: s.schedule || s.time || '-',
+              room: s.room || '-',
+              lock: s.lock,
+            },
+          });
+        }
+      }
+      return { conflict, details };
+    } catch {
+      return { conflict: false, details: [] };
+    }
+  };
+
+  // Per-row conflict check sequence guard to avoid stale overwrites
+  const rowCheckSeqRef = React.useRef(new Map());
+
   const checkRowConflictFresh = async (idx, candRow) => {
     const row = candRow || rows[idx];
     if (!row) return;
@@ -2394,10 +2502,13 @@ export default function CourseLoading() {
     const uniqCandidates = Array.from(new Set(candidateIdentifiers.filter(Boolean)));
 
     if (!term || !timeStr || uniqCandidates.length === 0) {
-      setRows(prev => prev.map((r,i) => i===idx ? { ...r, _status: r._status === 'Conflict' ? 'Unassigned' : r._status, _conflict: false, _conflictNote: '', _checking: false } : r));
+      // Do not clear previous conflict state on incomplete context; just stop checking
+      setRows(prev => prev.map((r,i) => i===idx ? { ...r, _checking: false } : r));
       return;
     }
 
+    // bump sequence token for this row index
+    const seqMap = rowCheckSeqRef.current; const prevSeq = Number(seqMap.get(idx) || 0); const mySeq = prevSeq + 1; seqMap.set(idx, mySeq);
     setRows(prev => prev.map((r,i) => i===idx ? { ...r, _checking: true } : r));
     try {
       // prepare candidate norms and filters
@@ -2410,12 +2521,13 @@ export default function CourseLoading() {
       const sem = settingsLoad.semester || '';
 
       // Server-side conflict check
+      const numericFid = (() => { const n = Number(opt?.value); return Number.isFinite(n) ? n : undefined; })();
       const payload = {
         term,
         time: timeStr,
         day: row._day || undefined,
         faculty: opt?.label || row._faculty || row.faculty || '',
-        facultyId: opt?.value || null,
+        facultyId: numericFid,
         schoolyear: sy || undefined,
         semester: sem || undefined,
         blockCode: selectedBlock?.blockCode || '',
@@ -2423,8 +2535,14 @@ export default function CourseLoading() {
       };
       const idForCheck = row._existingId || 0;
       const res = await api.request(`/${encodeURIComponent(idForCheck)}/check`, { method: 'POST', body: JSON.stringify(payload) });
-      const conflict = !!(res?.conflict);
-      const details = Array.isArray(res?.details) ? res.details : [];
+      let conflict = !!(res?.conflict);
+      let details = Array.isArray(res?.details) ? res.details.slice() : [];
+
+      // Department-agnostic fallback using instructor schedules
+      if (!conflict) {
+        const fb = await detectConflictViaInstructor({ facultyName: payload.faculty, term, timeStr, excludeId: idForCheck });
+        if (fb.conflict) { conflict = true; details = details.concat(fb.details); }
+      }
       // Inline load limit check for non-admin
       let loadExceeded = false;
       if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
@@ -2443,9 +2561,15 @@ export default function CourseLoading() {
           }
         } catch {}
       }
-      setRows(prev => prev.map((r,i) => i===idx ? { ...r, _status: conflict ? 'Conflict' : (r._existingId ? 'Assigned' : 'Unassigned'), _conflict: conflict, _conflictNote: conflict ? 'Conflicts with an existing schedule for this faculty.' : '', _conflictDetails: details, _checking: false, _loadExceeded: loadExceeded } : r));
+      // Only apply result if this is the latest check for the row
+      const stillLatest = rowCheckSeqRef.current.get(idx) === mySeq;
+      if (stillLatest) {
+        setRows(prev => prev.map((r,i) => i===idx ? { ...r, _status: conflict ? 'Conflict' : (r._existingId ? 'Assigned' : 'Unassigned'), _conflict: conflict, _conflictNote: conflict ? 'Conflicts with an existing schedule for this faculty.' : '', _conflictDetails: details, _checking: false, _loadExceeded: loadExceeded } : r));
+      }
     } catch (e) {
-      setRows(prev => prev.map((r,i) => i===idx ? { ...r, _checking: false } : r));
+      // Do not overwrite with stale error if a newer check is in-flight
+      const seqOk = rowCheckSeqRef.current.get(idx);
+      if (seqOk) setRows(prev => prev.map((r,i) => i===idx ? { ...r, _checking: false } : r));
       toast({ title: 'Conflict check failed', description: e?.message || 'Could not check conflicts.', status: 'error' });
     }
   };
@@ -3102,7 +3226,22 @@ export default function CourseLoading() {
               <HStack spacing={2} flexWrap="wrap">
                 <Input size="sm" placeholder="Search faculty" value={facQ} onChange={(e)=>setFacQ(e.target.value)} maxW="200px" />
                 <Select size="sm" placeholder="Department" value={facDeptFilter} onChange={(e)=>setFacDeptFilter(e.target.value)} maxW="180px">
-                  {(facultyOpts.departments || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  {(() => {
+                    const list = facultyOpts.departments || [];
+                    if (isAdmin) return list.map(opt => <option key={opt} value={opt.toLowerCase()}>{opt}</option>);
+                    const ALWAYS = new Set(['GENED','KNP PARTTIME','PARTTIME','PE']);
+                    const allowBases = Array.isArray(allowedDepts)
+                      ? new Set(allowedDepts.map(s => (String(s||'').toUpperCase().split('-')[0]||'').replace(/[^A-Z0-9]/g,'')))
+                      : null;
+                    const filtered = list.filter(opt => {
+                      const u = String(opt || '').toUpperCase().trim();
+                      if (ALWAYS.has(u)) return true;
+                      if (!allowBases) return false; // not loaded yet
+                      const base = u.replace(/[^A-Z0-9]/g,'');
+                      return allowBases.has(base);
+                    });
+                    return filtered.map(opt => <option key={opt} value={String(opt).toLowerCase()}>{opt}</option>);
+                  })()}
                 </Select>
                 <Select size="sm" placeholder="Employment" value={facEmpFilter} onChange={(e)=>setFacEmpFilter(e.target.value)} maxW="160px">
                   {(facultyOpts.employments || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -3565,15 +3704,14 @@ export default function CourseLoading() {
                           <HStack justify="space-between" mb={1}><Badge colorScheme="blue">{term}</Badge><Text fontSize="xs" color={subtle}>{arr.length} item(s)</Text></HStack>
                           <VStack align="stretch" spacing={2}>
                             {arr.map((c, i) => {
-                              const e = facEdits[c.id] || { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), faculty: c.faculty || c.instructor || '', facultyId: c.facultyId || c.faculty_id || null };
+                              const e = facEdits[c.id] || { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), day: c.day || 'MON-FRI' };
                               const dirty =
                                 canonicalTerm(c.term || '') !== e.term ||
                                 String(c.schedule || c.time || '').trim() !== e.time ||
-                                (c.facultyId || c.faculty_id || null) !== (e.facultyId || null);
+                                String(c.day || '').trim() !== String(e.day || '').trim();
                               const termFilled = String(e.term || '').trim().length > 0;
                               const timeFilled = String(e.time || '').trim().length > 0;
-                              const facultyFilled = (e.facultyId != null) || String(e.faculty || c.faculty || c.instructor || '').trim().length > 0;
-                              const canSave = dirty && termFilled && timeFilled && facultyFilled && !e._checking && !e._conflict;
+                              const canSave = dirty && termFilled && timeFilled && !e._checking && !e._conflict;
                               const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock || c.is_locked);
                               return (
                                 <Box key={`${term}-${i}`} p={2} borderWidth="1px" rounded="md">
@@ -3600,6 +3738,18 @@ export default function CourseLoading() {
 
                                   <Select
                                     size="sm"
+                                    value={e.day || 'MON-FRI'}
+                                    onChange={(ev)=>updateFacEdit(c.id, { day: ev.target.value })}
+                                    maxW="140px"
+                                    isDisabled={isLocked}
+                                  >
+                                    {['MON-FRI','Mon','Tue','Wed','Thu','Fri','Sat','Sun','MWF','TTH','TBA'].map(d => (
+                                      <option key={d} value={d}>{d}</option>
+                                    ))}
+                                  </Select>
+
+                                  <Select
+                                    size="sm"
                                     value={e.time}
                                     onChange={(ev)=>updateFacEdit(c.id, { time: ev.target.value })}
                                     maxW="160px"
@@ -3610,102 +3760,7 @@ export default function CourseLoading() {
                                     ))}
                                   </Select>
 
-                                    <Box minW="220px">
-                                      {(() => {
-                                        const normTerm = (v) => { const s=String(v||'').trim().toLowerCase(); if (s.startsWith('1')) return '1st'; if (s.startsWith('2')) return '2nd'; if (s.startsWith('s')) return 'Sem'; return String(v||''); };
-                                        const timeKey = (t) => { const tr=parseTimeBlockToMinutes(String(t||'').trim()); return (Number.isFinite(tr.start)&&Number.isFinite(tr.end))? `${tr.start}-${tr.end}` : String(t||'').trim(); };
-                                        const sectionNorm = String(c.blockCode || c.section || '').trim().toLowerCase();
-                                        const termNorm = normTerm(e.term);
-                                        const tKey = timeKey(e.time);
-                                        const busy = new Set();
-                                        // include current selection even if busy
-                                        const currKey = (e.facultyId != null) ? `id:${e.facultyId}` : `nm:${String(e.faculty||'').toLowerCase().replace(/[^a-z0-9]/g,'')}`;
-                                        (existing || []).forEach(s => {
-                                          const sSect = String(s.section || s.blockCode || '').trim().toLowerCase();
-                                          if (sSect !== sectionNorm) return;
-                                          if (normTerm(s.term) !== termNorm) return;
-                                          const sKey = timeKey(s.time || s.schedule || '');
-                                          if (sKey && tKey) {
-                                            if (sKey === tKey) {
-                                              const k = (s.facultyId != null) ? `id:${s.facultyId}` : `nm:${String(s.faculty || s.instructor || '').toLowerCase().replace(/[^a-z0-9]/g,'')}`;
-                                              if (k !== currKey) busy.add(k);
-                                            } else {
-                                              const a = parseTimeBlockToMinutes(String(sKey||'').trim());
-                                              const b = parseTimeBlockToMinutes(String(tKey||'').trim());
-                                              if (Number.isFinite(a.start) && Number.isFinite(a.end) && Number.isFinite(b.start) && Number.isFinite(b.end)){
-                                                if (Math.max(a.start,b.start) < Math.min(a.end,b.end)){
-                                                  const k = (s.facultyId != null) ? `id:${s.facultyId}` : `nm:${String(s.faculty || s.instructor || '').toLowerCase().replace(/[^a-z0-9]/g,'')}`;
-                                                  if (k !== currKey) busy.add(k);
-                                                }
-                                              }
-                                            }
-                                          }
-                                        });
-                                        const base = facOptions || [];
-                                        const filtered = base.filter(o => {
-                                          const key = (o.id != null ? `id:${o.id}` : `nm:${String(o.label||'').toLowerCase().replace(/[^a-z0-9]/g,'')}`);
-                                          if (key === currKey) return true;
-                                          if (busy.has(key)) return false;
-                                          // Dept filter by schedule programcode with whitelist
-                                          const prog = String(c.programcode || c.program || (c.prospectus?.programcode) || '')
-                                            .toUpperCase()
-                                            .replace(/[^A-Z0-9]/g, '');
-                                          const deptRaw = String(o.dept || '')
-                                            .toUpperCase();
-                                          const deptStripped = deptRaw.replace(/[^A-Z0-9]/g, '');
-                                          const always = ['GENED', 'KNP PARTTIME', 'PARTTIME', 'PE'];
-                                          const whitelisted = always.includes(deptRaw.trim());
-                                          const deptMatches = prog ? (deptStripped.includes(prog)) : true;
-                                          return whitelisted || deptMatches;
-                                        });
-                                        // scoring using shared engine (same as block view)
-                                        const scheduleCtx = {
-                                          programcode: c.programcode || c.program || '',
-                                          program: c.program || c.programcode || '',
-                                          dept: c.dept || '',
-                                          term: e.term || c.term || '',
-                                          time: e.time || c.time || c.schedule || '',
-                                          id: c.id || undefined,
-                                          code: c.code || c.courseName || '',
-                                          courseName: c.courseName || c.code || '',
-                                          title: c.title || c.courseTitle || '',
-                                          courseTitle: c.courseTitle || c.title || '',
-                                          section: c.blockCode || c.section || ''
-                                        };
-                                        // Provide richer faculty inputs for scoring (credentials, titles, etc.)
-                                        const facInputs = filtered.map(o => ({
-                                          id: o.id,
-                                          name: o.name || o.label,
-                                          faculty: o.faculty,
-                                          full_name: o.full_name,
-                                          dept: o.dept,
-                                          employment: o.employment,
-                                          loadReleaseUnits: o.loadReleaseUnits,
-                                          credentials: o.credentials,
-                                          degree: o.degree,
-                                          degrees: o.degrees,
-                                          qualification: o.qualification,
-                                          qualifications: o.qualifications,
-                                          title: o.title,
-                                          designation: o.designation,
-                                          rank: o.rank,
-                                          facultyProfile: o.facultyProfile,
-                                        }));
-                                        const scoreMap = buildFacultyScoreMap({ faculties: facInputs, stats: facStatsScoped, indexesAll: facIndexesAllFull, schedule: scheduleCtx, attendanceStats: attendanceStatsMap });
-                                        const options = filtered.map(o => ({ ...o, score: (scoreMap.get(String(o.id))?.score) || 0, parts: scoreMap.get(String(o.id))?.parts }));
-                                        options.sort((a,b)=>{ const da = (typeof a.score==='number')?a.score:-1; const db=(typeof b.score==='number')?b.score:-1; if (db!==da) return db-da; return String(a.label||'').localeCompare(String(b.label||'')); });
-                                        return (
-                                          <FacultySelect
-                                            value={e.faculty}
-                                            onChange={(v)=>updateFacEdit(c.id, { faculty: v })}
-                                            onChangeId={(fid)=>updateFacEdit(c.id, { facultyId: fid })}
-                                            allowClear
-                                            disabled={isLocked}
-                                            options={options}
-                                          />
-                                        );
-                                      })()}
-                                    </Box>
+                                    {/* Inline faculty select removed in faculty view for efficiency */}
                                     
                                     <HStack>
                                       {e._checking ? (
