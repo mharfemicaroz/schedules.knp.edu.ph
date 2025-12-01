@@ -29,6 +29,8 @@ import { parseTimeBlockToMinutes, parseF2FDays } from '../utils/conflicts';
 import { buildIndexes, buildFacultyStats, buildFacultyScoreMap, normalizeSem } from '../utils/facultyScoring';
 import { buildTable, printContent } from '../utils/printDesign';
 import ScheduleHistoryModal from '../components/ScheduleHistoryModal';
+import AssignmentRow from '../components/AssignmentRow';
+import CoursesView from '../components/CoursesView';
 
 // --- helpers (same as previous) ---
 function VirtualBlockList({ items, renderRow, estimatedRowHeight = 76, overscan = 6, maxHeight = '50vh', border, dividerBorder }) {
@@ -204,7 +206,8 @@ function BlockList({ items, selectedId, onSelect, loading, onProgramChange }) {
 
 // --- main component ---
 
-function AssignmentRow({
+/* moved to components/AssignmentRow.jsx */
+function AssignmentRowOld({
   row,
   faculties,
   schedulesSource,
@@ -751,7 +754,7 @@ export default function CourseLoading() {
   }, [authUser?.id, isAdmin]);
   const canLoad = (isAdmin || role === 'registrar' || (Array.isArray(allowedDepts) && allowedDepts.length > 0));
 
-  const [viewMode, setViewMode] = React.useState('blocks'); // 'blocks' | 'faculty'
+  const [viewMode, setViewMode] = React.useState('blocks'); // 'blocks' | 'faculty' | 'courses'
   const [selectedBlock, setSelectedBlock] = React.useState(null);
   const [selectedProgram, setSelectedProgram] = React.useState('');
   const [progBlocksLimit, setProgBlocksLimit] = React.useState(6);
@@ -3059,6 +3062,11 @@ export default function CourseLoading() {
       toast({ title: 'Nothing to save', status: 'info' });
       return;
     }
+    // Prevent saving while any selected row is still checking for conflicts
+    if (rows.some(r => r._selected && r._checking)) {
+      toast({ title: 'Checking conflicts', description: 'Please wait for conflict checks to finish before saving.', status: 'info' });
+      return;
+    }
     // Do not rely on stale row._status; recompute consistently for current Load
     const isConflict = computeConflicts(chosen);
     let hasConflict = chosen.some(isConflict);
@@ -3185,6 +3193,7 @@ export default function CourseLoading() {
           <HStack spacing={1} ml={3}>
             <Button size="sm" variant={viewMode==='blocks'?'solid':'ghost'} colorScheme="blue" onClick={()=>setViewMode('blocks')}>Blocks</Button>
             <Button size="sm" variant={viewMode==='faculty'?'solid':'ghost'} colorScheme="blue" onClick={()=>setViewMode('faculty')}>Faculty</Button>
+            <Button size="sm" variant={viewMode==='courses'?'solid':'ghost'} colorScheme="blue" onClick={()=>setViewMode('courses')}>Courses</Button>
           </HStack>
         </HStack>
         <HStack spacing={3}>
@@ -3200,8 +3209,9 @@ export default function CourseLoading() {
       </HStack>
 
       <SimpleGrid columns={{ base: 1, lg: 5 }} gap={4} alignItems="start">
+        {viewMode !== 'courses' && (
         <Box gridColumn={{ base: 'auto', lg: '1 / span 1' }} maxW={{ base: '100%', lg: '340px' }}>
-          {viewMode === 'blocks' ? (
+          {viewMode === 'blocks' && (
             <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg} position="sticky" top="64px" w="full">
               <HStack justify="space-between" align="center">
                 <Heading size="sm">Blocks</Heading>
@@ -3217,7 +3227,8 @@ export default function CourseLoading() {
                 />
               </Box>
             </VStack>
-          ) : (
+          )}
+          {viewMode === 'faculty' && (
             <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg} minH="calc(100vh - 210px)">
               <HStack justify="space-between" align="center">
                 <Heading size="sm">Faculty</Heading>
@@ -3314,12 +3325,14 @@ export default function CourseLoading() {
                   <Text fontSize="sm" color={subtle}>No faculty match current filters.</Text>
                 )}
               </VStack>
-            </VStack>
+              </VStack>
           )}
-        </Box>
 
-        <Box gridColumn={{ base: 'auto', lg: '2 / span 4' }} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg}>
-          {!selectedBlock && !selectedProgram && (
+        </Box>
+        )}
+
+        <Box gridColumn={{ base: 'auto', lg: (viewMode==='courses' ? '1 / span 5' : '2 / span 4') }} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg}>
+          {!selectedBlock && !selectedProgram && viewMode !== 'courses' && (
             <VStack py={10} spacing={2}>
               {viewMode === 'blocks' ? (
                 <>
@@ -3333,6 +3346,9 @@ export default function CourseLoading() {
                 </>
               )}
             </VStack>
+          )}
+          {viewMode === 'courses' && (
+            <CoursesView />
           )}
           {viewMode === 'blocks' && !selectedBlock && !!selectedProgram && (
             <VStack align="stretch" spacing={3}>
@@ -3384,7 +3400,7 @@ export default function CourseLoading() {
                       </HStack>
                     );
                   })()}
-                  <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && r._status === 'Conflict')} isLoading={saving}>Save Selected</Button>
+                  <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
                   <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
                   <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
                     Lock Selected
@@ -3563,7 +3579,7 @@ export default function CourseLoading() {
                       </HStack>
                     );
                   })()}
-                  <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && r._status === 'Conflict')} isLoading={saving}>Save Selected</Button>
+                  <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
                   <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
                   <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
                     Lock Selected

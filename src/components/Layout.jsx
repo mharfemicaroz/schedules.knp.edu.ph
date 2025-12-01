@@ -138,6 +138,7 @@ export default function Layout({ children }) {
   const bg = useColorModeValue('gray.50', 'gray.900');
   const loading = useSelector(s => s.data.loading);
   const loc = useLocation();
+  const isCourseLoadingPage = /^\/admin\/course-loading$/.test(String(loc?.pathname || ''));
   const settingsAll = useSelector(selectSettings);
   const sy2 = settingsAll?.schedulesView?.school_year || '';
   const sem2raw = settingsAll?.schedulesView?.semester || '';
@@ -497,7 +498,7 @@ export default function Layout({ children }) {
           </VStack>
         </Box>
       </Box>
-      {(loading || routeBusy) && (
+      {((!isCourseLoadingPage && loading) || routeBusy) && (
         <LoaderOverlay label={loading ? 'Loading data.' : 'Loading view.'} />
       )}
       <LoginModal

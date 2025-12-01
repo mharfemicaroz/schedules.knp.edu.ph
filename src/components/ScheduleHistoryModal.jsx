@@ -110,6 +110,17 @@ const parseUpdateDetails = (s) => {
     </Text>
   );
 
+  const filteredEntries = React.useMemo(() => {
+    try {
+      return (Array.isArray(entries) ? entries : []).filter(e => {
+        const isSystem = String(e?.user || '').trim().toLowerCase() === 'system' || (e?.userId == null && !e?.user);
+        const isUpdate = String(e?.action || '').trim().toLowerCase() === 'update';
+        // Hide system-initiated update noise
+        return !(isSystem && isUpdate);
+      });
+    } catch { return Array.isArray(entries) ? entries : []; }
+  }, [entries]);
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl" scrollBehavior="inside" isCentered>
       <ModalOverlay />
@@ -117,9 +128,9 @@ const parseUpdateDetails = (s) => {
         <ModalHeader>Schedule History #{scheduleId}</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
-          {Array.isArray(entries) && entries.length > 0 ? (
+          {Array.isArray(filteredEntries) && filteredEntries.length > 0 ? (
             <VStack align="stretch" spacing={3}>
-              {entries.map((e) => {
+              {filteredEntries.map((e) => {
                 const act = fmtAction(e.action);
                 const { changes, assigns } = parseUpdateDetails(e.details || '');
                 const hasChanges = changes.length > 0;

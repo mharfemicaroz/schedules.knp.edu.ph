@@ -16,12 +16,31 @@ export default function useFaculties(params = {}) {
       setError(null);
       const list = await apiService.getFaculties({ limit: 100000, ...(params || {}) });
       const arr = Array.isArray(list) ? list : (list?.data || []);
-      const out = (arr || []).map(f => ({
-        label: f.faculty || f.name || '',
-        value: f.faculty || f.name || '',
-        dept: f.dept || f.department || '',
-        id: f.id,
-      })).filter(o => o.label);
+      const out = (arr || [])
+        .map((f) => ({
+          // Primary identity/labels
+          id: f.id,
+          label: f.faculty || f.name || f.full_name || '',
+          value: f.faculty || f.name || f.full_name || '',
+          // Common fields used across views
+          name: f.name || f.faculty || f.full_name || '',
+          faculty: f.faculty || '',
+          full_name: f.full_name || '',
+          dept: f.dept || f.department || '',
+          employment: f.employment || f.emp || '',
+          loadReleaseUnits: f.load_release_units ?? f.loadReleaseUnits ?? null,
+          // Degree/credential fields for scoring parity with modal
+          credentials: f.credentials || f.credential || '',
+          degree: f.degree || '',
+          degrees: f.degrees || '',
+          qualification: f.qualification || '',
+          qualifications: f.qualifications || '',
+          title: f.title || '',
+          designation: f.designation || '',
+          rank: f.rank || '',
+          facultyProfile: f.facultyProfile, // pass-through if present
+        }))
+        .filter((o) => o.label);
       out.sort((a,b) => a.label.localeCompare(b.label));
       cache = out;
       cacheAt = Date.now();

@@ -145,6 +145,20 @@ class ApiService {
   }
 
   // SCHEDULES helpers
+  // Optional helper: server-provided course mapping across blocks
+  async getCourseMapping(params = {}) {
+    const search = new URLSearchParams();
+    const { programcode, yearlevel, course } = params || {};
+    if (programcode) search.set('programcode', programcode);
+    if (yearlevel) search.set('yearlevel', yearlevel);
+    if (course) search.set('course', course);
+    const qs = search.toString();
+    const url = `${this.baseURL}${this.schedulesPath}/by-course${qs ? `?${qs}` : ''}`;
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (res.status === 404) return null; // endpoint not implemented
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
   async checkScheduleConflict(id, payload) {
     const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/check`;
     const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload || {}) });
