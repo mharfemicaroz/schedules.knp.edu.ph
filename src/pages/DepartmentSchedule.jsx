@@ -62,6 +62,13 @@ export default function DepartmentSchedule() {
   const tableBg = useColorModeValue('white', 'gray.800');
 
   const groups = useMemo(() => {
+    const termAllowsAccess = (t) => {
+      const v = String(t || '').trim().toLowerCase();
+      if (!v) return false;
+      if (v.startsWith('2')) return true; // 2nd
+      if (v.startsWith('s')) return true; // Sem / Summer
+      return false; // hide for 1st and unknown
+    };
     const m = new Map();
     (allCourses || []).forEach((c) => {
       if (String(c.program || '') !== dept) return;
@@ -156,7 +163,7 @@ export default function DepartmentSchedule() {
               c.schedule || '',
               c.code,
             ];
-            if (showAccessCodes) row.push(c.accessCode || '');
+            if (showAccessCodes) row.push(termAllowsAccess(c.term) ? (c.accessCode || '') : '');
             row.push(
               c.title,
               String(c.unit ?? c.hours ?? ''),
@@ -175,7 +182,7 @@ export default function DepartmentSchedule() {
               c.schedule || '',
               c.code,
             ];
-            if (showAccessCodes) row.push(c.accessCode || '');
+            if (showAccessCodes) row.push(termAllowsAccess(c.term) ? (c.accessCode || '') : '');
             row.push(
               c.title,
               String(c.unit ?? c.hours ?? ''),
@@ -312,7 +319,7 @@ export default function DepartmentSchedule() {
                         <Td>{c.schedule || ''}</Td>
                         <Td>{c.code}</Td>
                         {showAccessCodes && (
-                          <Td>{c.accessCode || ''}</Td>
+                          <Td>{(String(c.term||'').toLowerCase().startsWith('2') || String(c.term||'').toLowerCase().startsWith('s')) ? (c.accessCode || '') : ''}</Td>
                         )}
                         <Td maxW={{ base: '220px', md: '420px' }}>
                           <Text noOfLines={{ base: 2, md: 1 }}>{c.title}</Text>
