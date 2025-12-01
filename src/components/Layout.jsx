@@ -33,7 +33,7 @@ import { FiMoon, FiSun, FiMenu, FiSidebar, FiLogIn, FiUser, FiKey, FiLogOut } fr
 import LoaderOverlay from './LoaderOverlay';
 import RouteProgress from './RouteProgress';
 import { useSelector, useDispatch } from 'react-redux';
-import { useLocation, Link as RouterLink } from 'react-router-dom';
+import { useLocation, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import SplashScreen from './SplashScreen';
 import LoginModal from './LoginModal';
@@ -138,6 +138,7 @@ export default function Layout({ children }) {
   const bg = useColorModeValue('gray.50', 'gray.900');
   const loading = useSelector(s => s.data.loading);
   const loc = useLocation();
+  const navigate = useNavigate();
   const isCourseLoadingPage = /^\/admin\/course-loading$/.test(String(loc?.pathname || ''));
   const settingsAll = useSelector(selectSettings);
   const sy2 = settingsAll?.schedulesView?.school_year || '';
@@ -205,6 +206,32 @@ export default function Layout({ children }) {
     const t = setTimeout(() => setRouteBusy(false), 350);
     return () => clearTimeout(t);
   }, [loc.pathname]);
+
+  // Open Login modal automatically on /login route ONLY if not authenticated
+  React.useEffect(() => {
+    try {
+      const path = String(loc?.pathname || '');
+      if (path !== '/login') return;
+      if (user) {
+        // Already logged in: ensure modal is closed and redirect to home
+        if (loginDisc.isOpen) loginDisc.onClose();
+        navigate('/', { replace: true });
+        return;
+      }
+      if (!loginDisc.isOpen) loginDisc.onOpen();
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc.pathname, user]);
+
+  // When login modal closes while at /login and user is authenticated, navigate back to home
+  React.useEffect(() => {
+    try {
+      const atLogin = String(loc?.pathname || '') === '/login';
+      if (atLogin && user && !loginDisc.isOpen) {
+        navigate('/', { replace: true });
+      }
+    } catch {}
+  }, [loginDisc.isOpen, loc.pathname, navigate, user]);
 
   // Guest tracking: on route change, always touch with current route; prompt if no record
   React.useEffect(() => {

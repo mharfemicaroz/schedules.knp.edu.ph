@@ -67,6 +67,8 @@ function App() {
           <Layout>
             <Routes>
               <Route path="/" element={<VisualMap />} />
+              {/* Alias route to open login modal via Layout listener */}
+              <Route path="/login" element={<VisualMap />} />
               <Route path="/evaluation" element={<Evaluation />} />
               <Route path="/evaluation/:token" element={<EvaluationView />} />
               <Route path="/overview/calendar" element={<AcademicCalendar />} />
