@@ -92,6 +92,22 @@ export default function CoursesView() {
   const isAdmin = (role === 'admin' || role === 'manager');
   const settingsLoad = settings?.schedulesLoad || { school_year: '', semester: '' };
   const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
+  const [allowedDepts, setAllowedDepts] = React.useState(null); // null=unknown, []=none
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!authUser?.id || isAdmin) { if (alive) setAllowedDepts(null); return; }
+        const rows = await api.getUserDepartmentsByUser(authUser.id);
+        const list = Array.isArray(rows) ? rows : [];
+        const codes = Array.from(new Set(list.map(r => String(r.department || '').toUpperCase()).filter(Boolean)));
+        if (alive) setAllowedDepts(codes);
+      } catch {
+        if (alive) setAllowedDepts([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, [authUser?.id, isAdmin]);
   // Local prospectus cache (unfiltered)
   const [allProspectus, setAllProspectus] = React.useState([]);
   const blocks = useSelector(selectBlocks);
@@ -133,8 +149,9 @@ export default function CoursesView() {
 
   const courseOptions = React.useMemo(() => {
     const wantSem = normalizeSem(settingsLoad?.semester || '');
-    const list = (allProspectus || []).filter(p => {
-      const okProg = !program || String(p.programcode || p.program || '').toUpperCase().includes(String(program).toUpperCase());
+    let list = (allProspectus || []).filter(p => {
+      const progStr = String(p.programcode || p.program || '');
+      const okProg = !program || progStr.toUpperCase().includes(String(program).toUpperCase());
       const okYear = !year || String(p.yearlevel || '').includes(String(year));
       const okSem = !wantSem || normalizeSem(p.semester) === wantSem;
       if (!okProg || !okYear || !okSem) return false;
@@ -142,12 +159,19 @@ export default function CoursesView() {
       const hay = norm(p.courseName || p.course_name || p.courseTitle || p.course_title || '');
       return hay.includes(norm(query));
     });
+    // Restrict to allowed departments for non-admin users
+    try {
+      if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
+        const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
+        list = list.filter(p => allow.has(String(p.programcode || p.program || '').toUpperCase()));
+      }
+    } catch {}
     // Unique by code+title
     const keyOf = (p) => `${normCode(p.courseName || p.course_name)}|${norm(p.courseTitle || p.course_title)}`;
     const map = new Map();
     list.forEach(p => { const k = keyOf(p); if (!map.has(k)) map.set(k, p); });
     return Array.from(map.values()).sort((a,b) => String(a.courseName || '').localeCompare(String(b.courseName || '')));
-  }, [allProspectus, program, year, query, settingsLoad?.semester]);
+  }, [allProspectus, program, year, query, settingsLoad?.semester, allowedDepts, isAdmin]);
 
   const scopedCourses = React.useMemo(() => {
     const sy = String(settingsLoad?.school_year || '').trim();
@@ -181,13 +205,22 @@ export default function CoursesView() {
     const fromPros = Array.from(new Set((allProspectus || [])
       .map(p => String(p.programcode || p.program || '').toUpperCase())
       .filter(Boolean)));
-    if (fromPros.length > 0) return fromPros.sort();
-    // Fallback to programs derived from blocks if Prospectus is unavailable
-    const fromBlocks = Array.from(new Set((blocks || [])
-      .map(b => parseBlockMeta(b.blockCode).programcode)
-      .filter(Boolean)));
-    return fromBlocks.sort();
-  }, [allProspectus, blocks]);
+    let out = fromPros;
+    if (out.length === 0) {
+      // Fallback to programs derived from blocks if Prospectus is unavailable
+      const fromBlocks = Array.from(new Set((blocks || [])
+        .map(b => parseBlockMeta(b.blockCode).programcode)
+        .filter(Boolean)));
+      out = fromBlocks;
+    }
+    try {
+      if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
+        const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
+        out = out.filter(p => allow.has(String(p || '').toUpperCase()));
+      }
+    } catch {}
+    return out.slice().sort();
+  }, [allProspectus, blocks, allowedDepts, isAdmin]);
 
   const yearOptions = React.useMemo(() => [
     { value: '1', label: '1st Year' },
