@@ -183,7 +183,14 @@ export default function AdminEvaluations() {
           setSummaryCtx(ctx);
         } catch {}
       }
-      const search = new URLSearchParams({ mode, id: String(id) });
+      const search = new URLSearchParams();
+      search.set('mode', String(mode));
+      if (mode === 'student') {
+        const studentName = String(ctx?.student || ctx?.student_name || title || '').trim();
+        if (studentName) search.set('student', studentName);
+      } else {
+        search.set('id', String(id));
+      }
       const data = await apiService.requestAbs(`/evaluations/summary?${search.toString()}`, { method: 'GET' });
       setSummary(data || null);
     } catch {
