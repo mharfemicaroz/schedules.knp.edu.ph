@@ -98,6 +98,11 @@ export default function AdminEvaluations() {
 
   React.useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Clear previous rows immediately when switching view to avoid carry-over display
+  React.useEffect(() => {
+    setRows([]);
+  }, [view]);
+
   // Load prospectus for select options (programs, courses)
   const opts = useSelector(selectProspectusFilterOptions);
   const allPros = useSelector(selectAllProspectus);
