@@ -3231,7 +3231,8 @@ export default function CourseLoading() {
           createdCount++;
         }
       }
-      setRows(prev => prev.map(r => r._selected ? { ...r, _status: 'Assigned', _existingId: (r._existingId || null) } : r));
+      // Mark saved rows as assigned and clear their selection to avoid confusion
+      setRows(prev => prev.map(r => r._selected ? { ...r, _status: 'Assigned', _existingId: (r._existingId || null), _selected: false } : r));
       // Refresh local schedules cache for the current block so the UI persists
       try {
         const q = new URLSearchParams();
