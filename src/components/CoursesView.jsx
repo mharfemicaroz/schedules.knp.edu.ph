@@ -5,7 +5,7 @@ import { Fade,
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
   AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter
 } from '@chakra-ui/react';
-import { FiUpload, FiSearch, FiRefreshCw } from 'react-icons/fi';
+import { FiUpload, FiSearch, FiRefreshCw, FiPrinter } from 'react-icons/fi';
 import { useSelector, useDispatch } from 'react-redux';
 import { loadAllSchedules } from '../store/dataThunks';
 // Using a local, unfiltered Prospectus dataset for independence from other views
@@ -20,6 +20,7 @@ import ScheduleHistoryModal from './ScheduleHistoryModal';
 import AssignmentRow from './AssignmentRow';
 import useFaculties from '../hooks/useFaculties';
 import api from '../services/apiService';
+import { buildTable, printContent } from '../utils/printDesign';
 
 function parseBlockMeta(blockCode) {
   const s = String(blockCode || '').trim();
@@ -119,6 +120,7 @@ export default function CoursesView() {
   const [query, setQuery] = React.useState('');
   const [selectedCourse, setSelectedCourse] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
+  const canLoad = (isAdmin || role === 'registrar' || (Array.isArray(allowedDepts) && allowedDepts.length > 0));
 
   // Load full Prospectus list once (independent from other views)
   React.useEffect(() => {
@@ -318,6 +320,8 @@ export default function CoursesView() {
   const anySelected = rows.some(r => r._selected);
   const canSave = anySelected && rows.filter(r => r._selected).every(r => r._term && r._time && (r._faculty || r._facultyId) && !r._checking && !r._conflict);
   const [saving, setSaving] = React.useState(false);
+  const [lockTarget, setLockTarget] = React.useState(null); // true=lock, false=unlock
+  const [lockIdxs, setLockIdxs] = React.useState([]);
 
   const checkRowConflict = async (i, candRow) => {
     const row = candRow || rows[i];
@@ -674,6 +678,64 @@ export default function CoursesView() {
     }
   };
 
+  const requestBulkLockChange = (nextLocked) => {
+    const idxs = rows.map((r,i) => (r._selected && r._existingId ? i : -1)).filter(i => i >= 0);
+    if (idxs.length === 0) return;
+    setLockIdxs(idxs);
+    setLockTarget(!!nextLocked);
+    setLockOpen(true);
+  };
+
+  const confirmLockChange = async () => {
+    if (!isAdmin && lockTarget === false) {
+      setLockOpen(false);
+      setLockIdxs([]);
+      setLockTarget(null);
+      toast({ title: 'Unauthorized', description: 'Only admin can unlock schedules.', status: 'warning' });
+      return;
+    }
+    const idxs = lockIdxs.slice();
+    if (idxs.length === 0) { setLockOpen(false); return; }
+    const nextLocked = !!lockTarget;
+    setLockBusy(true);
+    try {
+      let count = 0;
+      for (const idx of idxs) {
+        const r = rows[idx];
+        if (!r || !r._existingId) continue;
+        await api.updateSchedule(r._existingId, { lock: nextLocked ? 'yes' : 'no', is_locked: nextLocked });
+        count++;
+      }
+      if (count > 0) await reloadMapping();
+      setRows(prev => prev.map((r,i) => idxs.includes(i) ? { ...r, _locked: nextLocked } : r));
+      toast({ title: nextLocked ? 'Locked' : 'Unlocked', description: `${count} schedule(s) ${nextLocked ? 'locked' : 'unlocked'}.`, status: 'success' });
+    } catch (e) {
+      toast({ title: 'Action failed', description: e?.message || `Could not ${nextLocked ? 'lock' : 'unlock'} schedules.`, status: 'error' });
+    } finally {
+      setLockBusy(false);
+      setLockOpen(false);
+      setLockIdxs([]);
+      setLockTarget(null);
+    }
+  };
+
+  const onPrintCourse = () => {
+    if (!Array.isArray(rows) || rows.length === 0) { toast({ status: 'info', title: 'Nothing to print' }); return; }
+    const code = selectedCourse?.courseName || selectedCourse?.code || '';
+    const title = selectedCourse?.courseTitle || selectedCourse?.title || '';
+    const prog = String(program || selectedCourse?.programcode || selectedCourse?.program || '').toUpperCase();
+    const yr = String(year || selectedCourse?.yearlevel || '');
+    const headers = ['Block', 'Term', 'Day', 'Time', 'Faculty'];
+    const body = rows.map(r => [r.blockCode || '-', r._term || '-', r._day || '-', r._time || '-', r._faculty || '-']);
+    const bodyHtml = buildTable(headers, body);
+    const titleText = `Course Mapping: ${code} ${title ? `- ${title}` : ''}`.trim();
+    const subtitle = [prog && `Program ${prog}`, yr && `Year ${yr}`, settingsLoad?.semester && `${settingsLoad.semester}`, settingsLoad?.school_year && `SY ${settingsLoad.school_year}`]
+      .filter(Boolean).join(' • ');
+    const prep = authUser?.username || authUser?.email || 'User';
+    const preparedRole = (authUser?.role || '').toString();
+    printContent({ title: titleText, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
+  };
+
   return (
     <HStack align="start" spacing={3}>
       <Box w={{ base: '100%', lg: '320px' }} borderWidth="1px" borderColor={border} rounded="lg" p={3} bg={bg}>
@@ -747,6 +809,7 @@ export default function CoursesView() {
                 <Button size="sm" leftIcon={<FiUpload />} colorScheme="blue" onClick={saveSelected} isDisabled={!canSave || saving} isLoading={saving}>
                   Save Selected
                 </Button>
+                <Button size="sm" leftIcon={<FiPrinter />} variant="outline" onClick={onPrintCourse} isDisabled={loading || rows.length === 0}>Print</Button>
                 <Divider orientation="vertical" />
                 <Badge colorScheme={swapA ? 'blue' : 'gray'}>A</Badge>
                 <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapA ? swapA.label : 'Add a schedule to slot A'}</Text>
@@ -756,6 +819,13 @@ export default function CoursesView() {
                 <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapB ? swapB.label : 'Add a schedule to slot B'}</Text>
                 {swapB && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('B')}>Clear</Button>}
                 <Button size="sm" leftIcon={<FiRefreshCw />} colorScheme="blue" onClick={swapNow} isDisabled={!swapA || !swapB || swapBusy} isLoading={swapBusy}>Swap Now</Button>
+                <Divider orientation="vertical" />
+                <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
+                  Lock Selected
+                </Button>
+                <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
+                  Unlock Selected
+                </Button>
               </HStack>
             </Box>
             <VStack align="stretch" spacing={0} divider={<Divider borderColor={border} />}>
@@ -837,33 +907,41 @@ export default function CoursesView() {
       {/* History modal */}
       <ScheduleHistoryModal scheduleId={histScheduleId} isOpen={histOpen} onClose={()=>{ setHistOpen(false); setHistScheduleId(null); }} />
 
-      {/* Lock/Unlock confirmation */}
-      <AlertDialog isOpen={lockOpen} onClose={()=>{ if (!lockBusy) { setLockOpen(false); setLockIndex(null); } }} leastDestructiveRef={cancelRef}>
+      {/* Lock/Unlock confirmation (supports single row and bulk) */}
+      <AlertDialog isOpen={lockOpen} onClose={()=>{ if (!lockBusy) { setLockOpen(false); setLockIndex(null); setLockIdxs([]); setLockTarget(null); } }} leastDestructiveRef={cancelRef}>
         <AlertDialogOverlay>
           <AlertDialogContent>
-            <AlertDialogHeader>{lockNext ? 'Lock schedule?' : 'Unlock schedule?'}</AlertDialogHeader>
+            <AlertDialogHeader>{(Array.isArray(lockIdxs) && lockIdxs.length>0 ? lockTarget : lockNext) ? (Array.isArray(lockIdxs) && lockIdxs.length>0 ? 'Lock selected schedule(s)?' : 'Lock schedule?') : (Array.isArray(lockIdxs) && lockIdxs.length>0 ? 'Unlock selected schedule(s)?' : 'Unlock schedule?')}</AlertDialogHeader>
             <AlertDialogBody>
-              {lockNext ? 'This will lock the schedule to prevent further edits.' : 'This will unlock the schedule for editing.'}
+              {(Array.isArray(lockIdxs) && lockIdxs.length>0 ? lockTarget : lockNext)
+                ? 'This will lock the schedule(s) to prevent further edits.'
+                : 'This will unlock the schedule(s) for editing.'}
             </AlertDialogBody>
             <AlertDialogFooter>
-              <Button ref={cancelRef} onClick={()=>{ if (!lockBusy) { setLockOpen(false); setLockIndex(null); } }}>Cancel</Button>
-              <Button colorScheme={lockNext ? 'blue' : 'gray'} ml={3} isLoading={lockBusy} onClick={async ()=>{
-                if (lockIndex == null) return;
-                const r = rows[lockIndex];
-                if (!r || !r._existingId) { setLockOpen(false); setLockIndex(null); return; }
-                setLockBusy(true);
-                try {
-                  await api.updateSchedule(r._existingId, { lock: lockNext ? 'yes' : 'no' });
-                  await reloadMapping();
-                  toast({ status: 'success', title: lockNext ? 'Locked' : 'Unlocked' });
-                } catch (e) {
-                  toast({ status: 'error', title: 'Update failed', description: e?.message });
-                } finally {
-                  setLockBusy(false);
-                  setLockOpen(false);
-                  setLockIndex(null);
-                }
-              }}>{lockNext ? 'Lock' : 'Unlock'}</Button>
+              <Button ref={cancelRef} onClick={()=>{ if (!lockBusy) { setLockOpen(false); setLockIndex(null); setLockIdxs([]); setLockTarget(null); } }}>Cancel</Button>
+              <Button colorScheme={(Array.isArray(lockIdxs) && lockIdxs.length>0 ? lockTarget : lockNext) ? 'blue' : 'gray'} ml={3} isLoading={lockBusy}
+                onClick={async ()=>{
+                  if (Array.isArray(lockIdxs) && lockIdxs.length>0) {
+                    await confirmLockChange();
+                    return;
+                  }
+                  if (lockIndex == null) return;
+                  const r = rows[lockIndex];
+                  if (!r || !r._existingId) { setLockOpen(false); setLockIndex(null); return; }
+                  setLockBusy(true);
+                  try {
+                    await api.updateSchedule(r._existingId, { lock: lockNext ? 'yes' : 'no' });
+                    await reloadMapping();
+                    toast({ status: 'success', title: lockNext ? 'Locked' : 'Unlocked' });
+                  } catch (e) {
+                    toast({ status: 'error', title: 'Update failed', description: e?.message });
+                  } finally {
+                    setLockBusy(false);
+                    setLockOpen(false);
+                    setLockIndex(null);
+                  }
+                }}
+              >{(Array.isArray(lockIdxs) && lockIdxs.length>0 ? lockTarget : lockNext) ? 'Lock' : 'Unlock'}</Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialogOverlay>
@@ -1042,6 +1120,7 @@ export default function CoursesView() {
         semester={settingsLoad?.semester}
         attendanceStats={attendanceStatsMap}
       />
+      {/* Bulk Lock/Unlock confirmation (reuses lockOpen/lockBusy dialog; single-lock dialog handles idx flows) */}
     </HStack>
   );
 }
