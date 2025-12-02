@@ -323,6 +323,74 @@ export default function CoursesView() {
   const [lockTarget, setLockTarget] = React.useState(null); // true=lock, false=unlock
   const [lockIdxs, setLockIdxs] = React.useState([]);
 
+  // ---------------------------- Load Limit Guard (non-admin) ----------------------------
+  const normalizeName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const findFacultyById = (id) => {
+    try { return (facultyOptions || []).find(f => String(f.id) === String(id)) || null; } catch (e) { return null; }
+  };
+  const findFacultyByName = (name) => {
+    const key = normalizeName(name);
+    try { return (facultyOptions || []).find(f => normalizeName(f.name || f.faculty || f.label) === key) || null; } catch (e) { return null; }
+  };
+  const employmentOf = (fac) => {
+    const v = String(fac?.employment || '').toLowerCase();
+    return v.includes('part') ? 'part-time' : 'full-time';
+  };
+  const maxUnitsFor = (fac) => employmentOf(fac) === 'part-time' ? 12 : 36;
+
+  const ensureFacultyLoadLimitsForRows = async (rowsToApply) => {
+    const nonAdminMapped = (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0);
+    if (!nonAdminMapped) return true;
+    const incByFaculty = new Map();
+    for (const r of rowsToApply) {
+      const targetId = r._facultyId != null ? r._facultyId : null;
+      let targetName = r._faculty || '';
+      if (!targetName && targetId != null) {
+        const meta = findFacultyById(targetId);
+        targetName = meta?.name || meta?.faculty || meta?.label || '';
+      }
+      if (!(targetId || targetName)) continue;
+      const existingRow = r._existingId ? (existing || []).find(s => String(s.id) === String(r._existingId)) : null;
+      const existingName = existingRow ? (existingRow.instructor || existingRow.faculty || '') : '';
+      const same = existingRow ? (targetId != null ? String(existingRow.facultyId || existingRow.faculty_id || '') === String(targetId)
+                                   : normalizeName(targetName) === normalizeName(existingName)) : false;
+      const inc = same ? 0 : (Number(r.unit || 0) || 0);
+      if (inc <= 0) continue;
+      const key = targetId != null ? `id:${targetId}` : `nm:${normalizeName(targetName)}`;
+      incByFaculty.set(key, (incByFaculty.get(key) || 0) + inc);
+    }
+    for (const [key, addUnits] of incByFaculty.entries()) {
+      try {
+        const isId = key.startsWith('id:');
+        const ident = key.slice(3);
+        const meta = isId ? findFacultyById(ident) : findFacultyByName(ident);
+        const name = meta?.name || meta?.faculty || meta?.label || '';
+        const max = maxUnitsFor(meta);
+        let current = 0;
+        const sy = settingsLoad?.school_year || '';
+        const sem = settingsLoad?.semester || '';
+        if (meta?.id != null) {
+          try { const lr = await api.getInstructorLoadById(meta.id, { schoolyear: sy, semester: sem }); current = Number(lr?.loadUnits || 0); } catch (e) { current = 0; }
+        } else if (name) {
+          try {
+            const qs = new URLSearchParams();
+            if (sy) qs.set('schoolyear', sy); if (sem) qs.set('semester', sem);
+            const resp = await api.request(`/instructor/${encodeURIComponent(name)}/load${qs.toString()?`?${qs.toString()}`:''}`);
+            current = Number(resp?.loadUnits || 0);
+          } catch (e) { current = 0; }
+        }
+        const proposed = current + Number(addUnits || 0);
+        if (proposed > max) {
+          toast({ title: 'Load limit exceeded', description: `${name}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addUnits} → ${proposed}.`, status: 'warning' });
+          return false;
+        }
+      } catch (e) {
+        toast({ title: 'Load check failed', description: 'Could not verify faculty load.', status: 'error' });
+        return false;
+      }
+    }
+    return true;
+  };
   const checkRowConflict = async (i, candRow) => {
     const row = candRow || rows[i];
     if (!row) return;
@@ -627,6 +695,9 @@ export default function CoursesView() {
     if (chosen.length === 0) { toast({ title: 'Nothing to save', status: 'info' }); return; }
     setSaving(true);
     try {
+      // Load limit guard for non-admin users
+      const okLimit = await ensureFacultyLoadLimitsForRows(chosen);
+      if (!okLimit) { setSaving(false); return; }
       let created = 0, updated = 0;
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];

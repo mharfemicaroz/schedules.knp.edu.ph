@@ -665,7 +665,8 @@ export default function CourseLoading() {
     const v = String(fac?.employment || '').toLowerCase();
     return v.includes('part') ? 'part-time' : 'full-time';
   };
-  const maxUnitsFor = (fac) => employmentOf(fac) === 'part-time' ? 12 : 6;
+  // Enforce 12 units for part-time, 24 units for full-time
+  const maxUnitsFor = (fac) => employmentOf(fac) === 'part-time' ? 12 : 36;
   const getIntendedFacultyName = (r) => {
     if (r._facultyId != null) {
       const fac = findFacultyById(r._facultyId);
