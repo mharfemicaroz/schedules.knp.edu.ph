@@ -985,12 +985,48 @@ export default function CourseLoading() {
       String(r.room || selectedBlock?.room || ''),
       String(r._faculty || r.faculty || r.instructor || ''),
     ]);
+    const totalUnits = sorted.reduce((sum, r) => {
+      const v = Number(r.unit ?? r.units ?? 0);
+      return sum + (Number.isFinite(v) ? v : 0);
+    }, 0);
+    // Term-wise unit subtotals (1st / 2nd / Sem)
+    const normShort = (t) => {
+      const v = String(t || '').trim().toLowerCase();
+      if (!v) return '';
+      if (v.startsWith('1')) return '1st';
+      if (v.startsWith('2')) return '2nd';
+      if (v.startsWith('s')) return 'Sem';
+      return '';
+    };
+    const termSums = { '1st': 0, '2nd': 0, 'Sem': 0 };
+    sorted.forEach(r => {
+      const k = normShort(r._term || r.term);
+      if (k && Object.prototype.hasOwnProperty.call(termSums, k)) {
+        const u = Number(r.unit ?? r.units ?? 0);
+        if (Number.isFinite(u)) termSums[k] += u;
+      }
+    });
+    const summaryPairs = [];
+    if (termSums['1st'] > 0) summaryPairs.push(['1st Term Units', termSums['1st']]);
+    if (termSums['2nd'] > 0) summaryPairs.push(['2nd Term Units', termSums['2nd']]);
+    if (termSums['Sem'] > 0) summaryPairs.push(['Sem Units', termSums['Sem']]);
+    summaryPairs.push(['Total Units', totalUnits]);
+    const summaryRowsHtml = [];
+    for (let i = 0; i < summaryPairs.length; i += 2) {
+      const [l1, v1] = summaryPairs[i];
+      const p2 = summaryPairs[i + 1] || ['', ''];
+      const l2 = p2[0], v2 = p2[1];
+      summaryRowsHtml.push(`<tr><th>${esc(l1)}</th><td>${esc(String(v1))}</td><th>${esc(l2)}</th><td>${v2 === '' ? '' : esc(String(v2))}</td></tr>`);
+    }
+    const termSummaryHtml = `<table class="prt-table"><tbody>${summaryRowsHtml.join('')}</tbody></table>`;
     const bodyHtml = [
       `<table class="prt-table"><tbody>
         <tr><th>Block Code</th><td>${esc(selectedBlock.blockCode || '')}</td><th>Session</th><td>${esc(selectedBlock.session || '')}</td></tr>
         <tr><th>Rooms</th><td colspan="3">${esc(String(selectedBlock.room || ''))}</td></tr>
+        <tr><th>Total Units</th><td>${esc(String(totalUnits))}</td><th>Courses</th><td>${esc(String(sorted.length))}</td></tr>
       </tbody></table>`,
-      buildTable(headers, bodyRows)
+      buildTable(headers, bodyRows),
+      termSummaryHtml
     ].join('');
     const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
     const preparedRole = (() => {
@@ -1115,12 +1151,48 @@ export default function CourseLoading() {
       String(r.room || ''),
       String(r.section || r.blockCode || ''),
     ]);
+    const totalUnits = sorted.reduce((sum, r) => {
+      const v = Number(r.unit ?? r.units ?? 0);
+      return sum + (Number.isFinite(v) ? v : 0);
+    }, 0);
+    // Term-wise unit subtotals for faculty
+    const normShortF = (t) => {
+      const v = String(t || '').trim().toLowerCase();
+      if (!v) return '';
+      if (v.startsWith('1')) return '1st';
+      if (v.startsWith('2')) return '2nd';
+      if (v.startsWith('s')) return 'Sem';
+      return '';
+    };
+    const termSumsF = { '1st': 0, '2nd': 0, 'Sem': 0 };
+    sorted.forEach(r => {
+      const k = normShortF(r.term);
+      if (k && Object.prototype.hasOwnProperty.call(termSumsF, k)) {
+        const u = Number(r.unit ?? r.units ?? 0);
+        if (Number.isFinite(u)) termSumsF[k] += u;
+      }
+    });
+    const summaryPairsF = [];
+    if (termSumsF['1st'] > 0) summaryPairsF.push(['1st Term Units', termSumsF['1st']]);
+    if (termSumsF['2nd'] > 0) summaryPairsF.push(['2nd Term Units', termSumsF['2nd']]);
+    if (termSumsF['Sem'] > 0) summaryPairsF.push(['Sem Units', termSumsF['Sem']]);
+    summaryPairsF.push(['Total Units', totalUnits]);
+    const summaryRowsHtmlF = [];
+    for (let i = 0; i < summaryPairsF.length; i += 2) {
+      const [l1, v1] = summaryPairsF[i];
+      const p2 = summaryPairsF[i + 1] || ['', ''];
+      const l2 = p2[0], v2 = p2[1];
+      summaryRowsHtmlF.push(`<tr><th>${esc(l1)}</th><td>${esc(String(v1))}</td><th>${esc(l2)}</th><td>${v2 === '' ? '' : esc(String(v2))}</td></tr>`);
+    }
+    const termSummaryHtmlF = `<table class=\"prt-table\"><tbody>${summaryRowsHtmlF.join('')}</tbody></table>`;
+
     const metaHtml = `<table class="prt-table"><tbody>
       <tr><th>Department</th><td>${esc(f.department || f.dept || '')}</td><th>Employment</th><td>${esc(f.employment || '')}</td></tr>
       <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
       <tr><th>Load Release Units</th><td>${esc(String(f.loadReleaseUnits ?? f.load_release_units ?? 0))}</td><th>Schedules</th><td>${esc(String(list.length))}</td></tr>
+      <tr><th>Total Units</th><td>${esc(String(totalUnits))}</td><th></th><td></td></tr>
     </tbody></table>`;
-    const bodyHtml = [metaHtml, buildTable(headers, bodyRows)].join('');
+    const bodyHtml = [metaHtml, buildTable(headers, bodyRows), termSummaryHtmlF].join('');
     // FacultyDetail-style layout triggers conforme signature block (based on title prefix)
     const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
     const preparedRole = (() => {
