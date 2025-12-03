@@ -8,7 +8,7 @@ import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody
 } from '@chakra-ui/react';
 import { Skeleton, SkeletonText, Fade } from '@chakra-ui/react';
-import { FiRefreshCw, FiUpload, FiSearch, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus, FiPrinter, FiClock, FiChevronDown } from 'react-icons/fi';
+import { FiRefreshCw, FiUpload, FiSearch, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus, FiPrinter, FiClock, FiChevronDown, FiShuffle } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadBlocksThunk } from '../store/blockThunks';
 import { selectBlocks } from '../store/blockSlice';
@@ -2294,6 +2294,13 @@ const prefill = hit ? {
     setFacSuggTargetId(null);
   };
 
+  // Fast lookup of row index to avoid O(n) rows.indexOf during render
+  const rowIndexMap = React.useMemo(() => {
+    const m = new Map();
+    (rows || []).forEach((r, i) => m.set(r, i));
+    return m;
+  }, [rows]);
+
   const grouped = React.useMemo(() => {
     const map = new Map();
     (rows || []).forEach(r => {
@@ -2314,30 +2321,26 @@ const prefill = hit ? {
     const out = [];
     map.forEach((arr, key) => {
       arr.sort((a, b) => {
+        const oaKey = Number.isFinite(a?._orderKey) ? a._orderKey : null;
+        const obKey = Number.isFinite(b?._orderKey) ? b._orderKey : null;
         const oa = termOrder(a._term);
         const ob = termOrder(b._term);
         if (oa !== ob) return oa - ob;
         const ta = normalizeTimeBlock(a._time);
         const tb = normalizeTimeBlock(b._time);
-        const sa = Number.isFinite(ta?.start) ? ta.start : Infinity;
-        const sb = Number.isFinite(tb?.start) ? tb.start : Infinity;
-        if (sa !== sb) return sa - sb;
-        const ca = String(a.course_name || a.courseName || '').toLowerCase();
-        const cb = String(b.course_name || b.courseName || '').toLowerCase();
-        return ca.localeCompare(cb);
+        const sa = Number.isFinite(ta?.start) ? ta.start : null;
+        const sb = Number.isFinite(tb?.start) ? tb.start : null;
+        if (sa != null && sb != null && sa !== sb) return sa - sb;
+        if (oaKey != null && obKey != null) return oaKey - obKey;
+        const ia = rowIndexMap.get(a) ?? 0;
+        const ib = rowIndexMap.get(b) ?? 0;
+        return ia - ib;
       });
       const [prog, yr] = key.split('|');
       out.push({ programcode: prog, yearlevel: yr, items: arr });
     });
     return out.sort((a,b) => a.programcode.localeCompare(b.programcode) || String(a.yearlevel).localeCompare(String(b.yearlevel)));
-  }, [rows]);
-
-  // Fast lookup of row index to avoid O(n) rows.indexOf during render
-  const rowIndexMap = React.useMemo(() => {
-    const m = new Map();
-    (rows || []).forEach((r, i) => m.set(r, i));
-    return m;
-  }, [rows]);
+  }, [rows, rowIndexMap]);
 
   const requestLockChange = (idx, nextLocked) => {
     setLockDialogIndex(idx);
@@ -2898,7 +2901,18 @@ const prefill = hit ? {
       }
 
       // Determine distribution for remaining non-Sem unassigned
-      const remaining = eligible.filter(e => e.force !== 'Sem');
+      const remaining = eligible
+        .filter(e => e.force !== 'Sem')
+        .map(e => {
+          const row = next[e.i];
+          const orderKey = Number.isFinite(row?._orderKey) ? row._orderKey : null;
+          return { ...e, orderKey };
+        })
+        .sort((a, b) => {
+          const oa = Number.isFinite(a.orderKey) ? a.orderKey : a.i;
+          const ob = Number.isFinite(b.orderKey) ? b.orderKey : b.i;
+          return oa - ob;
+        });
       const totalNonSem = fixedFirst + fixedSecond + remaining.length;
       const targetFirst = Math.ceil(totalNonSem / 2);
       let needFirst = Math.max(0, targetFirst - fixedFirst);
@@ -2920,6 +2934,31 @@ const prefill = hit ? {
       return next;
     });
   }, [viewMode, selectedBlock, rowIdentity]);
+
+  // When turning on auto arrange, clear terms for eligible unsaved/unlocked rows in the current block
+  React.useEffect(() => {
+    if (!autoArrange || viewMode !== 'blocks' || !selectedBlock) return;
+    setRows(prev => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      const blockCode = String(selectedBlock.blockCode || selectedBlock.section || '');
+      const next = prev.map(r => {
+        const blk = String(r.blockCode || r.section || '').trim();
+        if (blk !== blockCode) return r;
+        if (r._locked) return r;
+        if (r._existingId) return r;
+        const termNow = String(r._term || '').trim();
+        if (!termNow) return r;
+        const key = rowIdentity(r);
+        setAutoArrangeOriginalTerms(mapPrev => {
+          const m = new Map(mapPrev);
+          if (!m.has(key)) m.set(key, termNow);
+          return m;
+        });
+        return { ...r, _term: '' };
+      });
+      return next;
+    });
+  }, [autoArrange, viewMode, selectedBlock, rowIdentity]);
 
   // ---- Auto-assign time within a session (Morning/Afternoon/Evening)
   const normalizeBlockCode = React.useCallback((v) => String(v || '').trim().toLowerCase(), []);
@@ -3039,27 +3078,38 @@ const prefill = hit ? {
       freeSlotsByTerm.set(tk, free);
     });
     const assignments = [];
+    const orderVal = (row, idx) => Number.isFinite(row?._orderKey) ? row._orderKey : idx;
+    const firstTermRows = [];
+    const secondTermRows = [];
+    const semRows = [];
     clearedRows.forEach((r, idx) => {
       if (rowBlockKey(r) !== blockKey) return;
       if (r._locked) return;
       const tk = termKey(r._term || r.term || r.semester);
-      if (tk === 'Sem') {
-        const currentTime = r._time || r.time || r.schedule;
-        if (String(currentTime || '').trim().toUpperCase() !== 'TBA') {
-          assignments.push({ idx, time: 'TBA' });
-        }
-        return;
-      }
-      if (tk !== '1st' && tk !== '2nd') return;
-      const currentTime = r._time || r.time || r.schedule;
-      if (!isBlankTime(currentTime)) return;
-      const freeList = freeSlotsByTerm.get(tk) || [];
-      const nextSlot = freeList[0];
-      if (!nextSlot) return;
-      assignments.push({ idx, time: nextSlot.label });
-      freeList.shift();
-      freeSlotsByTerm.set(tk, freeList);
+      if (tk === 'Sem') { semRows.push({ row: r, idx, ord: orderVal(r, idx) }); return; }
+      if (tk === '1st') { firstTermRows.push({ row: r, idx, ord: orderVal(r, idx) }); return; }
+      if (tk === '2nd') { secondTermRows.push({ row: r, idx, ord: orderVal(r, idx) }); return; }
     });
+    const assignTermList = (list, tk) => {
+      const freeList = freeSlotsByTerm.get(tk) || [];
+      if (!freeList.length) return;
+      const sorted = list
+        .filter(({ row }) => isBlankTime(row._time || row.time || row.schedule))
+        .sort((a, b) => a.ord - b.ord);
+      sorted.forEach(({ idx }) => {
+        const slot = freeSlotsByTerm.get(tk)?.[0];
+        if (!slot) return;
+        assignments.push({ idx, time: slot.label });
+        const nextFree = (freeSlotsByTerm.get(tk) || []).slice(1);
+        freeSlotsByTerm.set(tk, nextFree);
+      });
+    };
+    assignTermList(firstTermRows, '1st');
+    assignTermList(secondTermRows, '2nd');
+    semRows
+      .filter(({ row }) => String(row._time || row.time || row.schedule || '').trim().toUpperCase() !== 'TBA')
+      .sort((a, b) => a.ord - b.ord)
+      .forEach(({ idx }) => assignments.push({ idx, time: 'TBA' }));
     if (assignments.length === 0) {
       toast({ title: 'Nothing to assign', description: 'No rows without time slots to fill for this session.', status: 'info' });
       return;
@@ -3090,6 +3140,48 @@ const prefill = hit ? {
     }));
     toast({ title: cleared ? 'Auto times cleared' : 'Nothing to clear', description: cleared ? `${cleared} unsaved rows reset.` : 'No unsaved auto-assigned times found.', status: cleared ? 'success' : 'info' });
   }, [viewMode, selectedBlock, setRows, toast, isBlankTime]);
+
+  const shuffleBlockRows = React.useCallback(() => {
+    if (viewMode !== 'blocks' || !selectedBlock) {
+      toast({ title: 'Select a block', description: 'Shuffle is available in Block view.', status: 'info' });
+      return;
+    }
+    setRows(prev => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      const key = normalizeBlockCode(selectedBlock.blockCode || selectedBlock.section || '');
+      const normalIdxs = [];
+      const specialIdxs = [];
+      prev.forEach((r, idx) => {
+        const blk = normalizeBlockCode(r.blockCode || r.section || selectedBlock.blockCode || selectedBlock.section || '');
+        if (blk === key && !r._existingId && !r._locked) {
+          (isSemestralCourseLike(r) ? specialIdxs : normalIdxs).push(idx);
+        }
+      });
+      const shuffleList = (list) => {
+        const arr = list.slice();
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+      };
+      const order = [...shuffleList(normalIdxs), ...shuffleList(specialIdxs)];
+      if (order.length <= 1) return prev;
+      const rankMap = new Map(order.map((idx, i) => [idx, i]));
+      return prev.map((r, idx) => {
+        if (rankMap.has(idx)) return { ...r, _orderKey: rankMap.get(idx), _term: '', _time: '' };
+        if (r._orderKey != null) {
+          const { _orderKey, ...rest } = r;
+          return rest;
+        }
+        return r;
+      });
+    });
+    // Drop any remembered terms from Auto Arrange so we don't revert to stale term assignments after shuffle
+    setAutoArrangeOriginalTerms(new Map());
+    setAutoArrange(false);
+    toast({ title: 'Order shuffled', description: 'Schedules reordered within this block.', status: 'success' });
+  }, [viewMode, selectedBlock, normalizeBlockCode, toast]);
 
   React.useEffect(() => {
     if (autoArrange && viewMode === 'blocks' && selectedBlock) {
@@ -3814,6 +3906,7 @@ const prefill = hit ? {
                         <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
                           Unlock Selected
                         </Button>
+                        <Button size="sm" variant="outline" leftIcon={<FiShuffle />} onClick={shuffleBlockRows}>Shuffle Order</Button>
                       </HStack>
                     </Box>
                   )}
@@ -4008,6 +4101,7 @@ const prefill = hit ? {
                       <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
                         Unlock Selected
                       </Button>
+                      <Button size="sm" variant="outline" leftIcon={<FiShuffle />} onClick={shuffleBlockRows}>Shuffle Order</Button>
                       <Tooltip label="Evenly distribute terms" hasArrow>
                         <HStack pl={2} spacing={2}>
                           <Switch size="sm" isChecked={autoArrange} onChange={(e)=>setAutoArrange(e.target.checked)} />
