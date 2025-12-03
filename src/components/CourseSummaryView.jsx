@@ -12,6 +12,7 @@ import {
   Tag,
   Button,
   useColorModeValue,
+  useBreakpointValue,
   Skeleton,
   SkeletonText,
   Progress,
@@ -19,7 +20,6 @@ import {
 } from '@chakra-ui/react';
 import { FiRefreshCw } from 'react-icons/fi';
 import { useSelector } from 'react-redux';
-import MiniBarChart from './MiniBarChart';
 import { selectSettings } from '../store/settingsSlice';
 import { selectBlocks } from '../store/blockSlice';
 import apiService from '../services/apiService';
@@ -33,6 +33,15 @@ const parseBlockProgram = (blockCode) => {
   // if pattern like BSED-SS-1A, capture before last dash-digit
   const parts = s.split(/\s+/)[0] || s;
   return normalizeProgramCode(parts);
+};
+const normalizeSemesterLabel = (v) => {
+  const s = String(v || '').trim().toLowerCase();
+  if (!s) return '';
+  if (s.startsWith('1')) return '1st Semester';
+  if (s.startsWith('2')) return '2nd Semester';
+  if (s.startsWith('s')) return 'Summer';
+  if (s.includes('summer')) return 'Summer';
+  return v;
 };
 
 function RadialGauge({ value = 0, total = 0, label, accent }) {
@@ -88,10 +97,9 @@ function StatCard({ label, value, tone, helper }) {
   );
 }
 
-function Donut({ assigned = 0, unassigned = 0 }) {
+function Donut({ assigned = 0, unassigned = 0, size = 160 }) {
   const total = Math.max(assigned + unassigned, 1);
   const pct = (assigned / total) * 100;
-  const size = 160;
   const stroke = 16;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
@@ -133,26 +141,27 @@ function Donut({ assigned = 0, unassigned = 0 }) {
 export default function CourseSummaryView() {
   const settings = useSelector(selectSettings);
   const blocks = useSelector(selectBlocks);
-  const defaultSy = settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || '';
-  const defaultSem = settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || '';
+  const donutSize = useBreakpointValue({ base: 140, sm: 160, md: 180, lg: 200 });
   const surface = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
 
-  const [schoolYear, setSchoolYear] = React.useState(defaultSy || '');
-  const [semester, setSemester] = React.useState(defaultSem || '');
+  const [schoolYear, setSchoolYear] = React.useState(settings?.schedulesLoad?.school_year || '');
+  const [semester, setSemester] = React.useState(normalizeSemesterLabel(settings?.schedulesLoad?.semester || ''));
   const [program, setProgram] = React.useState('');
   const [stats, setStats] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
+  const lastParamsRef = React.useRef(null);
 
-  const programChartData = React.useMemo(() => {
+  const programRows = React.useMemo(() => {
     const list = Array.isArray(stats?.byProgram) ? stats.byProgram : [];
     return list
       .map((p) => ({
-        key: p.programcode || 'N/A',
-        value: Number(p.count) || 0,
+        programcode: p.programcode || 'N/A',
+        count: Number(p.count) || 0,
+        assigned: Number(p.assigned) || 0,
       }))
-      .sort((a, b) => b.value - a.value);
+      .sort((a, b) => b.count - a.count);
   }, [stats]);
 
   const fetchStats = React.useCallback(async ({ sy, sem, prog }) => {
@@ -172,18 +181,26 @@ export default function CourseSummaryView() {
     }
   }, []);
 
+  // Sync defaults from settings when they load/change
   React.useEffect(() => {
-    fetchStats({ sy: defaultSy, sem: defaultSem, prog: '' });
-  }, [defaultSy, defaultSem, fetchStats]);
+    const newSy = settings?.schedulesLoad?.school_year || '';
+    const newSem = normalizeSemesterLabel(settings?.schedulesLoad?.semester || '');
+    setSchoolYear(newSy);
+    setSemester(newSem);
+  }, [settings?.schedulesLoad?.school_year, settings?.schedulesLoad?.semester]);
 
   React.useEffect(() => {
-    fetchStats({ sy: schoolYear, sem: semester, prog: program });
+    const params = { sy: schoolYear, sem: semester, prog: program };
+    const key = JSON.stringify(params);
+    if (lastParamsRef.current === key) return;
+    lastParamsRef.current = key;
+    fetchStats(params);
   }, [schoolYear, semester, program, fetchStats]);
 
   const semesterOptions = React.useMemo(() => ['', '1st Semester', '2nd Semester', 'Summer'], []);
 
   const schoolYearOptions = React.useMemo(() => {
-    const baseMatch = String(defaultSy || '').match(/(\d{4})/);
+    const baseMatch = String(settings?.schedulesLoad?.school_year || '').match(/(\d{4})/);
     const baseYear = baseMatch ? parseInt(baseMatch[1], 10) : new Date().getFullYear();
     const list = [];
     for (let offset = -3; offset <= 3; offset++) {
@@ -192,7 +209,7 @@ export default function CourseSummaryView() {
     }
     const uniq = Array.from(new Set(list));
     return [''].concat(uniq);
-  }, [defaultSy]);
+  }, [settings?.schedulesLoad?.school_year]);
 
   const programOptions = React.useMemo(() => {
     const fromBlocks = Array.isArray(blocks)
@@ -234,9 +251,9 @@ export default function CourseSummaryView() {
       </Box>
 
       <SimpleGrid columns={{ base: 1, md: 4 }} gap={4}>
-        <StatCard label="Total Prospectus" value={stats?.total ?? 0} tone="blue" helper="block-adjusted" />
-        <StatCard label="Assigned" value={stats?.assigned ?? 0} tone="green" helper="schedules mapped" />
-        <StatCard label="Unassigned" value={stats?.unassigned ?? 0} tone="orange" helper="remaining slots" />
+        <StatCard label="Total Required Schedules" value={stats?.total ?? 0} tone="blue" helper="block-adjusted" />
+        <StatCard label="Assigned Schedules" value={stats?.assigned ?? 0} tone="green" helper="schedules mapped" />
+        <StatCard label="Unassigned Schedules" value={stats?.unassigned ?? 0} tone="orange" helper="remaining slots" />
         <StatCard label="Total Blocks" value={stats?.totalBlocks ?? 0} tone="purple" helper="in this slice" />
       </SimpleGrid>
 
@@ -246,20 +263,47 @@ export default function CourseSummaryView() {
           {loading ? (
             <SkeletonText noOfLines={3} spacing="3" />
           ) : (
-            <Donut assigned={stats?.assigned ?? 0} unassigned={stats?.unassigned ?? 0} />
+            <Donut
+              assigned={stats?.assigned ?? 0}
+              unassigned={stats?.unassigned ?? 0}
+              size={donutSize || 160}
+            />
           )}
         </Box>
         <Box borderWidth="1px" borderColor={border} bg={surface} rounded="xl" p={4} boxShadow="sm">
           <Heading size="sm" mb={3}>Programs</Heading>
-          {loading ? (
-            <SkeletonText noOfLines={4} spacing="3" />
-          ) : (
-            <MiniBarChart
-              data={programChartData.length ? programChartData : [
-                { key: program || 'Program', value: stats?.total ?? 0 },
-              ]}
-              maxItems={6}
-            />
+          {loading && <SkeletonText noOfLines={4} spacing="3" />}
+          {!loading && programRows.length === 0 && (
+            <Text fontSize="sm" color="gray.500">No program data for this slice.</Text>
+          )}
+          {!loading && programRows.length > 0 && (
+            <VStack align="stretch" spacing={3}>
+              {programRows.map((p) => {
+                const total = Math.max(p.count, 1);
+                const assignedPct = Math.min(100, Math.max(0, (p.assigned / total) * 100));
+                const unassigned = Math.max(total - p.assigned, 0);
+                return (
+                  <Box key={p.programcode} borderWidth="1px" borderColor={border} rounded="md" p={3}>
+                    <HStack justify="space-between" mb={1}>
+                      <Text fontWeight="600" noOfLines={1}>{p.programcode}</Text>
+                      <Tag colorScheme="blue" size="sm">{p.count} total</Tag>
+                    </HStack>
+                    <Progress
+                      value={assignedPct}
+                      size="sm"
+                      colorScheme="green"
+                      borderRadius="full"
+                      mb={2}
+                      bg={useColorModeValue('red.100', 'red.900')}
+                    />
+                    <HStack spacing={3} fontSize="xs" color="gray.600">
+                      <Badge colorScheme="green">Assigned {p.assigned}</Badge>
+                      <Badge colorScheme="red">Unassigned {unassigned}</Badge>
+                    </HStack>
+                  </Box>
+                );
+              })}
+            </VStack>
           )}
         </Box>
       </SimpleGrid>
