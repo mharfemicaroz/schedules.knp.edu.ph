@@ -2,13 +2,13 @@
 import React from 'react';
 import {
   Box, HStack, VStack, Stack, Heading, Text, Input, IconButton, Button, Select, Divider,
-  useColorModeValue, Spinner, Badge, Tag, Wrap, WrapItem, useToast, Checkbox,
-  SimpleGrid, Tooltip,
+  useColorModeValue, Spinner, Badge, Tag, Wrap, WrapItem, useToast, Checkbox, Switch,
+  SimpleGrid, Tooltip, Menu, MenuButton, MenuList, MenuItem,
   AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody
 } from '@chakra-ui/react';
 import { Skeleton, SkeletonText, Fade } from '@chakra-ui/react';
-import { FiRefreshCw, FiUpload, FiSearch, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus, FiPrinter } from 'react-icons/fi';
+import { FiRefreshCw, FiUpload, FiSearch, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus, FiPrinter, FiClock, FiChevronDown } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadBlocksThunk } from '../store/blockThunks';
 import { selectBlocks } from '../store/blockSlice';
@@ -97,6 +97,21 @@ function normalizeProgramCode(s) { return String(s || '').toUpperCase().replace(
 function extractYearDigits(val) { const m = String(val ?? '').match(/(\d+)/); return m ? m[1] : ''; }
 // function normalizeSem(s) { const v = String(s || '').trim().toLowerCase(); if (!v) return ''; if (v.startsWith('1')) return '1st'; if (v.startsWith('2')) return '2nd'; if (v.startsWith('s')) return 'Sem'; return s; }
 function canonicalTerm(s) { return normalizeSem(s); }
+
+// Identify courses that should be Semestral by rule (NSTP/PE/Defense Tactics)
+function isSemestralCourseLike(row) {
+  const text = [row?.course_name, row?.courseName, row?.code, row?.course_title, row?.courseTitle, row?.title]
+    .filter(Boolean)
+    .map(String)
+    .join(' ')
+    .toUpperCase();
+  if (!text) return false;
+  if (text.includes('NSTP')) return true;
+  if (text.includes('PHYSICAL EDUCATION')) return true;
+  if (text.includes(' PE') || text.startsWith('PE') || text.includes('(PE')) return true;
+  if (text.includes('DEF TACT') || text.includes('DEFENSE TACT') || text.includes('DEFENSE TACTICS')) return true;
+  return false;
+}
 
 // --- UI subcomponents (unchanged structure) ---
 function BlockList({ items, selectedId, onSelect, loading, onProgramChange }) {
@@ -1333,13 +1348,13 @@ export default function CourseLoading() {
           const s = String(v || '').trim().toLowerCase();
           return s === 'yes' || s === 'true' || s === '1';
         })();
-        const prefill = hit ? {
-          _term: canonicalTerm(hit.term || ''),
-          _time: hit.schedule || hit.time || '',
-          _faculty: hit.facultyName || hit.faculty || hit.instructor || '',
-          _day: hit.day || 'MON-FRI',
-          room: hit.room || '',
-        } : { _term: '', _time: '', _faculty: '', _day: 'MON-FRI' };
+const prefill = hit ? {                                                                                                                               
+             _term: canonicalTerm(hit.term || ''),                                                                                                               
+              _time: hit.schedule || hit.time || '',                                                                                                              
+            _faculty: hit.facultyName || hit.faculty || hit.instructor || '',
+             _day: hit.day || 'MON-FRI',                                                                                                                         
+             room: hit.room || '',                                                                                                                               
+          } : { _term: '', _time: '', _faculty: '', _day: 'MON-FRI' };
         return {
           ...p,
           ...prefill,
@@ -1539,12 +1554,12 @@ export default function CourseLoading() {
               const v = hit?.lock; if (typeof v === 'boolean') return v; const s = String(v || '').trim().toLowerCase(); return s === 'yes' || s === 'true' || s === '1';
             })();
               const prefill = hit ? {
-                _term: canonicalTerm(hit.term || ''),
-                _time: hit.schedule || hit.time || '',
-                _faculty: hit.facultyName || hit.faculty || hit.instructor || '',
-                _day: hit.day || 'MON-FRI',
-                room: hit.room || '',
-              } : { _term: '', _time: '', _faculty: '', _day: 'MON-FRI' };
+                 _term: canonicalTerm(hit.term || ''),
+                 _time: hit.schedule || hit.time || '',
+                   _faculty: hit.facultyName || hit.faculty || hit.instructor || '',
+                 _day: hit.day || 'MON-FRI',
+                 room: hit.room || '',
+                } : { _term: '', _time: '', _faculty: '', _day: 'MON-FRI' };
               rowsByBlock.push({
                 ...p,
                 ...prefill,
@@ -2779,6 +2794,333 @@ export default function CourseLoading() {
   };
 
   const [swapBusy, setSwapBusy] = React.useState(false);
+  const [autoArrange, setAutoArrange] = React.useState(false);
+  const [autoArrangeOriginalTerms, setAutoArrangeOriginalTerms] = React.useState(new Map()); // key -> previous _term
+  
+
+  // Seamless tab switching: clear transient schedule state before switching views
+  const clearTransientState = React.useCallback(() => {
+    // Common schedule state
+    setRows([]);
+    setFreshCache([]);
+    setSelectedBlock(null);
+    setSelectedProgram('');
+    setYearOrder([]);
+    setLoadedYears([]);
+    setLoadingYear(false);
+    setAttendanceStatsMap(new Map());
+    setSaving(false);
+    setSwapBusy(false);
+    setSwapA(null);
+    setSwapB(null);
+
+    // Close program/block modals/dialogs
+    setSuggOpen(false); setSuggIndex(null); setSuggBusy(false); setSuggestions([]);
+    setConflictOpen(false); setConflictIndex(null);
+    setResolveOpen(false); setResolveBusy(false); setResolveRowIndex(null); setResolveConflictId(null); setResolveLabel('');
+    setLockDialogOpen(false); setLockDialogBusy(false); setLockDialogIndex(null); setLockDialogBulkIdxs([]); setLockDialogTarget(null);
+
+    // Faculty-specific state
+    setSelectedFaculty(null);
+    setFacLoading(false);
+    setFacultySchedules({ items: [], loading: false });
+    setFacSelected(new Set());
+    setFacEdits({});
+    setFacSuggOpen(false); setFacSuggBusy(false); setFacSuggPlans([]); setFacSuggTargetId(null);
+    setFacResolveOpen(false); setFacResolveBusy(false); setFacResolveIndex(null); setFacResolveConflictId(null); setFacResolveLabel('');
+    setFacLockOpen(false); setFacLockBusy(false); setFacLockTarget(null);
+    setAssignOpen(false); setAssignIndex(null);
+    setSchedAssignOpen(false);
+  }, []);
+
+  const switchViewMode = React.useCallback((next) => {
+    try { clearTransientState(); } catch {}
+    setAutoArrange(false);
+    setViewMode(next);
+  }, [clearTransientState]);
+
+  // compute a stable identity for a row within a block
+  const rowIdentity = React.useCallback((r) => {
+    const code = r?.course_name || r?.courseName || r?.code || '';
+    const title = r?.course_title || r?.courseTitle || r?.title || '';
+    const sec = r?.blockCode || r?.section || '';
+    const id = r?.id || r?._existingId || '';
+    return [String(id), String(code), String(title), String(sec)].join('|');
+  }, []);
+
+  const arrangeBlockTerms = React.useCallback(() => {
+    if (viewMode !== 'blocks' || !selectedBlock) return;
+    setRows(prev => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      const blockCode = String(selectedBlock?.blockCode || '');
+      const next = prev.slice();
+      const semFixed = new Set();
+      let fixedFirst = 0;
+      let fixedSecond = 0;
+      const eligible = [];
+
+      // First pass: respect already assigned terms; collect stats
+      for (let i = 0; i < next.length; i++) {
+        const r = next[i];
+        const rowBlock = String(r.blockCode || r.section || '');
+        if (blockCode && rowBlock && rowBlock !== blockCode) continue;
+        if (r?._locked) continue; // skip locked
+        const termNow = String(r?._term || '').trim();
+        if (termNow) {
+          const t = normalizeSem(termNow);
+          if (t === 'Sem') semFixed.add(i); else if (t === '1st') fixedFirst++; else if (t === '2nd') fixedSecond++;
+          continue; // do not change already-assigned term rows
+        }
+        // Unassigned term: classify
+        if (isSemestralCourseLike(r)) {
+          eligible.push({ i, force: 'Sem' });
+        } else {
+          eligible.push({ i, force: null });
+        }
+      }
+
+      // Assign forced Sem for NSTP/PE/Defense Tactics (only for unassigned)
+      for (const e of eligible) {
+        if (e.force === 'Sem') {
+          const idx = e.i;
+          const before = next[idx]._term;
+          if (!before) {
+            const key = rowIdentity(next[idx]);
+            setAutoArrangeOriginalTerms((mapPrev) => {
+              const m = new Map(mapPrev);
+              if (!m.has(key)) m.set(key, before || '');
+              return m;
+            });
+            next[idx] = { ...next[idx], _term: 'Sem' };
+            semFixed.add(idx);
+          }
+        }
+      }
+
+      // Determine distribution for remaining non-Sem unassigned
+      const remaining = eligible.filter(e => e.force !== 'Sem');
+      const totalNonSem = fixedFirst + fixedSecond + remaining.length;
+      const targetFirst = Math.ceil(totalNonSem / 2);
+      let needFirst = Math.max(0, targetFirst - fixedFirst);
+      // Assign remaining: first then second
+      for (let k = 0; k < remaining.length; k++) {
+        const idx = remaining[k].i;
+        const before = next[idx]._term;
+        if (before) continue; // already set somehow
+        const assign = needFirst > 0 ? '1st' : '2nd';
+        const key = rowIdentity(next[idx]);
+        setAutoArrangeOriginalTerms((mapPrev) => {
+          const m = new Map(mapPrev);
+          if (!m.has(key)) m.set(key, before || '');
+          return m;
+        });
+        next[idx] = { ...next[idx], _term: assign };
+        if (assign === '1st') needFirst--;
+      }
+      return next;
+    });
+  }, [viewMode, selectedBlock, rowIdentity]);
+
+  // ---- Auto-assign time within a session (Morning/Afternoon/Evening)
+  const normalizeBlockCode = React.useCallback((v) => String(v || '').trim().toLowerCase(), []);
+  const isBlankTime = React.useCallback((t) => {
+    const v = String(t ?? '').trim();
+    if (!v) return true;
+    const up = v.toUpperCase();
+    // Treat common placeholder values as empty
+    return up === 'TBA' || up === '-' || up === 'NA' || up === 'N/A' || up === 'NONE' || up === 'NULL' || up === '0' || up === 'TBD';
+  }, []);
+  const hasMissingTermInBlock = React.useMemo(() => {
+    if (!selectedBlock) return false;
+    const key = normalizeBlockCode(selectedBlock.blockCode || selectedBlock.section || '');
+    return rows.some(r => {
+      const blk = normalizeBlockCode(r.blockCode || r.section || selectedBlock.blockCode || selectedBlock.section || '');
+      if (blk !== key) return false;
+      if (r._existingId) return false; // allow existing saved schedules even if term is blank
+      const termVal = normalizeTermForCompare(r._term);
+      return !termVal;
+    });
+  }, [rows, selectedBlock, normalizeBlockCode]);
+  const autoAssignTimeDisabled = React.useMemo(() => {
+    if (!selectedBlock) return true;
+    if (!Array.isArray(rows) || rows.length === 0) return true;
+    if (hasMissingTermInBlock) return true;
+    return false;
+  }, [selectedBlock, rows, hasMissingTermInBlock]);
+  const sessionSlotsMap = React.useMemo(() => ({
+    morning: ['8-9AM', '9-10AM', '10-11AM', '11-12NN'],
+    afternoon: ['1-2PM', '2-3PM', '3-4PM', '4-5PM'],
+    evening: ['5-6PM', '6-7PM', '7-8PM', '8-9PM'],
+  }), []);
+  const sessionLabels = React.useMemo(() => ({
+    morning: 'Morning',
+    afternoon: 'Afternoon',
+    evening: 'Evening',
+  }), []);
+  const autoAssignTimeForSession = React.useCallback((sessionKey) => {
+    const slots = sessionSlotsMap[sessionKey];
+    if (!slots || slots.length === 0) return;
+    if (viewMode !== 'blocks' || !selectedBlock) {
+      toast({ title: 'Select a block', description: 'Auto-assign time is available in Block view.', status: 'info' });
+      return;
+    }
+    if (hasMissingTermInBlock) {
+      toast({ title: 'Set terms first', description: 'Auto time assignment requires all rows in the block to have a term (1st, 2nd, or Sem).', status: 'warning' });
+      return;
+    }
+    const blockKey = normalizeBlockCode(selectedBlock.blockCode || selectedBlock.section || '');
+    // Reset unsaved, unlocked rows in this block before re-populating
+    const clearedRows = rows.map(r => {
+      const sameBlock = normalizeBlockCode(r.blockCode || r.section || selectedBlock.blockCode || selectedBlock.section || '') === blockKey;
+      if (!sameBlock || r._existingId || r._locked) return r;
+      if (isBlankTime(r._time || r.time || r.schedule)) return r;
+      return { ...r, _time: '' };
+    });
+    setRows(clearedRows);
+    const busyRangesByTerm = new Map(); // termKey -> ranges
+    const matchesLoad = (rec) => {
+      const syWant = String(settingsLoad?.school_year || '').trim().toLowerCase();
+      const semWant = String(normalizeSem(settingsLoad?.semester || '')).toLowerCase();
+      const syVal = String(rec?.sy || rec?.schoolyear || rec?.schoolYear || rec?.school_year || '').trim().toLowerCase();
+      const semVal = String(normalizeSem(rec?.semester || rec?.term || '')).toLowerCase();
+      if (syWant && syVal && syWant !== syVal) return false;
+      if (semWant && semVal && semWant !== semVal) return false;
+      return true;
+    };
+    const pushBusy = (timeStr) => {
+      if (isBlankTime(timeStr)) return;
+      const rng = getTimeRange(timeStr);
+      if (!rng) return;
+      if (Number.isFinite(rng.start) || Number.isFinite(rng.end) || rng.key) busyRanges.push(rng);
+    };
+    const rowBlockKey = (r) => normalizeBlockCode(r.blockCode || r.section || selectedBlock.blockCode || selectedBlock.section || '');
+    const termKey = (t) => normalizeSem(t || '') || '';
+    clearedRows.forEach((r) => {
+      if (rowBlockKey(r) !== blockKey) return;
+      const tk = termKey(r._term || r.term || r.semester);
+      const t = r._time || r.time || r.schedule;
+      if (!isBlankTime(t)) {
+        if (tk) {
+          if (!busyRangesByTerm.has(tk)) busyRangesByTerm.set(tk, []);
+          const rng = getTimeRange(t);
+          if (rng) busyRangesByTerm.get(tk).push(rng);
+        }
+      }
+    });
+    const sourceBase = (freshCache && freshCache.length) ? freshCache : (existing || []);
+    sourceBase.forEach((s) => {
+      if (!matchesLoad(s)) return;
+      if (normalizeBlockCode(s.blockCode || s.section || selectedBlock.blockCode || selectedBlock.section || '') !== blockKey) return;
+      const tk = termKey(s.term || s.semester);
+      const t = s._time || s.schedule || s.time;
+      if (!isBlankTime(t)) {
+        if (tk) {
+          if (!busyRangesByTerm.has(tk)) busyRangesByTerm.set(tk, []);
+          const rng = getTimeRange(t);
+          if (rng) busyRangesByTerm.get(tk).push(rng);
+        }
+      }
+    });
+    const freeSlotsByTerm = new Map();
+    ['1st','2nd'].forEach((tk) => {
+      const baseBusy = (busyRangesByTerm.get(tk) || []).slice();
+      const free = [];
+      slots.forEach((label) => {
+        const rng = getTimeRange(label);
+        if (!rng) return;
+        const busyList = baseBusy;
+        const overlap = busyList.some((b) => timeRangesOverlap(b, rng));
+        if (!overlap) {
+          free.push({ label, range: rng });
+          busyList.push(rng);
+        }
+      });
+      busyRangesByTerm.set(tk, baseBusy);
+      freeSlotsByTerm.set(tk, free);
+    });
+    const assignments = [];
+    clearedRows.forEach((r, idx) => {
+      if (rowBlockKey(r) !== blockKey) return;
+      if (r._locked) return;
+      const tk = termKey(r._term || r.term || r.semester);
+      if (tk === 'Sem') {
+        const currentTime = r._time || r.time || r.schedule;
+        if (String(currentTime || '').trim().toUpperCase() !== 'TBA') {
+          assignments.push({ idx, time: 'TBA' });
+        }
+        return;
+      }
+      if (tk !== '1st' && tk !== '2nd') return;
+      const currentTime = r._time || r.time || r.schedule;
+      if (!isBlankTime(currentTime)) return;
+      const freeList = freeSlotsByTerm.get(tk) || [];
+      const nextSlot = freeList[0];
+      if (!nextSlot) return;
+      assignments.push({ idx, time: nextSlot.label });
+      freeList.shift();
+      freeSlotsByTerm.set(tk, freeList);
+    });
+    if (assignments.length === 0) {
+      toast({ title: 'Nothing to assign', description: 'No rows without time slots to fill for this session.', status: 'info' });
+      return;
+    }
+    assignments.forEach(({ idx, time }) => handleRowChange(idx, { _time: time }));
+    const remaining = Array.from(freeSlotsByTerm.values()).reduce((sum, list) => sum + (list ? list.length : 0), 0);
+    toast({
+      title: 'Times assigned',
+      description: `${assignments.length} ${assignments.length === 1 ? 'slot' : 'slots'} set for ${sessionLabels[sessionKey] || 'session'}${remaining > 0 ? `; ${remaining} slot(s) left open` : ''}.`,
+      status: 'success'
+    });
+  }, [sessionSlotsMap, sessionLabels, viewMode, selectedBlock, rows, freshCache, existing, normalizeBlockCode, handleRowChange, toast, isBlankTime, settingsLoad?.school_year, settingsLoad?.semester, hasMissingTermInBlock]);
+
+  const clearAutoAssignedTimes = React.useCallback(() => {
+    if (viewMode !== 'blocks' || !selectedBlock) {
+      toast({ title: 'Select a block', description: 'Clear auto time is available in Block view.', status: 'info' });
+      return;
+    }
+    let cleared = 0;
+    setRows(prev => prev.map(r => {
+      if (r._existingId || r._locked) return r; // keep saved schedules as-is
+      const currentTime = r._time || r.time || r.schedule;
+      if (!isBlankTime(currentTime)) {
+        cleared++;
+        return { ...r, _time: '' };
+      }
+      return r;
+    }));
+    toast({ title: cleared ? 'Auto times cleared' : 'Nothing to clear', description: cleared ? `${cleared} unsaved rows reset.` : 'No unsaved auto-assigned times found.', status: cleared ? 'success' : 'info' });
+  }, [viewMode, selectedBlock, setRows, toast, isBlankTime]);
+
+  React.useEffect(() => {
+    if (autoArrange && viewMode === 'blocks' && selectedBlock) {
+      arrangeBlockTerms();
+    }
+    // re-run when number of rows changes (new loads)
+  }, [autoArrange, viewMode, selectedBlock, rows.length, arrangeBlockTerms]);
+
+  // When toggling off, revert only the terms Auto Arrange changed, unless already saved/committed
+  React.useEffect(() => {
+    if (!autoArrange) {
+      setRows(prev => {
+        if (!prev || !autoArrangeOriginalTerms || autoArrangeOriginalTerms.size === 0) return prev;
+        const next = prev.slice();
+        const map = autoArrangeOriginalTerms;
+        for (let i = 0; i < next.length; i++) {
+          const r = next[i];
+          const key = rowIdentity(r);
+          if (!map.has(key)) continue;
+          // skip if this row is now committed (has existing id)
+          if (r && r._existingId) continue;
+          // revert term
+          const prevTerm = map.get(key) || '';
+          next[i] = { ...next[i], _term: prevTerm };
+        }
+        return next;
+      });
+      // clear originals after revert
+      setAutoArrangeOriginalTerms(new Map());
+    }
+  }, [autoArrange, autoArrangeOriginalTerms, rowIdentity]);
   const swapSelected = async () => {
     const idxs = rows.map((r,i) => (r._selected ? i : -1)).filter(i => i >= 0);
     if (idxs.length !== 2) { toast({ title: 'Select two rows', description: 'Pick exactly two schedules to swap faculty.', status: 'info' }); return; }
@@ -3265,9 +3607,9 @@ export default function CourseLoading() {
         <HStack>
           <Heading size="md">Course Loading</Heading>
           <HStack spacing={1} ml={3}>
-            <Button size="sm" variant={viewMode==='blocks'?'solid':'ghost'} colorScheme="blue" onClick={()=>setViewMode('blocks')}>Blocks</Button>
-            <Button size="sm" variant={viewMode==='faculty'?'solid':'ghost'} colorScheme="blue" onClick={()=>setViewMode('faculty')}>Faculty</Button>
-            <Button size="sm" variant={viewMode==='courses'?'solid':'ghost'} colorScheme="blue" onClick={()=>setViewMode('courses')}>Courses</Button>
+            <Button size="sm" variant={viewMode==='blocks'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('blocks')}>Blocks</Button>
+            <Button size="sm" variant={viewMode==='faculty'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('faculty')}>Faculty</Button>
+            <Button size="sm" variant={viewMode==='courses'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('courses')}>Courses</Button>
           </HStack>
         </HStack>
         <HStack spacing={3}>
@@ -3284,9 +3626,9 @@ export default function CourseLoading() {
 
       <SimpleGrid columns={{ base: 1, lg: 5 }} gap={4} alignItems="start">
         {viewMode !== 'courses' && (
-        <Box gridColumn={{ base: 'auto', lg: '1 / span 1' }} maxW={{ base: '100%', lg: '340px' }}>
+        <Box gridColumn={{ base: 'auto', lg: '1 / span 1' }} maxW={{ base: '100%', lg: '340px' }} position="sticky" top="64px" zIndex={9}>
           {viewMode === 'blocks' && (
-            <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg} position="sticky" top="64px" w="full">
+            <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg} w="full">
               <HStack justify="space-between" align="center">
                 <Heading size="sm">Blocks</Heading>
                 <Badge colorScheme="gray">{(blocks || []).length}</Badge>
@@ -3426,15 +3768,57 @@ export default function CourseLoading() {
           )}
           {viewMode === 'blocks' && !selectedBlock && !!selectedProgram && (
             <VStack align="stretch" spacing={3}>
-              <HStack justify="space-between" align="center">
-                <HStack>
-                  <Heading size="sm">Program:</Heading>
-                  <Badge colorScheme="blue">{selectedProgram}</Badge>
-                </HStack>
-                <HStack>
-                  <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintProgram} isDisabled={loading || !rows.length}>Print</Button>
-                </HStack>
-              </HStack>
+              <Box position="sticky" top="64px" zIndex={10} bg={panelBg} borderBottomWidth="1px" borderColor={border} boxShadow="sm" px={2} py={2}>
+                <VStack align="stretch" spacing={2}>
+                  <HStack justify="space-between" align="center">
+                    <HStack>
+                      <Heading size="sm">Program:</Heading>
+                      <Badge colorScheme="blue">{selectedProgram}</Badge>
+                    </HStack>
+                    <HStack>
+                      <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintProgram} isDisabled={loading || !rows.length}>Print</Button>
+                    </HStack>
+                  </HStack>
+                  {!loading && (
+                    <Box borderWidth="1px" borderColor={border} rounded="md" p={2} bg={panelBg}>
+                      <HStack spacing={3} flexWrap="wrap" align="center">
+                        {(() => {
+                          const total = rows.length;
+                          const selectedCount = rows.filter(r => r._selected).length;
+                          const allChecked = total > 0 && selectedCount === total;
+                          const indeterminate = selectedCount > 0 && selectedCount < total;
+                          return (
+                            <HStack>
+                              <Checkbox
+                                isChecked={allChecked}
+                                isIndeterminate={indeterminate}
+                                onChange={(e)=> setRows(prev => prev.map(r => ({ ...r, _selected: !!e.target.checked })))}
+                              >
+                                Select all
+                              </Checkbox>
+                              <Badge colorScheme={selectedCount ? 'blue' : 'gray'}>{selectedCount} selected</Badge>
+                              <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: true })))}>
+                                Select All
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: false })))}>
+                                Deselect All
+                              </Button>
+                            </HStack>
+                          );
+                        })()}
+                        <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
+                        <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
+                        <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
+                          Lock Selected
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
+                          Unlock Selected
+                        </Button>
+                      </HStack>
+                    </Box>
+                  )}
+                </VStack>
+              </Box>
               {loading && (
                 <VStack py={4} spacing={2}>
                   {Array.from({ length: 3 }).map((_, i) => (
@@ -3447,44 +3831,6 @@ export default function CourseLoading() {
               )}
               {!loading && (
               <>
-              {/* Action bar (global for program view) */}
-              <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
-                <HStack spacing={3} flexWrap="wrap" align="center">
-                  {(() => {
-                    const total = rows.length;
-                    const selectedCount = rows.filter(r => r._selected).length;
-                    const allChecked = total > 0 && selectedCount === total;
-                    const indeterminate = selectedCount > 0 && selectedCount < total;
-                    return (
-                      <HStack>
-                        <Checkbox
-                          isChecked={allChecked}
-                          isIndeterminate={indeterminate}
-                          onChange={(e)=> setRows(prev => prev.map(r => ({ ...r, _selected: !!e.target.checked })))}
-                        >
-                          Select all
-                        </Checkbox>
-                        <Badge colorScheme={selectedCount ? 'blue' : 'gray'}>{selectedCount} selected</Badge>
-                        <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: true })))}>
-                          Select All
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: false })))}>
-                          Deselect All
-                        </Button>
-                      </HStack>
-                    );
-                  })()}
-                  <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
-                  <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
-                  <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
-                    Lock Selected
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
-                    Unlock Selected
-                  </Button>
-                </HStack>
-              </Box>
-
               {grouped.map(group => (
                 <Box key={`${group.programcode}-${group.yearlevel}`} borderWidth="1px" borderColor={border} rounded="md" p={2}>
                   <HStack justify="space-between" mb={2}>
@@ -3602,68 +3948,89 @@ export default function CourseLoading() {
 {viewMode === 'blocks' && selectedBlock && (
             <Box position="relative">
             <VStack align="stretch" spacing={3}>
-              <HStack justify="space-between" align="center">
-                <HStack>
-                  <Heading size="sm">Block:</Heading>
-                  <Badge colorScheme="purple">{selectedBlock.blockCode}</Badge>
-                </HStack>
-                <HStack>
-                  <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintBlock} isDisabled={loading}>Print</Button>
-                  <Button leftIcon={<FiRefreshCw />} size="sm" variant="outline" onClick={()=>onSelectBlock(selectedBlock)} isDisabled={loading}>Reload</Button>
-                </HStack>
-              </HStack>
+              <Box position="sticky" top="64px" zIndex={10} bg={panelBg} borderBottomWidth="1px" borderColor={border} boxShadow="sm" px={2} py={2}>
+                <VStack align="stretch" spacing={2}>
+                  <HStack justify="space-between" align="center">
+                    <HStack>
+                      <Heading size="sm">Block:</Heading>
+                      <Badge colorScheme="purple">{selectedBlock.blockCode}</Badge>
+                    </HStack>
+                    <HStack>
+                      <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintBlock} isDisabled={loading}>Print</Button>
+                      <Button leftIcon={<FiRefreshCw />} size="sm" variant="outline" onClick={()=>onSelectBlock(selectedBlock)} isDisabled={loading}>Reload</Button>
+                    </HStack>
+                  </HStack>
+                  {/* Quick swap tray kept compact within sticky */}
+                  <Box borderWidth="1px" borderColor={border} rounded="md" p={2} bg={panelBg}>
+                    <HStack spacing={2} align="center" flexWrap="wrap">
+                      <Badge colorScheme={swapA ? 'blue' : 'gray'}>A</Badge>
+                      <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapA ? swapA.label : 'Add a schedule to slot A'}</Text>
+                      {swapA && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('A')}>Clear</Button>}
+                      <Divider orientation="vertical" />
+                      <Badge colorScheme={swapB ? 'purple' : 'gray'}>B</Badge>
+                      <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapB ? swapB.label : 'Add a schedule to slot B'}</Text>
+                      {swapB && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('B')}>Clear</Button>}
+                      <Button size="sm" colorScheme="blue" onClick={swapNow} isDisabled={!canLoad || !swapA || !swapB || swapBusy} isLoading={swapBusy}>Swap Now</Button>
+                    </HStack>
+                  </Box>
 
-              {/* Persistent quick swap tray */}
-              <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
-                <HStack spacing={2} align="center" flexWrap="wrap">
-                  <Badge colorScheme={swapA ? 'blue' : 'gray'}>A</Badge>
-                  <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapA ? swapA.label : 'Add a schedule to slot A'}</Text>
-                  {swapA && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('A')}>Clear</Button>}
-                  <Divider orientation="vertical" />
-                  <Badge colorScheme={swapB ? 'purple' : 'gray'}>B</Badge>
-                  <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapB ? swapB.label : 'Add a schedule to slot B'}</Text>
-                  {swapB && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('B')}>Clear</Button>}
-                  <Button size="sm" colorScheme="blue" onClick={swapNow} isDisabled={!canLoad || !swapA || !swapB || swapBusy} isLoading={swapBusy}>Swap Now</Button>
-                </HStack>
+                  <Box borderWidth="1px" borderColor={border} rounded="md" p={2} bg={panelBg}>
+                    <HStack spacing={3} flexWrap="wrap" align="center">
+                      {(() => {
+                        const total = rows.length;
+                        const selectedCount = rows.filter(r => r._selected).length;
+                        const allChecked = total > 0 && selectedCount === total;
+                        const indeterminate = selectedCount > 0 && selectedCount < total;
+                        return (
+                          <HStack>
+                            <Checkbox
+                              isChecked={allChecked}
+                              isIndeterminate={indeterminate}
+                              onChange={(e)=> setRows(prev => prev.map(r => ({ ...r, _selected: !!e.target.checked })))}
+                            >
+                              Select all
+                            </Checkbox>
+                            <Badge colorScheme={selectedCount ? 'blue' : 'gray'}>{selectedCount} selected</Badge>
+                            <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: true })))}>
+                              Select All
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: false })))}>
+                              Deselect All
+                            </Button>
+                          </HStack>
+                        );
+                      })()}
+                      <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
+                      <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
+                      <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
+                        Lock Selected
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
+                        Unlock Selected
+                      </Button>
+                      <Tooltip label="Evenly distribute terms" hasArrow>
+                        <HStack pl={2} spacing={2}>
+                          <Switch size="sm" isChecked={autoArrange} onChange={(e)=>setAutoArrange(e.target.checked)} />
+                          <Text fontSize="sm">Auto Arrange Term</Text>
+                        </HStack>
+                      </Tooltip>
+                      <Menu>
+                        <MenuButton as={Button} size="sm" variant="outline" leftIcon={<FiClock />} rightIcon={<FiChevronDown />} isDisabled={autoAssignTimeDisabled}>
+                          Auto Assign Time
+                        </MenuButton>
+                        <MenuList>
+                          <MenuItem onClick={()=>autoAssignTimeForSession('morning')} isDisabled={autoAssignTimeDisabled}>Morning (8-12NN)</MenuItem>
+                          <MenuItem onClick={()=>autoAssignTimeForSession('afternoon')} isDisabled={autoAssignTimeDisabled}>Afternoon (1-5PM)</MenuItem>
+                          <MenuItem onClick={()=>autoAssignTimeForSession('evening')} isDisabled={autoAssignTimeDisabled}>Evening (5-9PM)</MenuItem>
+                          <MenuItem onClick={clearAutoAssignedTimes}>Clear Auto Times (unsaved rows)</MenuItem>
+                        </MenuList>
+                      </Menu>
+                    </HStack>
+                  </Box>
+                </VStack>
               </Box>
 
-              <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
-                <HStack spacing={3} flexWrap="wrap" align="center">
-                  {(() => {
-                    const total = rows.length;
-                    const selectedCount = rows.filter(r => r._selected).length;
-                    const allChecked = total > 0 && selectedCount === total;
-                    const indeterminate = selectedCount > 0 && selectedCount < total;
-                    return (
-                      <HStack>
-                        <Checkbox
-                          isChecked={allChecked}
-                          isIndeterminate={indeterminate}
-                          onChange={(e)=> setRows(prev => prev.map(r => ({ ...r, _selected: !!e.target.checked })))}
-                        >
-                          Select all
-                        </Checkbox>
-                        <Badge colorScheme={selectedCount ? 'blue' : 'gray'}>{selectedCount} selected</Badge>
-                        <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: true })))}>
-                          Select All
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: false })))}>
-                          Deselect All
-                        </Button>
-                      </HStack>
-                    );
-                  })()}
-                  <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
-                  <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
-                  <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
-                    Lock Selected
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
-                    Unlock Selected
-                  </Button>
-                </HStack>
-              </Box>
-
+              {/* Content continues below sticky header */}
               {grouped.map(group => (
                 <Box key={`${group.programcode}-${group.yearlevel}`} borderWidth="1px" borderColor={border} rounded="md" p={2}>
                   <HStack justify="space-between" mb={2}>
