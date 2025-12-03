@@ -291,6 +291,11 @@ export default function CoursesView() {
         const e = findExisting(b.blockCode);
         const assigned = !!(e && e.id);
         const locked = String(e?.lock || '').toLowerCase();
+        const baseTerm = toShortTerm(e?.term) || toShortTerm(e?.sem) || toShortTerm(e?.semester) || '';
+        const baseTime = e?.schedule || e?.time || '';
+        const baseDay = e?.day || 'MON-FRI';
+        const baseFac = e?.faculty || e?.instructor || e?.facultyName || '';
+        const baseFacId = e?.facultyId || e?.faculty_id || null;
         return {
           id: e?.id || `new:${b.id}:${codeKey}`,
           _existingId: e?.id || null,
@@ -305,11 +310,16 @@ export default function CoursesView() {
           yearlevel: selectedCourse.yearlevel || year,
           session: b.session || null,
           _selected: false,
-          _term: toShortTerm(e?.term) || toShortTerm(e?.sem) || toShortTerm(e?.semester) || '',
-          _day: e?.day || 'MON-FRI',
-          _time: e?.schedule || e?.time || '',
-          _faculty: e?.faculty || e?.instructor || e?.facultyName || '',
-          _facultyId: e?.facultyId || e?.faculty_id || null,
+          _term: baseTerm,
+          _day: baseDay,
+          _time: baseTime,
+          _faculty: baseFac,
+          _facultyId: baseFacId,
+          _baseTerm: baseTerm,
+          _baseTime: baseTime,
+          _baseDay: baseDay,
+          _baseFaculty: baseFac,
+          _baseFacultyId: baseFacId,
         };
       });
       if (!ignore) setRows(initRows);
@@ -499,10 +509,13 @@ export default function CoursesView() {
       faculty: r._faculty,
     };
   }, [assignIndex, rows]);
-  const handleAssignFromModal = async ({ facultyId, facultyName }) => {
+  const handleAssignFromModal = async (fac) => {
     if (assignIndex == null) return;
-    handleChange(assignIndex, { _facultyId: facultyId ?? null, _faculty: facultyName ?? '' });
+    const facultyId = fac?.facultyId ?? fac?.id ?? fac?.value ?? null;
+    const facultyName = fac?.facultyName ?? fac?.name ?? fac?.faculty ?? fac?.full_name ?? fac?.label ?? '';
+    handleChange(assignIndex, { _facultyId: facultyId, _faculty: facultyName });
     setAssignOpen(false);
+    setAssignIndex(null);
   };
   // Swap helpers (mirror Blocks/Faculty)
   const labelOfRow = (r) => {
@@ -610,6 +623,11 @@ export default function CoursesView() {
         const e = findExistingFresh(b.blockCode);
         const assigned = !!(e && e.id);
         const locked = String(e?.lock || '').toLowerCase();
+        const baseTerm = toShortTerm(e?.term) || toShortTerm(e?.sem) || toShortTerm(e?.semester) || '';
+        const baseTime = e?.schedule || e?.time || '';
+        const baseDay = e?.day || 'MON-FRI';
+        const baseFac = e?.faculty || e?.instructor || e?.facultyName || '';
+        const baseFacId = e?.facultyId || e?.faculty_id || null;
         return {
           id: e?.id || `new:${b.id}:${codeKey}`,
           _existingId: e?.id || null,
@@ -624,11 +642,16 @@ export default function CoursesView() {
           yearlevel: selectedCourse.yearlevel || year,
           session: b.session || null,
           _selected: false,
-          _term: toShortTerm(e?.term) || toShortTerm(e?.sem) || toShortTerm(e?.semester) || '',
-          _day: e?.day || 'MON-FRI',
-          _time: e?.schedule || e?.time || '',
-          _faculty: e?.faculty || e?.instructor || e?.facultyName || '',
-          _facultyId: e?.facultyId || e?.faculty_id || null,
+          _term: baseTerm,
+          _day: baseDay,
+          _time: baseTime,
+          _faculty: baseFac,
+          _facultyId: baseFacId,
+          _baseTerm: baseTerm,
+          _baseTime: baseTime,
+          _baseDay: baseDay,
+          _baseFaculty: baseFac,
+          _baseFacultyId: baseFacId,
         };
       });
       setRows(freshRows);
@@ -731,12 +754,29 @@ export default function CoursesView() {
         if (r._existingId) {
           await api.updateSchedule(r._existingId, payload);
           updated++;
-          setRows(prev => prev.map((x, idx) => idx===i ? { ...x, _status: 'Assigned' } : x));
+          setRows(prev => prev.map((x, idx) => idx===i ? {
+            ...x,
+            _status: 'Assigned',
+            _baseTerm: x._term || x._baseTerm || '',
+            _baseTime: x._time || x._baseTime || '',
+            _baseDay: x._day || x._baseDay || 'MON-FRI',
+            _baseFaculty: x._faculty || x._baseFaculty || '',
+            _baseFacultyId: x._facultyId != null ? x._facultyId : (x._baseFacultyId ?? null),
+          } : x));
         } else {
           const res = await api.createSchedule(payload);
           const newId = (res && (res.id || res.data?.id)) || null;
           created++;
-          setRows(prev => prev.map((x, idx) => idx===i ? { ...x, _existingId: newId, _status: 'Assigned' } : x));
+          setRows(prev => prev.map((x, idx) => idx===i ? {
+            ...x,
+            _existingId: newId,
+            _status: 'Assigned',
+            _baseTerm: x._term || x._baseTerm || '',
+            _baseTime: x._time || x._baseTime || '',
+            _baseDay: x._day || x._baseDay || 'MON-FRI',
+            _baseFaculty: x._faculty || x._baseFaculty || '',
+            _baseFacultyId: x._facultyId != null ? x._facultyId : (x._baseFacultyId ?? null),
+          } : x));
         }
       }
       const msg = [`${updated} updated`, `${created} created`].filter(s => !/^0 /.test(s)).join(', ') || 'No changes';

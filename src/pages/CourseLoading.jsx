@@ -96,10 +96,27 @@ function parseBlockMeta(blockCode) {
 function normalizeProgramCode(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 function extractYearDigits(val) { const m = String(val ?? '').match(/(\d+)/); return m ? m[1] : ''; }
 // function normalizeSem(s) { const v = String(s || '').trim().toLowerCase(); if (!v) return ''; if (v.startsWith('1')) return '1st'; if (v.startsWith('2')) return '2nd'; if (v.startsWith('s')) return 'Sem'; return s; }
-function canonicalTerm(s) { return normalizeSem(s); }
+function canonicalTerm(s) {
+  const norm = normalizeSem(s);
+  if (norm) return norm;
+  const raw = String(s || '').trim();
+  // Treat semestral/sem as "Sem" for UI consistency
+  if (/sem/i.test(raw)) return 'Sem';
+  return '';
+}
 function formatUnits(val) {
   const n = Number(val);
   return Number.isFinite(n) ? n.toFixed(1) : '0.0';
+}
+function mapSemesterLabel(raw) {
+  const txt = String(raw || '').trim();
+  const v = txt.toLowerCase();
+  if (!v) return '';
+  if (/(^|[^a-z])1(st)?([^a-z]|$)|\bfirst\b/.test(v)) return '1st Semester';
+  if (/(^|[^a-z])2(nd)?([^a-z]|$)|\bsecond\b/.test(v)) return '2nd Semester';
+  if (/summer|mid\s*year|midyear|(^|[^a-z])3(rd)?([^a-z]|$)/.test(v)) return 'Summer';
+  if (v.includes('semester')) return txt;
+  return txt;
 }
 
 // Identify courses that should be Semestral by rule (NSTP/PE/Defense Tactics)
@@ -1374,6 +1391,11 @@ const prefill = hit ? {
           _existingId: hit?.id || null,
           _locked: !!(hit && locked),
           _selected: false,
+          _baseTerm: prefill._term || '',
+          _baseTime: prefill._time || '',
+          _baseDay: prefill._day || 'MON-FRI',
+          _baseFaculty: prefill._faculty || '',
+          _baseFacultyId: hit?.facultyId ?? hit?.faculty_id ?? null,
           _status: hit ? 'Assigned' : 'Unassigned',
         };
       });
@@ -1426,6 +1448,11 @@ const prefill = hit ? {
         _faculty: prefillFac,
         _day: prefillDay,
         room: prefillRoom,
+        _baseTerm: hit ? canonicalTerm(hit.term || '') : (r._baseTerm || prefillTerm || ''),
+        _baseTime: hit ? (hit.schedule || hit.time || '') : (r._baseTime || prefillTime || ''),
+        _baseDay: hit ? (hit.day || 'MON-FRI') : (r._baseDay || prefillDay || 'MON-FRI'),
+        _baseFaculty: hit ? (hit.facultyName || hit.faculty || hit.instructor || '') : (r._baseFaculty || prefillFac || ''),
+        _baseFacultyId: hit ? (hit.facultyId ?? hit.faculty_id ?? null) : (r._baseFacultyId ?? null),
       };
     });
     setRows(next);
@@ -2010,18 +2037,7 @@ const prefill = hit ? {
           };
           return `${ord(n)} Year`;
         })();
-        const semLabel = (() => {
-          const raw = String(settingsLoad?.semester || '').trim();
-          const v = raw.toLowerCase();
-          if (!v) return '';
-          if (/(^|[^a-z])1(st)?([^a-z]|$)|\bfirst\b/.test(v)) return '1st Semester';
-          if (/(^|[^a-z])2(nd)?([^a-z]|$)|\bsecond\b/.test(v)) return '2nd Semester';
-          if (/summer|mid\s*year|midyear|(^|[^a-z])3(rd)?([^a-z]|$)/.test(v)) return '3rd Semester';
-          // If the string already contains 'semester', return with capitalized first letter
-          if (v.includes('semester')) return raw;
-          // Fallback: pass through as is
-          return raw;
-        })();
+        const semLabel = mapSemesterLabel(settingsLoad?.semester);
         const blkCode = base.blockCode || base.section || '';
         const blkMeta = (blocksAll || []).find(b => String(b.blockCode || '').trim().toLowerCase() === String(blkCode).trim().toLowerCase());
         const session = blkMeta?.session || '';
@@ -2034,7 +2050,8 @@ const prefill = hit ? {
           time: e.time,
           term: e.term,
           schoolyear: settingsLoad?.school_year || '',
-          semester: semLabel,
+          sem: semLabel || settingsLoad?.semester || '',
+          semester: settingsLoad?.semester || '',
           yearlevel: yrLabel || base.yearlevel,
           blockCode: blkCode,
           session: session,
@@ -2052,10 +2069,12 @@ const prefill = hit ? {
       return;
     }
     const changes = {};
+    const semLabel = mapSemesterLabel(settingsLoad?.semester) || settingsLoad?.semester || '';
     if (canonicalTerm(base.term || '') !== e.term) changes.term = e.term;
     const baseTime = String(base.schedule || base.time || '').trim();
     if (baseTime !== e.time) changes.time = e.time;
     if (String(base.day || '').trim() !== String(e.day || '').trim()) changes.day = e.day || '';
+    if (semLabel) { changes.semester = semLabel; changes.sem = semLabel; }
     // In faculty view, faculty is implicit; do not change faculty assignment inline
     if (Object.keys(changes).length === 0) return;
     try {
@@ -2192,6 +2211,20 @@ const prefill = hit ? {
   const isItemLocked = (it) => (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(it?.lock || it?.is_locked);
   const allSelectedLocked = facSelectedItems.length > 0 && facSelectedItems.every(isItemLocked);
   const allSelectedUnlocked = facSelectedItems.length > 0 && facSelectedItems.every(it => !isItemLocked(it));
+  const facCanSaveSelected = React.useMemo(() => {
+    if (facSelectedItems.length === 0) return false;
+    return facSelectedItems.every(it => {
+      if (isItemLocked(it)) return false;
+      const e = facEdits[it.id] || { term: canonicalTerm(it.term || ''), time: String(it.schedule || it.time || '').trim(), day: it.day || 'MON-FRI' };
+      const dirty =
+        canonicalTerm(it.term || '') !== e.term ||
+        String(it.schedule || it.time || '').trim() !== e.time ||
+        String(it.day || '').trim() !== String(e.day || '').trim();
+      const termFilled = String(e.term || '').trim().length > 0;
+      const timeFilled = String(e.time || '').trim().length > 0;
+      return dirty && termFilled && timeFilled && !e._checking && !e._conflict;
+    });
+  }, [facSelectedItems, facEdits]);
   const facultyUnitStats = React.useMemo(() => {
     const items = Array.isArray(facultySchedules?.items) ? facultySchedules.items : [];
     const totals = items.reduce((acc, it) => {
@@ -2313,6 +2346,90 @@ const prefill = hit ? {
       setFacLockOpen(false);
       setFacLockTarget(null);
       setFacSelected(new Set());
+    }
+  };
+
+  // Bulk save selected faculty schedules (inline edits)
+  const saveSelectedFacultyRows = async () => {
+    if (facSelectedIds.length === 0) return;
+    const semLabel = mapSemesterLabel(settingsLoad?.semester) || settingsLoad?.semester || '';
+    setSaving(true);
+    try {
+      let created = 0;
+      let updated = 0;
+      for (const it of facSelectedItems) {
+        const e = facEdits[it.id];
+        if (!e) continue;
+        if (isItemLocked(it)) continue;
+        if (e._checking || e._conflict) continue;
+        const term = String(e.term || '').trim();
+        const time = String(e.time || '').trim();
+        if (!term || !time) continue;
+        const day = e.day || it.day || 'MON-FRI';
+        const isDraft = String(it.id || '').startsWith('tmp:') || !!it._draft;
+        if (isDraft) {
+          try {
+            const yrLabel = (() => {
+              const raw = String(it.yearlevel ?? '').trim();
+              if (!raw) return '';
+              const m = raw.match(/(\d+)/);
+              const n = m ? parseInt(m[1], 10) : NaN;
+              if (!Number.isFinite(n)) return raw;
+              const ord = (k) => {
+                const sfx = (k % 10 === 1 && k % 100 !== 11) ? 'st' : (k % 10 === 2 && k % 100 !== 12) ? 'nd' : (k % 10 === 3 && k % 100 !== 13) ? 'rd' : 'th';
+                return `${k}${sfx}`;
+              };
+              return `${ord(n)} Year`;
+            })();
+            const blkCode = it.blockCode || it.section || '';
+            const blkMeta = (blocksAll || []).find(b => String(b.blockCode || '').trim().toLowerCase() === String(blkCode).trim().toLowerCase());
+            const session = blkMeta?.session || '';
+            const payload = {
+              programcode: it.programcode,
+              courseName: it.courseName || it.code,
+              courseTitle: it.courseTitle || it.title,
+              unit: it.unit,
+              day: day,
+              time: time,
+              term: term,
+              schoolyear: settingsLoad?.school_year || '',
+              sem: semLabel,
+              semester: semLabel,
+              yearlevel: yrLabel || it.yearlevel,
+              blockCode: blkCode,
+              session: session,
+              facultyId: (e.facultyId != null ? e.facultyId : (it.facultyId ?? null)),
+              faculty: it.faculty || it.instructor || selectedFaculty?.name || selectedFaculty?.faculty || '',
+              prospectusId: it.prospectusId || it.prospectus_id || undefined,
+            };
+            await api.createSchedule(payload);
+            created++;
+          } catch {}
+          continue;
+        }
+        const changes = {};
+        if (canonicalTerm(it.term || '') !== term) changes.term = term;
+        const baseTime = String(it.schedule || it.time || '').trim();
+        if (baseTime !== time) changes.time = time;
+        if (String(it.day || '').trim() !== String(day || '').trim()) changes.day = day || '';
+        if (semLabel) { changes.semester = semLabel; changes.sem = semLabel; }
+        if (Object.keys(changes).length === 0) continue;
+        try {
+          await dispatch(updateScheduleThunk({ id: it.id, changes }));
+          updated++;
+        } catch {}
+      }
+      if (created || updated) {
+        await fetchFacultySchedules(selectedFaculty);
+        try { if (selectedBlock) await onSelectBlock(selectedBlock); } catch {}
+        dispatch(loadAllSchedules());
+      }
+      const msg = [`${updated} updated`, `${created} created`].filter(s => !s.startsWith('0 ')).join(', ') || 'No changes';
+      toast({ title: 'Saved', description: msg, status: 'success' });
+    } catch (e) {
+      toast({ title: 'Save failed', description: e?.message || 'Could not save selected schedules.', status: 'error' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -2783,14 +2900,6 @@ const prefill = hit ? {
       } catch {}
       return undefined;
     };
-    const mapSemLong = (t) => {
-      const v = String(t||'').trim().toLowerCase();
-      if (!v) return '';
-      if (v.startsWith('1')) return '1st Semester';
-      if (v.startsWith('2')) return '2nd Semester';
-      if (v.startsWith('s')) return 'Summer';
-      return t;
-    };
     return rowsToSave.map(r => {
       const yrLbl = toYearLabel(r.yearlevel);
       const facultyId = facIdOf(r);
@@ -2798,7 +2907,7 @@ const prefill = hit ? {
       const deptVal = facRec ? (facRec.department || facRec.dept || facRec.department_name || facRec.departmentName) : undefined;
       const termVal = r._term;
       // Always use Schedules Load Defaults for semester labels
-      const semLong = mapSemLong(settingsLoad.semester);
+      const semLong = mapSemesterLabel(settingsLoad.semester) || settingsLoad.semester || '';
       const instr = facRec ? String(facRec.faculty || facRec.name || r._faculty || '').trim() : String(r._faculty || '').trim();
       // include _existingId so caller can decide update vs create
       return {
@@ -3699,7 +3808,17 @@ const prefill = hit ? {
         }
       }
       // Mark saved rows as assigned and clear their selection to avoid confusion
-      setRows(prev => prev.map(r => r._selected ? { ...r, _status: 'Assigned', _existingId: (r._existingId || null), _selected: false } : r));
+      setRows(prev => prev.map(r => r._selected ? {
+        ...r,
+        _status: 'Assigned',
+        _existingId: (r._existingId || null),
+        _selected: false,
+        _baseTerm: r._term || r._baseTerm || '',
+        _baseTime: r._time || r._baseTime || '',
+        _baseDay: r._day || r._baseDay || 'MON-FRI',
+        _baseFaculty: r._faculty || r._baseFaculty || '',
+        _baseFacultyId: r._facultyId != null ? r._facultyId : (r._baseFacultyId ?? null),
+      } : r));
       // Refresh local schedules cache for the current block so the UI persists
       try {
         const q = new URLSearchParams();
@@ -4303,6 +4422,16 @@ const prefill = hit ? {
                       </HStack>
                     );
                   })()}
+                  <Button
+                    size="sm"
+                    colorScheme="blue"
+                    leftIcon={<FiUpload />}
+                    onClick={saveSelectedFacultyRows}
+                    isDisabled={!canLoad || saving || !facCanSaveSelected}
+                    isLoading={saving}
+                  >
+                    Save Selected
+                  </Button>
                   <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(true)} isDisabled={!canLoad || facSelectedIds.length === 0 || allSelectedLocked}>Lock Selected</Button>
                   <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(false)} isDisabled={!isAdmin || facSelectedIds.length === 0 || allSelectedUnlocked}>Unlock Selected</Button>
                 </HStack>
