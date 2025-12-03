@@ -291,9 +291,13 @@ class ApiService {
     return await res.json();
   }
 
-  async getProspectusStats() {
-    const url = `${this.baseURL}${this.prospectusPath}/stats`;
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+  async getProspectusStats(params = {}) {
+    const qs = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && v !== '') qs.append(k, v);
+    });
+    const url = `${this.baseURL}${this.prospectusPath}/stats${qs.toString() ? `/?${qs.toString()}` : ''}`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }

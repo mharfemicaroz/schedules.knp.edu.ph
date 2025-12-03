@@ -31,6 +31,7 @@ import { buildTable, printContent } from '../utils/printDesign';
 import ScheduleHistoryModal from '../components/ScheduleHistoryModal';
 import AssignmentRow from '../components/AssignmentRow';
 import CoursesView from '../components/CoursesView';
+import CourseSummaryView from '../components/CourseSummaryView';
 
 // --- helpers (same as previous) ---
 function VirtualBlockList({ items, renderRow, estimatedRowHeight = 76, overscan = 6, maxHeight = '50vh', border, dividerBorder }) {
@@ -814,7 +815,7 @@ export default function CourseLoading() {
     return code && allowedDeptSet.has(code);
   }, [isAdmin, allowedDepts, allowedDeptSet]);
 
-  const [viewMode, setViewMode] = React.useState('blocks'); // 'blocks' | 'faculty' | 'courses'
+  const [viewMode, setViewMode] = React.useState('blocks'); // 'blocks' | 'faculty' | 'courses' | 'summary'
   const [selectedBlock, setSelectedBlock] = React.useState(null);
   const [selectedProgram, setSelectedProgram] = React.useState('');
   const [progBlocksLimit, setProgBlocksLimit] = React.useState(6);
@@ -3981,6 +3982,7 @@ const prefill = hit ? {
             <Button size="sm" variant={viewMode==='blocks'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('blocks')}>Blocks</Button>
             <Button size="sm" variant={viewMode==='faculty'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('faculty')}>Faculty</Button>
             <Button size="sm" variant={viewMode==='courses'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('courses')}>Courses</Button>
+            <Button size="sm" variant={viewMode==='summary'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('summary')}>Summary</Button>
           </HStack>
         </HStack>
         <HStack spacing={3}>
@@ -3998,7 +4000,7 @@ const prefill = hit ? {
       </HStack>
 
       <SimpleGrid columns={{ base: 1, lg: 5 }} gap={4} alignItems="start">
-        {viewMode !== 'courses' && (
+        {(viewMode === 'blocks' || viewMode === 'faculty') && (
         <Box gridColumn={{ base: 'auto', lg: '1 / span 1' }} maxW={{ base: '100%', lg: '340px' }} position="sticky" top="64px" zIndex={9}>
           {viewMode === 'blocks' && (
             <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg} w="full">
@@ -4120,8 +4122,8 @@ const prefill = hit ? {
         </Box>
         )}
 
-        <Box gridColumn={{ base: 'auto', lg: (viewMode==='courses' ? '1 / span 5' : '2 / span 4') }} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg}>
-          {!selectedBlock && !selectedProgram && viewMode !== 'courses' && (
+        <Box gridColumn={{ base: 'auto', lg: ((viewMode==='courses' || viewMode==='summary') ? '1 / span 5' : '2 / span 4') }} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg}>
+          {!selectedBlock && !selectedProgram && (viewMode === 'blocks' || viewMode === 'faculty') && (
             <VStack py={10} spacing={2}>
               {viewMode === 'blocks' ? (
                 <>
@@ -4138,6 +4140,9 @@ const prefill = hit ? {
           )}
           {viewMode === 'courses' && (
             <CoursesView />
+          )}
+          {viewMode === 'summary' && (
+            <CourseSummaryView />
           )}
           {viewMode === 'blocks' && !selectedBlock && !!selectedProgram && (
             <VStack align="stretch" spacing={3}>
