@@ -806,6 +806,13 @@ export default function CourseLoading() {
     return () => { alive = false; };
   }, [authUser?.id, isAdmin]);
   const canLoad = (isAdmin || role === 'registrar' || (Array.isArray(allowedDepts) && allowedDepts.length > 0));
+  const allowedDeptSet = React.useMemo(() => new Set((Array.isArray(allowedDepts) ? allowedDepts : []).map((s) => normalizeProgramCode(s))), [allowedDepts]);
+  const canEditFacultyItem = React.useCallback((it) => {
+    if (isAdmin) return true;
+    if (!Array.isArray(allowedDepts) || allowedDepts.length === 0) return false;
+    const code = normalizeProgramCode(it?.programcode || it?.program || '');
+    return code && allowedDeptSet.has(code);
+  }, [isAdmin, allowedDepts, allowedDeptSet]);
 
   const [viewMode, setViewMode] = React.useState('blocks'); // 'blocks' | 'faculty' | 'courses'
   const [selectedBlock, setSelectedBlock] = React.useState(null);
@@ -848,6 +855,11 @@ export default function CourseLoading() {
       const fname = payload?.facultyName ?? (selectedFaculty?.name || selectedFaculty?.faculty || '');
       const items = Array.isArray(payload?.items) ? payload.items : [];
       if (!blk || !fname || items.length === 0) return;
+      const allAllowed = items.every((r) => canEditFacultyItem({ programcode: r.programcode }));
+      if (!isAdmin && !allAllowed) {
+        toast({ title: 'View-only', description: 'You can only create schedules for your department.', status: 'warning' });
+        return;
+      }
       const now = Date.now();
       const makeId = (i) => `tmp:${now}:${i}`;
       const newRows = items.map((r, i) => ({
@@ -882,7 +894,7 @@ export default function CourseLoading() {
     } finally {
       setSchedAssignOpen(false);
     }
-  }, [selectedFaculty]);
+  }, [selectedFaculty, canEditFacultyItem, isAdmin]);
   const [facSuggBusy, setFacSuggBusy] = React.useState(false);
   const [facSuggPlans, setFacSuggPlans] = React.useState([]);
   const [facSuggTargetId, setFacSuggTargetId] = React.useState(null);
@@ -1903,14 +1915,6 @@ const prefill = hit ? {
         });
       }
 
-      // Limit by assigned program codes for non-admin users
-      if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
-        try {
-          const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
-          list = (list || []).filter(s => allow.has(String(s.programcode || s.program || '').toUpperCase()));
-        } catch {}
-      }
-
       const sorted = (list || []).slice().sort((a, b) => {
         const ka = parseKey(a), kb = parseKey(b);
         for (let i = 0; i < ka.length; i++) { if (ka[i] !== kb[i]) return ka[i] - kb[i]; }
@@ -1924,7 +1928,7 @@ const prefill = hit ? {
         const init = {};
         sorted.forEach(s => {
           init[s.id] = {
-            term: canonicalTerm(s.term || ''),
+            term: s.term || '',
             time: String(s.schedule || s.time || '').trim(),
             faculty: s.faculty || s.instructor || '',
             facultyId: s.facultyId || s.faculty_id || null,
@@ -1943,6 +1947,8 @@ const prefill = hit ? {
   };
 
   const updateFacEdit = (id, patch) => {
+    const item = (facultySchedules.items || []).find((x) => String(x.id) === String(id));
+    if (!item || !canEditFacultyItem(item)) return;
     let nextVer;
     setFacEdits(prev => {
       const curr = prev[id] || { _ver: 0 };
@@ -2027,10 +2033,13 @@ const prefill = hit ? {
 
   const saveFacultyEdit = async (id) => {
     const base = facultySchedules.items.find(x => String(x.id) === String(id));
+    if (!base || !canEditFacultyItem(base)) return;
     const e = facEdits[id];
-    if (!base || !e) return;
+    if (!e) return;
     const isDraft = String(base.id || '').startsWith('tmp:') || !!base._draft;
     if (isDraft) {
+      const okLimit = await ensureFacultyLoadLimitForFacultyView([base]);
+      if (!okLimit) return;
       try {
         const yrLabel = (() => {
           const raw = String(base.yearlevel ?? '').trim();
@@ -2142,6 +2151,8 @@ const prefill = hit ? {
 
   // Faculty-view lock/unlock and delete handlers
   const toggleFacultyLock = async (id, nextLocked) => {
+    const item = (facultySchedules.items || []).find((x) => String(x.id) === String(id));
+    if (!item || !canEditFacultyItem(item)) return;
     try {
       await dispatch(updateScheduleThunk({ id, changes: { lock: nextLocked ? 'yes' : 'no', is_locked: nextLocked } }));
       await fetchFacultySchedules(selectedFaculty);
@@ -2160,7 +2171,7 @@ const prefill = hit ? {
   const facDelCancelRef = React.useRef();
   const requestFacultyDelete = (idx) => {
     const item = facultySchedules.items[idx];
-    if (!item) return;
+    if (!item || !canEditFacultyItem(item)) return;
     const isDraft = !!item._draft || String(item.id || '').startsWith('tmp:');
     if (isDraft) {
       // Remove draft locally without confirmation or API call
@@ -2256,6 +2267,8 @@ const prefill = hit ? {
   }, [facultySchedules]);
 
   const toggleFacSelect = (id, checked) => {
+    const item = (facultySchedules.items || []).find((x) => String(x.id) === String(id));
+    if (!item || !canEditFacultyItem(item)) return;
     setFacSelected(prev => {
       const next = new Set(prev);
       if (checked) next.add(id); else next.delete(id);
@@ -2361,9 +2374,51 @@ const prefill = hit ? {
     }
   };
 
+  // Non-admin guard: prevent creating new schedules that exceed faculty load limits in Faculty view
+  const ensureFacultyLoadLimitForFacultyView = async (rowsToCheck = []) => {
+    const nonAdminMapped = (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0);
+    if (!nonAdminMapped) return true;
+    if (!selectedFaculty) return true;
+    const rows = Array.isArray(rowsToCheck) ? rowsToCheck : [];
+    const addUnits = rows.reduce((sum, it) => {
+      const isDraft = !!it?._draft || String(it?.id || '').startsWith('tmp:');
+      if (!isDraft) return sum;
+      const u = Number(it?.unit ?? 0);
+      return sum + (Number.isFinite(u) ? u : 0);
+    }, 0);
+    if (addUnits <= 0) return true;
+    const meta = selectedFaculty;
+    const name = meta?.name || meta?.faculty || '';
+    const max = maxUnitsFor(meta);
+    const sy = settingsLoad?.school_year || '';
+    const sem = settingsLoad?.semester || '';
+    let current = 0;
+    try {
+      if (meta?.id != null) {
+        const lr = await api.getInstructorLoadById(meta.id, { schoolyear: sy, semester: sem });
+        current = Number(lr?.loadUnits || 0);
+      } else if (name) {
+        const qs = new URLSearchParams();
+        if (sy) qs.set('schoolyear', sy);
+        if (sem) qs.set('semester', sem);
+        const resp = await api.request(`/instructor/${encodeURIComponent(name)}/load${qs.toString() ? `?${qs.toString()}` : ''}`);
+        current = Number(resp?.loadUnits || 0);
+      }
+    } catch {}
+    const proposed = current + addUnits;
+    if (proposed > max) {
+      const maxLabel = employmentOf(meta) === 'part-time' ? 'Part-time max 12' : 'Full-time max 36';
+      toast({ title: 'Load limit exceeded', description: `${name || 'Faculty'}: ${maxLabel} units. Current ${current}, adding ${addUnits} -> ${proposed}. Only admin can exceed.`, status: 'warning' });
+      return false;
+    }
+    return true;
+  };
+
   // Bulk save selected faculty schedules (inline edits)
   const saveSelectedFacultyRows = async () => {
     if (facSelectedIds.length === 0) return;
+    const okLimit = await ensureFacultyLoadLimitForFacultyView(facSelectedItems);
+    if (!okLimit) return;
     const semFallback = resolveSemesterLabel(settingsLoad?.semester);
     setSaving(true);
     try {
@@ -3410,6 +3465,7 @@ const prefill = hit ? {
   // Faculty-view: add to swap using current item state
   const addFacultyItemToSwap = (idx) => {
     const c = facultySchedules.items[idx]; if (!c) return;
+    if (!canEditFacultyItem(c)) { toast({ title: 'View only', description: 'You do not have permission to modify this schedule.', status: 'info' }); return; }
     const e = facEdits[c.id] || {};
     const locked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||c.lock||c.is_locked||'').toLowerCase(); return s==='yes'||s==='true'||s==='1';})();
     if (!c.id) { toast({ title: 'Only existing schedules', description: 'Save a schedule before adding to swap.', status: 'info' }); return; }
@@ -3431,6 +3487,7 @@ const prefill = hit ? {
   // Faculty-view: resolve conflicting old schedule and keep this edit
   const openFacultyResolve = async (idx) => {
     const c = facultySchedules.items[idx]; if (!c) return;
+    if (!canEditFacultyItem(c)) return;
     const e = facEdits[c.id] || {};
     const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||c.lock||c.is_locked||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })();
     if (isLocked) { toast({ title: 'Locked schedule', description: 'Unlock the schedule before resolving.', status: 'warning' }); return; }
@@ -3876,8 +3933,10 @@ const prefill = hit ? {
               SY {settingsLoad.school_year || '—'} / {settingsLoad.semester || '—'}
             </Badge>
           </Tooltip>
-          <Tooltip label={canLoad ? 'You can assign and save' : 'View-only: insufficient permissions'}>
-            <Badge colorScheme={canLoad ? 'blue' : 'gray'}>{canLoad ? 'Editable' : 'View-only'}</Badge>
+          <Tooltip label={(viewMode === 'faculty' && !isAdmin)
+            ? 'You can edit schedules for your department; other departments are view-only.'
+            : (canLoad ? 'You can assign and save.' : 'View-only: insufficient permissions')}>
+            <Badge colorScheme={canLoad ? 'blue' : 'gray'}>{(viewMode === 'faculty' && !isAdmin) ? 'Dept-limited' : (canLoad ? 'Editable' : 'View-only')}</Badge>
           </Tooltip>
         </HStack>
       </HStack>
@@ -4410,7 +4469,7 @@ const prefill = hit ? {
               <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
                 <HStack spacing={3} mb={2} align="center" flexWrap="wrap">
                   {(() => {
-                    const eligible = (facultySchedules.items || []).filter(it => !isItemLocked(it));
+                    const eligible = (facultySchedules.items || []).filter(it => !isItemLocked(it) && canEditFacultyItem(it));
                     const eligibleCount = eligible.length;
                     const allChecked = eligibleCount > 0 && facSelectedIds.length === eligibleCount;
                     const indeterminate = facSelectedIds.length > 0 && facSelectedIds.length < eligibleCount;
@@ -4419,6 +4478,7 @@ const prefill = hit ? {
                         <Checkbox
                           isChecked={allChecked}
                           isIndeterminate={indeterminate}
+                          isDisabled={eligibleCount === 0}
                           onChange={(e)=> {
                             const chk = !!e.target.checked;
                             setFacSelected(() => chk ? new Set(eligible.map(it => it.id)) : new Set());
@@ -4427,10 +4487,10 @@ const prefill = hit ? {
                           Select all
                         </Checkbox>
                         <Badge colorScheme={facSelectedIds.length ? 'blue' : 'gray'}>{facSelectedIds.length} selected</Badge>
-                        <Button size="sm" variant="ghost" onClick={()=> setFacSelected(new Set(eligible.map(it => it.id)))}>
+                        <Button size="sm" variant="ghost" onClick={()=> setFacSelected(new Set(eligible.map(it => it.id)))} isDisabled={eligibleCount === 0}>
                           Select All
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={()=> setFacSelected(new Set())}>
+                        <Button size="sm" variant="ghost" onClick={()=> setFacSelected(new Set())} isDisabled={facSelectedIds.length === 0}>
                           Deselect All
                         </Button>
                       </HStack>
@@ -4456,18 +4516,19 @@ const prefill = hit ? {
                           <VStack align="stretch" spacing={2}>
                             {arr.map((c, i) => {
                               const e = facEdits[c.id] || { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), day: c.day || 'MON-FRI' };
-                              const dirty =
-                                canonicalTerm(c.term || '') !== e.term ||
-                                String(c.schedule || c.time || '').trim() !== e.time ||
-                                String(c.day || '').trim() !== String(e.day || '').trim();
-                              const termFilled = String(e.term || '').trim().length > 0;
-                              const timeFilled = String(e.time || '').trim().length > 0;
-                              const canSave = dirty && termFilled && timeFilled && !e._checking && !e._conflict;
-                              const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock || c.is_locked);
-                              return (
-                                <Box key={`${term}-${i}`} p={2} borderWidth="1px" rounded="md">
-                                  <HStack spacing={3} align="center">
-                                    <Checkbox isChecked={facSelected.has(c.id)} onChange={(e)=>toggleFacSelect(c.id, e.target.checked)} isDisabled={isLocked} />
+                            const dirty =
+                              canonicalTerm(c.term || '') !== e.term ||
+                              String(c.schedule || c.time || '').trim() !== e.time ||
+                              String(c.day || '').trim() !== String(e.day || '').trim();
+                            const termFilled = String(e.term || '').trim().length > 0;
+                            const timeFilled = String(e.time || '').trim().length > 0;
+                            const isEditable = canEditFacultyItem(c);
+                            const canSave = isEditable && dirty && termFilled && timeFilled && !e._checking && !e._conflict;
+                            const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock || c.is_locked);
+                            return (
+                              <Box key={`${term}-${i}`} p={2} borderWidth="1px" rounded="md">
+                                <HStack spacing={3} align="center">
+                                  <Checkbox isChecked={facSelected.has(c.id)} onChange={(e)=>toggleFacSelect(c.id, e.target.checked)} isDisabled={!isEditable || isLocked} />
                                     <Badge>{c.code || c.courseName}</Badge>
                                     {String(c.id || '').startsWith('tmp:') && <Badge colorScheme="pink">Draft</Badge>}
                                     <HStack space="2" flex="1" alignItems="center">
@@ -4501,7 +4562,7 @@ const prefill = hit ? {
                                     value={e.term}
                                     onChange={(ev)=>updateFacEdit(c.id, { term: ev.target.value })}
                                     maxW="120px"
-                                    isDisabled={isLocked}
+                                    isDisabled={!isEditable || isLocked}
                                   >
                                     <option value="">Term</option>
                                     {['1st','2nd','Sem'].map(v => (
@@ -4514,7 +4575,7 @@ const prefill = hit ? {
                                     value={e.day || 'MON-FRI'}
                                     onChange={(ev)=>updateFacEdit(c.id, { day: ev.target.value })}
                                     maxW="140px"
-                                    isDisabled={isLocked}
+                                    isDisabled={!isEditable || isLocked}
                                   >
                                     {['MON-FRI','Mon','Tue','Wed','Thu','Fri','Sat','Sun','MWF','TTH','TBA'].map(d => (
                                       <option key={d} value={d}>{d}</option>
@@ -4526,7 +4587,7 @@ const prefill = hit ? {
                                     value={e.time}
                                     onChange={(ev)=>updateFacEdit(c.id, { time: ev.target.value })}
                                     maxW="160px"
-                                    isDisabled={isLocked}
+                                    isDisabled={!isEditable || isLocked}
                                   >
                                     {getTimeOptions().map(t => (
                                       <option key={t} value={t}>{t || 'Time'}</option>
@@ -4547,25 +4608,25 @@ const prefill = hit ? {
                                     <HStack ml="auto" spacing={2}>
                                       {e._conflict && (
                                         <>
-                                          <Button size="sm" variant="outline" leftIcon={<FiHelpCircle />} onClick={()=>openFacultySuggestions(c.id)} isDisabled={isLocked}>Suggestions</Button>
-                                          <Button size="sm" variant="outline" onClick={()=>openFacultyResolve(facultySchedules.items.indexOf(c))} isDisabled={isLocked}>Resolve</Button>
+                                          <Button size="sm" variant="outline" leftIcon={<FiHelpCircle />} onClick={()=>openFacultySuggestions(c.id)} isDisabled={!isEditable || isLocked}>Suggestions</Button>
+                                          <Button size="sm" variant="outline" onClick={()=>openFacultyResolve(facultySchedules.items.indexOf(c))} isDisabled={!isEditable || isLocked}>Resolve</Button>
                                         </>
                                       )}
-                                      <Button size="sm" variant="outline" onClick={()=>addFacultyItemToSwap(facultySchedules.items.indexOf(c))} isDisabled={isLocked || String(c.id || '').startsWith('tmp:') || !!c._draft}>Add to Swap</Button>
+                                      <Button size="sm" variant="outline" onClick={()=>addFacultyItemToSwap(facultySchedules.items.indexOf(c))} isDisabled={!isEditable || isLocked || String(c.id || '').startsWith('tmp:') || !!c._draft}>Add to Swap</Button>
                                       {/* Inline Assign action removed per request */}
-                                      <Button size="sm" variant="outline" onClick={()=>updateFacEdit(c.id, { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), faculty: c.faculty || c.instructor || '', facultyId: c.facultyId || c.faculty_id || null, _conflict:false, _details:[] })} isDisabled={!dirty || isLocked}>Revert</Button>
+                                      <Button size="sm" variant="outline" onClick={()=>updateFacEdit(c.id, { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), faculty: c.faculty || c.instructor || '', facultyId: c.facultyId || c.faculty_id || null, _conflict:false, _details:[] })} isDisabled={!isEditable || !dirty || isLocked}>Revert</Button>
                                       <Button size="sm" colorScheme="blue" onClick={()=>saveFacultyEdit(c.id)} isDisabled={!canSave || isLocked}>Save</Button>
                                       {isLocked ? (
                                         <Tooltip label={isAdmin ? 'Locked. Click to unlock.' : 'Locked. Only admin can unlock.'}>
-                                          <IconButton aria-label="Unlock" icon={<FiLock />} size="sm" colorScheme="red" variant="ghost" onClick={()=>toggleFacultyLock(c.id, false)} isDisabled={!isAdmin} />
+                                          <IconButton aria-label="Unlock" icon={<FiLock />} size="sm" colorScheme="red" variant="ghost" onClick={()=>toggleFacultyLock(c.id, false)} isDisabled={!isEditable || !isAdmin} />
                                         </Tooltip>
                                       ) : (
                                         <Tooltip label="Unlocked. Click to lock.">
-                                          <IconButton aria-label="Lock" icon={<FiLock />} size="sm" variant="ghost" onClick={()=>toggleFacultyLock(c.id, true)} />
+                                          <IconButton aria-label="Lock" icon={<FiLock />} size="sm" variant="ghost" onClick={()=>toggleFacultyLock(c.id, true)} isDisabled={!isEditable} />
                                         </Tooltip>
                                       )}
                                       <Tooltip label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}>
-                                        <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={()=>requestFacultyDelete(facultySchedules.items.indexOf(c))} isDisabled={isLocked} />
+                                        <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={()=>requestFacultyDelete(facultySchedules.items.indexOf(c))} isDisabled={!isEditable || isLocked} />
                                       </Tooltip>
                                     </HStack>
                                   </HStack>
