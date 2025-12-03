@@ -130,29 +130,52 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
   }, [prospectus, isAdmin, allowedDepts, allowedReady]);
 
   // Build block options for selected program/year
-  React.useEffect(() => {
-    if (!allowedReady && !isAdmin) { setBlockOptions([]); if (blockCode) setBlockCode(''); return; }
-    const up = (s) => String(s || '').toUpperCase();
-    const prog = up(program);
-    // extract digits from yearlevel, e.g., "3rd Year" -> "3"
-    const ydig = (String(yearlevel || '').match(/(\d+)/) || [,''])[1];
-    let opts = (blocksAll || [])
-      .map(b => String(b.blockCode || b.block_code || '').trim())
-      .filter(Boolean)
-      .filter(code => {
-        const u = up(code);
-        const hasProg = prog ? u.includes(up(prog)) : true;
-        const hasYear = ydig ? u.includes(ydig) : true;
-        return hasProg && hasYear;
-      })
-      .sort((a,b) => a.localeCompare(b));
-    if (!isAdmin && Array.isArray(allowedDepts)) {
-      const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
-      opts = opts.filter(code => allow.size === 0 ? false : allow.has(String(parseBlockMeta(code).programcode || '').toUpperCase()));
-    }
-    setBlockOptions(opts);
-    if (blockCode && !opts.includes(blockCode)) setBlockCode('');
-  }, [blocksAll, program, yearlevel, isAdmin, allowedDepts, parseBlockMeta, allowedReady]);
+    React.useEffect(() => {
+      if (!allowedReady && !isAdmin) {
+        setBlockOptions([]);
+        if (blockCode) setBlockCode('');
+        return;
+      }
+
+      const up = (s) => String(s || '').toUpperCase();
+      const prog = up(program);
+
+      // extract digits from yearlevel, e.g., "3rd Year" -> "3"
+      const ydig = (String(yearlevel || '').match(/(\d+)/) || [, ''])[1];
+
+      let opts = (blocksAll || [])
+        .map(b => String(b.blockCode || b.block_code || '').trim())
+        .filter(Boolean)
+        .filter(code => {
+          const u = up(code);
+          const hasProg = prog ? u.includes(up(prog)) : true;
+
+          let hasYear = true;
+          if (ydig) {
+            const beforeDash = (u.split('-')[0] || '').trim();
+            const yearRegex = new RegExp(`\\b${ydig}\\b`);
+            hasYear = yearRegex.test(beforeDash);
+          }
+
+          return hasProg && hasYear;
+        })
+        .sort((a, b) => a.localeCompare(b));
+
+      if (!isAdmin && Array.isArray(allowedDepts)) {
+        const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
+        opts = opts.filter(code =>
+          allow.size === 0
+            ? false
+            : allow.has(
+                String(parseBlockMeta(code).programcode || '').toUpperCase()
+              )
+        );
+      }
+
+      setBlockOptions(opts);
+      if (blockCode && !opts.includes(blockCode)) setBlockCode('');
+    }, [blocksAll, program, yearlevel, isAdmin, allowedDepts, parseBlockMeta, allowedReady]);
+
 
   // Fetch existing schedules for current SY/Sem (settingsLoad)
   const refreshExisting = React.useCallback(async () => {
