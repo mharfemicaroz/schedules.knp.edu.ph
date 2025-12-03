@@ -97,6 +97,10 @@ function normalizeProgramCode(s) { return String(s || '').toUpperCase().replace(
 function extractYearDigits(val) { const m = String(val ?? '').match(/(\d+)/); return m ? m[1] : ''; }
 // function normalizeSem(s) { const v = String(s || '').trim().toLowerCase(); if (!v) return ''; if (v.startsWith('1')) return '1st'; if (v.startsWith('2')) return '2nd'; if (v.startsWith('s')) return 'Sem'; return s; }
 function canonicalTerm(s) { return normalizeSem(s); }
+function formatUnits(val) {
+  const n = Number(val);
+  return Number.isFinite(n) ? n.toFixed(1) : '0.0';
+}
 
 // Identify courses that should be Semestral by rule (NSTP/PE/Defense Tactics)
 function isSemestralCourseLike(row) {
@@ -446,7 +450,7 @@ const eligibleOptions = React.useMemo(() => {
     <HStack spacing={2} py={2} borderBottomWidth="1px" borderColor={rowBorder}>
       <Checkbox
         isChecked={!!row._selected}
-        onChange={(e) => onToggle(e.target.checked)}
+        onChange={(e) => onToggle(e.target.checked)}aasdfghkk
         isDisabled={disabled}
       />
       <Box flex="1 1 auto">
@@ -737,6 +741,15 @@ export default function CourseLoading() {
   const panelBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.300');
   const dividerBorder = useColorModeValue('gray.100','gray.700');
+  const savedBg = useColorModeValue('green.50','green.900');
+  const draftBg = useColorModeValue('orange.50','orange.900');
+  const totalBg = useColorModeValue('blue.50','blue.900');
+  const savedBorder = useColorModeValue('green.200','green.700');
+  const draftBorder = useColorModeValue('orange.200','orange.700');
+  const totalBorder = useColorModeValue('blue.200','blue.700');
+  const savedTone = useColorModeValue('green.700','green.200');
+  const draftTone = useColorModeValue('orange.700','orange.200');
+  const totalTone = useColorModeValue('blue.700','blue.200');
   // Skeleton shared colors and overlay
   const skStart = useColorModeValue('gray.100','gray.700');
   const skEnd = useColorModeValue('gray.200','gray.600');
@@ -2179,6 +2192,23 @@ const prefill = hit ? {
   const isItemLocked = (it) => (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(it?.lock || it?.is_locked);
   const allSelectedLocked = facSelectedItems.length > 0 && facSelectedItems.every(isItemLocked);
   const allSelectedUnlocked = facSelectedItems.length > 0 && facSelectedItems.every(it => !isItemLocked(it));
+  const facultyUnitStats = React.useMemo(() => {
+    const items = Array.isArray(facultySchedules?.items) ? facultySchedules.items : [];
+    const totals = items.reduce((acc, it) => {
+      const unitVal = Number(it.unit ?? 0);
+      const unit = Number.isFinite(unitVal) ? unitVal : 0;
+      const isDraft = !!it._draft || String(it.id || '').startsWith('tmp:');
+      if (isDraft) {
+        acc.draftUnits += unit;
+        acc.draftCount += 1;
+      } else {
+        acc.savedUnits += unit;
+        acc.savedCount += 1;
+      }
+      return acc;
+    }, { savedUnits: 0, draftUnits: 0, savedCount: 0, draftCount: 0 });
+    return { ...totals, totalUnits: totals.savedUnits + totals.draftUnits };
+  }, [facultySchedules]);
 
   const toggleFacSelect = (id, checked) => {
     setFacSelected(prev => {
@@ -2834,6 +2864,7 @@ const prefill = hit ? {
     setFacLockOpen(false); setFacLockBusy(false); setFacLockTarget(null);
     setAssignOpen(false); setAssignIndex(null);
     setSchedAssignOpen(false);
+    setDragFromIdx(null); setDragOverIdx(null);
   }, []);
 
   const switchViewMode = React.useCallback((next) => {
@@ -3182,6 +3213,8 @@ const prefill = hit ? {
     setAutoArrange(false);
     toast({ title: 'Order shuffled', description: 'Schedules reordered within this block.', status: 'success' });
   }, [viewMode, selectedBlock, normalizeBlockCode, toast]);
+
+  // Drag-and-drop removed
 
   React.useEffect(() => {
     if (autoArrange && viewMode === 'blocks' && selectedBlock) {
@@ -3961,28 +3994,32 @@ const prefill = hit ? {
                               renderRow={(r) => {
                                 const idx = rowIndexMap.get(r) ?? -1;
                                 return (
-                                  <AssignmentRow
+                                  <Box
                                     key={`${r._existingId || r.course_name}-${idx}`}
-                                    row={r}
-                                    faculties={facOptions}
-                                    schedulesSource={(freshCache && freshCache.length) ? freshCache : (existing || [])}
-                                    allCourses={(existing || [])}
-                                    statsCourses={scopedCourses}
-                                    blockCode={r.blockCode || r.section || ''}
-                                    attendanceStats={attendanceStatsMap}
-                                    disabled={!canLoad}
-                                    onChange={(patch)=>handleRowChange(idx, patch)}
-                                    onToggle={(ck)=>toggleRow(idx, ck)}
-                                    onRequestLockChange={(next)=>requestLockChange(idx, next)}
-                                    onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
-                                    onRequestSuggest={()=>openSuggestions(idx)}
-                                    onRequestAssign={()=>openAssignForRow(idx)}
-                                    onRequestAddToSwap={()=>addToSwap(rows[idx])}
-                                    onRequestDelete={()=>requestDelete(idx)}
-                                    onRequestResolve={()=>requestResolve(idx)}
-                                    onRequestHistory={openHistoryForRow}
-                                    isAdmin={role==='admin' || role==='manager'}
-                                  />
+                                    borderWidth="0px"
+                                  >
+                                    <AssignmentRow
+                                      row={r}
+                                      faculties={facOptions}
+                                      schedulesSource={(freshCache && freshCache.length) ? freshCache : (existing || [])}
+                                      allCourses={(existing || [])}
+                                      statsCourses={scopedCourses}
+                                      blockCode={r.blockCode || r.section || ''}
+                                      attendanceStats={attendanceStatsMap}
+                                      disabled={!canLoad}
+                                      onChange={(patch)=>handleRowChange(idx, patch)}
+                                      onToggle={(ck)=>toggleRow(idx, ck)}
+                                      onRequestLockChange={(next)=>requestLockChange(idx, next)}
+                                      onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
+                                      onRequestSuggest={()=>openSuggestions(idx)}
+                                      onRequestAssign={()=>openAssignForRow(idx)}
+                                      onRequestAddToSwap={()=>addToSwap(rows[idx])}
+                                      onRequestDelete={()=>requestDelete(idx)}
+                                      onRequestResolve={()=>requestResolve(idx)}
+                                      onRequestHistory={openHistoryForRow}
+                                      isAdmin={role==='admin' || role==='manager'}
+                                    />
+                                  </Box>
                                 );
                               }}
                             />
@@ -4138,8 +4175,11 @@ const prefill = hit ? {
             {group.items.map((r) => {
               const idx = rowIndexMap.get(r) ?? -1;
               return (
+                <Box
+                  key={`${r.id || r.course_name}-${idx}`}
+                  borderWidth="0px"
+                >
                         <AssignmentRow
-                          key={`${r.id || r.course_name}-${idx}`}
                           row={r}
                           faculties={facOptions}
                           schedulesSource={(freshCache && freshCache.length) ? freshCache : (existing || [])}
@@ -4160,6 +4200,7 @@ const prefill = hit ? {
                           onRequestHistory={openHistoryForRow}
                           isAdmin={role==='admin' || role==='manager'}
                         />
+                </Box>
               );
             })}
           </VStack>
@@ -4207,6 +4248,32 @@ const prefill = hit ? {
                   <Button size="sm" colorScheme="blue" variant="solid" onClick={()=>setSchedAssignOpen(true)}>Assign Schedules</Button>
                 </HStack>
               </HStack>
+              <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
+                <Box p={3} rounded="md" borderWidth="1px" borderColor={savedBorder} bg={savedBg} boxShadow="xs">
+                  <Text fontSize="xs" textTransform="uppercase" letterSpacing="0.08em" color={savedTone}>Saved load</Text>
+                  <HStack justify="space-between" align="baseline" mt={1}>
+                    <Heading size="lg" color={savedTone}>{formatUnits(facultyUnitStats.savedUnits)}</Heading>
+                    <Badge colorScheme="green" variant="solid">{facultyUnitStats.savedCount} saved</Badge>
+                  </HStack>
+                  <Text fontSize="xs" color={subtle}>Already assigned schedules for this faculty</Text>
+                </Box>
+                <Box p={3} rounded="md" borderWidth="1px" borderColor={draftBorder} bg={draftBg} boxShadow="xs">
+                  <Text fontSize="xs" textTransform="uppercase" letterSpacing="0.08em" color={draftTone}>Unsaved drafts</Text>
+                  <HStack justify="space-between" align="baseline" mt={1}>
+                    <Heading size="lg" color={draftTone}>{formatUnits(facultyUnitStats.draftUnits)}</Heading>
+                    <Badge colorScheme="orange" variant="solid">{facultyUnitStats.draftCount} draft</Badge>
+                  </HStack>
+                  <Text fontSize="xs" color={subtle}>Units from schedules added here but not yet saved</Text>
+                </Box>
+                <Box p={3} rounded="md" borderWidth="1px" borderColor={totalBorder} bg={totalBg} boxShadow="xs">
+                  <Text fontSize="xs" textTransform="uppercase" letterSpacing="0.08em" color={totalTone}>Projected total</Text>
+                  <HStack justify="space-between" align="baseline" mt={1}>
+                    <Heading size="lg" color={totalTone}>{formatUnits(facultyUnitStats.totalUnits)}</Heading>
+                    <Badge colorScheme="blue" variant="solid">{facultyUnitStats.savedCount + facultyUnitStats.draftCount} item(s)</Badge>
+                  </HStack>
+                  <Text fontSize="xs" color={subtle}>Total load if all drafts are saved</Text>
+                </Box>
+              </SimpleGrid>
               <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
                 <HStack spacing={3} mb={2} align="center" flexWrap="wrap">
                   {(() => {
@@ -4270,7 +4337,29 @@ const prefill = hit ? {
                                     <Checkbox isChecked={facSelected.has(c.id)} onChange={(e)=>toggleFacSelect(c.id, e.target.checked)} isDisabled={isLocked} />
                                     <Badge>{c.code || c.courseName}</Badge>
                                     {String(c.id || '').startsWith('tmp:') && <Badge colorScheme="pink">Draft</Badge>}
-                                    <Text noOfLines={1} flex="1">{c.title || c.courseTitle}</Text>
+                                    <HStack space="2" flex="1" alignItems="center">
+                                    {/* Unit Badge */}
+                                    <Box
+                                      px="2"
+                                      py="1"
+                                      bg="gray.200"
+                                      borderRadius="md"
+                                    >
+                                      <Text fontSize="xs" fontWeight="bold">
+                                        {c.unit.toFixed(1)}
+                                      </Text>
+                                    </Box>
+
+                                    {/* Title (this part ellipsizes) */}
+                                    <Text
+                                      noOfLines={1}
+                                      flex="1"
+                                      fontSize="md"
+                                    >
+                                      {c.title || c.courseTitle}
+                                    </Text>
+                                  </HStack>
+
                                     <Badge colorScheme="orange">{c.blockCode || c.section || '—'}</Badge>
                                   </HStack>
                                   <HStack mt={2} spacing={2} align="center" flexWrap="wrap">
