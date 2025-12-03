@@ -258,7 +258,7 @@ function AssignmentRow({
       <Checkbox
         isChecked={!!row._selected}
         onChange={handleToggle}
-        isDisabled={disabled}
+        isDisabled={disabled || isLocked}
         mt={1}
       />
 
