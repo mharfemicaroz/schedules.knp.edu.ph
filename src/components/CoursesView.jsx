@@ -391,7 +391,7 @@ export default function CoursesView() {
         }
         const proposed = current + Number(addUnits || 0);
         if (proposed > max) {
-          toast({ title: 'Load limit exceeded', description: `${name}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addUnits} → ${proposed}.`, status: 'warning' });
+          toast({ title: 'Load limit exceeded', description: `${name}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 36'} units. Current ${current}, adding ${addUnits} → ${proposed}.`, status: 'warning' });
           return false;
         }
       } catch (e) {

@@ -752,7 +752,7 @@ export default function CourseLoading() {
         const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); if (meta?.id != null) { qs.set("facultyId", String(meta.id)); } else { qs.set("instructor", name); } if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
         const proposed = current + Number(addUnits || 0);
         if (proposed > max) {
-          toast({ title: 'Load limit exceeded', description: `${name}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addUnits} ⇒ ${proposed}. Only admin can exceed.`, status: 'warning' });
+          toast({ title: 'Load limit exceeded', description: `${name}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 36'} units. Current ${current}, adding ${addUnits} ⇒ ${proposed}. Only admin can exceed.`, status: 'warning' });
           return false;
         }
       } catch (e) {
@@ -2017,7 +2017,7 @@ const prefill = hit ? {
             const addU = same ? 0 : Number(base.unit || 0);
             if (current + addU > max) {
               loadExceeded = true;
-              toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}.`, status: 'warning' });
+              toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 36'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}.`, status: 'warning' });
             }
           }
         } catch {}
@@ -2108,7 +2108,7 @@ const prefill = hit ? {
         const same = normalizeName(targetName) === normalizeName(base.faculty || base.instructor || '');
         const addU = same ? 0 : Number(base.unit || 0);
         if (current + addU > max) {
-          toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(targetFac)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}. Only admin can exceed.`, status: 'warning' });
+          toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(targetFac)==='part-time'?'Part-time max 12':'Full-time max 36'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}. Only admin can exceed.`, status: 'warning' });
           return;
         }
       }
@@ -2315,7 +2315,7 @@ const prefill = hit ? {
         const same = normalizeName(targetName) === normalizeName(it.faculty || it.instructor || '');
         const addU = same ? 0 : Number(it.unit || 0);
         if (current + addU > max) {
-          toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}. Only admin can exceed.`, status: 'warning' });
+          toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 36'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}. Only admin can exceed.`, status: 'warning' });
           setFacAssignOpen(false); setFacAssignIndex(null);
           return;
         }
@@ -2867,7 +2867,7 @@ const prefill = hit ? {
             const addU = same ? 0 : Number(row.unit || 0);
             if (current + addU > max) {
               loadExceeded = true;
-              toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 24'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}.`, status: 'warning' });
+              toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(meta)==='part-time'?'Part-time max 12':'Full-time max 36'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}.`, status: 'warning' });
             }
           }
         } catch {}
