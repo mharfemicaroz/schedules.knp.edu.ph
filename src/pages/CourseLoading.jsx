@@ -118,6 +118,13 @@ function mapSemesterLabel(raw) {
   if (v.includes('semester')) return txt;
   return txt;
 }
+function resolveSemesterLabel(term, fallback) {
+  const primary = mapSemesterLabel(term);
+  if (primary) return primary;
+  const secondary = mapSemesterLabel(fallback);
+  if (secondary) return secondary;
+  return term || fallback || '';
+}
 
 // Identify courses that should be Semestral by rule (NSTP/PE/Defense Tactics)
 function isSemestralCourseLike(row) {
@@ -2037,7 +2044,8 @@ const prefill = hit ? {
           };
           return `${ord(n)} Year`;
         })();
-        const semLabel = mapSemesterLabel(settingsLoad?.semester);
+        const termLabel = e.term;
+        const semLabel = resolveSemesterLabel(settingsLoad?.semester);
         const blkCode = base.blockCode || base.section || '';
         const blkMeta = (blocksAll || []).find(b => String(b.blockCode || '').trim().toLowerCase() === String(blkCode).trim().toLowerCase());
         const session = blkMeta?.session || '';
@@ -2048,10 +2056,10 @@ const prefill = hit ? {
           unit: base.unit,
           day: e.day || base.day || 'MON-FRI',
           time: e.time,
-          term: e.term,
+          term: termLabel || e.term,
           schoolyear: settingsLoad?.school_year || '',
-          sem: semLabel || settingsLoad?.semester || '',
-          semester: settingsLoad?.semester || '',
+          sem: semLabel || '',
+          semester: semLabel || '',
           yearlevel: yrLabel || base.yearlevel,
           blockCode: blkCode,
           session: session,
@@ -2069,8 +2077,12 @@ const prefill = hit ? {
       return;
     }
     const changes = {};
-    const semLabel = mapSemesterLabel(settingsLoad?.semester) || settingsLoad?.semester || '';
-    if (canonicalTerm(base.term || '') !== e.term) changes.term = e.term;
+    const termLabel = e.term || '';
+    const semLabel = resolveSemesterLabel(settingsLoad?.semester);
+    const nextTerm = e.term || '';
+    if (nextTerm && String(base.term || '').trim() !== String(nextTerm).trim()) {
+      changes.term = nextTerm;
+    }
     const baseTime = String(base.schedule || base.time || '').trim();
     if (baseTime !== e.time) changes.time = e.time;
     if (String(base.day || '').trim() !== String(e.day || '').trim()) changes.day = e.day || '';
@@ -2352,7 +2364,7 @@ const prefill = hit ? {
   // Bulk save selected faculty schedules (inline edits)
   const saveSelectedFacultyRows = async () => {
     if (facSelectedIds.length === 0) return;
-    const semLabel = mapSemesterLabel(settingsLoad?.semester) || settingsLoad?.semester || '';
+    const semFallback = resolveSemesterLabel(settingsLoad?.semester);
     setSaving(true);
     try {
       let created = 0;
@@ -2365,6 +2377,8 @@ const prefill = hit ? {
         const term = String(e.term || '').trim();
         const time = String(e.time || '').trim();
         if (!term || !time) continue;
+        const termLabel = resolveSemesterLabel(term, settingsLoad?.semester);
+        const semLabel = termLabel || semFallback;
         const day = e.day || it.day || 'MON-FRI';
         const isDraft = String(it.id || '').startsWith('tmp:') || !!it._draft;
         if (isDraft) {
@@ -2391,7 +2405,7 @@ const prefill = hit ? {
               unit: it.unit,
               day: day,
               time: time,
-              term: term,
+              term: termLabel || term,
               schoolyear: settingsLoad?.school_year || '',
               sem: semLabel,
               semester: semLabel,
@@ -2408,7 +2422,7 @@ const prefill = hit ? {
           continue;
         }
         const changes = {};
-        if (canonicalTerm(it.term || '') !== term) changes.term = term;
+        if ((termLabel || term) && String(it.term || '').trim() !== String(termLabel || term).trim()) changes.term = termLabel || term;
         const baseTime = String(it.schedule || it.time || '').trim();
         if (baseTime !== time) changes.time = time;
         if (String(it.day || '').trim() !== String(day || '').trim()) changes.day = day || '';
@@ -4422,16 +4436,6 @@ const prefill = hit ? {
                       </HStack>
                     );
                   })()}
-                  <Button
-                    size="sm"
-                    colorScheme="blue"
-                    leftIcon={<FiUpload />}
-                    onClick={saveSelectedFacultyRows}
-                    isDisabled={!canLoad || saving || !facCanSaveSelected}
-                    isLoading={saving}
-                  >
-                    Save Selected
-                  </Button>
                   <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(true)} isDisabled={!canLoad || facSelectedIds.length === 0 || allSelectedLocked}>Lock Selected</Button>
                   <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(false)} isDisabled={!isAdmin || facSelectedIds.length === 0 || allSelectedUnlocked}>Unlock Selected</Button>
                 </HStack>
