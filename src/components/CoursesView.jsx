@@ -949,6 +949,7 @@ export default function CoursesView() {
                   allCourses={existing || []}
                   statsCourses={scopedCourses || []}
                   blockCode={r.blockCode}
+                  blockSession={r.session || ''}
                   attendanceStats={attendanceStatsMap}
                   disabled={false}
                   isAdmin={isAdmin}

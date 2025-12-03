@@ -3171,6 +3171,22 @@ const prefill = hit ? {
 
   // ---- Auto-assign time within a session (Morning/Afternoon/Evening)
   const normalizeBlockCode = React.useCallback((v) => String(v || '').trim().toLowerCase(), []);
+  const normalizeSessionKey = React.useCallback((v) => {
+    const txt = String(v || '').trim().toLowerCase();
+    if (!txt) return '';
+    if (txt.includes('morning') || txt.startsWith('m')) return 'morning';
+    if (txt.includes('afternoon') || txt.startsWith('a')) return 'afternoon';
+    if (txt.includes('evening') || txt.startsWith('e')) return 'evening';
+    return '';
+  }, []);
+  const blockSessionMap = React.useMemo(() => {
+    const map = new Map();
+    (blocksAll || []).forEach(b => {
+      const key = normalizeBlockCode(b.blockCode || b.section || '');
+      if (key) map.set(key, b.session || '');
+    });
+    return map;
+  }, [blocksAll, normalizeBlockCode]);
   const isBlankTime = React.useCallback((t) => {
     const v = String(t ?? '').trim();
     if (!v) return true;
@@ -3205,11 +3221,51 @@ const prefill = hit ? {
     afternoon: 'Afternoon',
     evening: 'Evening',
   }), []);
+  const timeOptionsBySession = React.useMemo(() => {
+    const base = getTimeOptions();
+    const parsed = base.map(opt => ({ opt, range: parseTimeBlockToMinutes(String(opt || '').trim().toUpperCase()) }));
+    const filterRange = (start, end) => parsed.filter(({ opt, range }) => {
+      if (!opt) return true;
+      const val = String(opt).trim().toUpperCase();
+      if (val === 'TBA') return true;
+      const s = range.start, e = range.end;
+      if (!Number.isFinite(s) || !Number.isFinite(e)) return false;
+      return s >= start && e <= end;
+    }).map(({ opt }) => opt);
+    return {
+      morning: filterRange(8 * 60, 12 * 60),
+      afternoon: filterRange(13 * 60, 17 * 60),
+      evening: filterRange(17 * 60, 21 * 60),
+      all: base,
+    };
+  }, []);
+  const timeOptionsForSession = React.useCallback((sessionKey, currentValue) => {
+    const key = normalizeSessionKey(sessionKey);
+    const base = (key && timeOptionsBySession[key]) ? timeOptionsBySession[key] : timeOptionsBySession.all;
+    if (currentValue && !base.includes(currentValue)) {
+      return [...base, currentValue];
+    }
+    return base;
+  }, [normalizeSessionKey, timeOptionsBySession]);
+  const sessionMenuLabels = React.useMemo(() => ({
+    morning: 'Morning (8-12NN)',
+    afternoon: 'Afternoon (1-5PM)',
+    evening: 'Evening (5-9PM)',
+  }), []);
+  const selectedBlockSessionKey = React.useMemo(() => normalizeSessionKey(selectedBlock?.session), [normalizeSessionKey, selectedBlock]);
+  const allowedAutoAssignSessions = React.useMemo(() => {
+    if (selectedBlockSessionKey) return [selectedBlockSessionKey];
+    return ['morning', 'afternoon', 'evening'];
+  }, [selectedBlockSessionKey]);
   const autoAssignTimeForSession = React.useCallback((sessionKey) => {
     const slots = sessionSlotsMap[sessionKey];
     if (!slots || slots.length === 0) return;
     if (viewMode !== 'blocks' || !selectedBlock) {
       toast({ title: 'Select a block', description: 'Auto-assign time is available in Block view.', status: 'info' });
+      return;
+    }
+    if (selectedBlockSessionKey && sessionKey !== selectedBlockSessionKey) {
+      toast({ title: 'Session locked', description: `This block is set to ${sessionLabels[selectedBlockSessionKey] || 'a single'} session.`, status: 'info' });
       return;
     }
     if (hasMissingTermInBlock) {
@@ -3330,7 +3386,7 @@ const prefill = hit ? {
       description: `${assignments.length} ${assignments.length === 1 ? 'slot' : 'slots'} set for ${sessionLabels[sessionKey] || 'session'}${remaining > 0 ? `; ${remaining} slot(s) left open` : ''}.`,
       status: 'success'
     });
-  }, [sessionSlotsMap, sessionLabels, viewMode, selectedBlock, rows, freshCache, existing, normalizeBlockCode, handleRowChange, toast, isBlankTime, settingsLoad?.school_year, settingsLoad?.semester, hasMissingTermInBlock]);
+  }, [sessionSlotsMap, sessionLabels, viewMode, selectedBlock, rows, freshCache, existing, normalizeBlockCode, handleRowChange, toast, isBlankTime, settingsLoad?.school_year, settingsLoad?.semester, hasMissingTermInBlock, selectedBlockSessionKey]);
 
   const clearAutoAssignedTimes = React.useCallback(() => {
     if (viewMode !== 'blocks' || !selectedBlock) {
@@ -3403,26 +3459,26 @@ const prefill = hit ? {
 
   // When toggling off, revert only the terms Auto Arrange changed, unless already saved/committed
   React.useEffect(() => {
-    if (!autoArrange) {
-      setRows(prev => {
-        if (!prev || !autoArrangeOriginalTerms || autoArrangeOriginalTerms.size === 0) return prev;
-        const next = prev.slice();
-        const map = autoArrangeOriginalTerms;
-        for (let i = 0; i < next.length; i++) {
-          const r = next[i];
-          const key = rowIdentity(r);
-          if (!map.has(key)) continue;
-          // skip if this row is now committed (has existing id)
-          if (r && r._existingId) continue;
-          // revert term
-          const prevTerm = map.get(key) || '';
-          next[i] = { ...next[i], _term: prevTerm };
-        }
-        return next;
-      });
-      // clear originals after revert
-      setAutoArrangeOriginalTerms(new Map());
-    }
+    const hasOriginals = !!(autoArrangeOriginalTerms && autoArrangeOriginalTerms.size);
+    if (autoArrange || !hasOriginals) return;
+    const map = autoArrangeOriginalTerms;
+    setRows(prev => {
+      if (!prev) return prev;
+      const next = prev.slice();
+      for (let i = 0; i < next.length; i++) {
+        const r = next[i];
+        const key = rowIdentity(r);
+        if (!map.has(key)) continue;
+        // skip if this row is now committed (has existing id)
+        if (r && r._existingId) continue;
+        // revert term
+        const prevTerm = map.get(key) || '';
+        next[i] = { ...next[i], _term: prevTerm };
+      }
+      return next;
+    });
+    // clear originals after revert (once)
+    setAutoArrangeOriginalTerms(new Map());
   }, [autoArrange, autoArrangeOriginalTerms, rowIdentity]);
   const swapSelected = async () => {
     const idxs = rows.map((r,i) => (r._selected ? i : -1)).filter(i => i >= 0);
@@ -4197,6 +4253,7 @@ const prefill = hit ? {
                                       allCourses={(existing || [])}
                                       statsCourses={scopedCourses}
                                       blockCode={r.blockCode || r.section || ''}
+                                      blockSession={selectedBlock?.session || ''}
                                       attendanceStats={attendanceStatsMap}
                                       disabled={!canLoad}
                                       onChange={(patch)=>handleRowChange(idx, patch)}
@@ -4342,9 +4399,11 @@ const prefill = hit ? {
                           Auto Assign Time
                         </MenuButton>
                         <MenuList>
-                          <MenuItem onClick={()=>autoAssignTimeForSession('morning')} isDisabled={autoAssignTimeDisabled}>Morning (8-12NN)</MenuItem>
-                          <MenuItem onClick={()=>autoAssignTimeForSession('afternoon')} isDisabled={autoAssignTimeDisabled}>Afternoon (1-5PM)</MenuItem>
-                          <MenuItem onClick={()=>autoAssignTimeForSession('evening')} isDisabled={autoAssignTimeDisabled}>Evening (5-9PM)</MenuItem>
+                          {allowedAutoAssignSessions.map((ses) => (
+                            <MenuItem key={ses} onClick={()=>autoAssignTimeForSession(ses)} isDisabled={autoAssignTimeDisabled}>
+                              {sessionMenuLabels[ses] || sessionLabels[ses] || ses}
+                            </MenuItem>
+                          ))}
                           <MenuItem onClick={clearAutoAssignedTimes}>Clear Auto Times (unsaved rows)</MenuItem>
                         </MenuList>
                       </Menu>
@@ -4378,6 +4437,7 @@ const prefill = hit ? {
                           allCourses={(existing || [])}
                           statsCourses={scopedCourses}
                           blockCode={selectedBlock?.blockCode || ''}
+                          blockSession={selectedBlock?.session || ''}
                           attendanceStats={attendanceStatsMap}
                           disabled={!canLoad}
                           onChange={(patch)=>handleRowChange(idx, patch)}
@@ -4516,6 +4576,9 @@ const prefill = hit ? {
                           <VStack align="stretch" spacing={2}>
                             {arr.map((c, i) => {
                               const e = facEdits[c.id] || { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), day: c.day || 'MON-FRI' };
+                            const blkKey = normalizeBlockCode(c.blockCode || c.section || '');
+                            const sessionKey = normalizeSessionKey(blockSessionMap.get(blkKey) || c.session || '');
+                            const timeOpts = timeOptionsForSession(sessionKey, e.time);
                             const dirty =
                               canonicalTerm(c.term || '') !== e.term ||
                               String(c.schedule || c.time || '').trim() !== e.time ||
@@ -4589,7 +4652,7 @@ const prefill = hit ? {
                                     maxW="160px"
                                     isDisabled={!isEditable || isLocked}
                                   >
-                                    {getTimeOptions().map(t => (
+                                    {timeOpts.map(t => (
                                       <option key={t} value={t}>{t || 'Time'}</option>
                                     ))}
                                   </Select>

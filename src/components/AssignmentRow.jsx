@@ -17,6 +17,7 @@ import FacultySelect from './FacultySelect'; // kept for legacy compiled referen
 import { getTimeOptions } from '../utils/timeOptions';
 import { normalizeTimeBlock } from '../utils/timeNormalize';
 import { normalizeSem } from '../utils/facultyScoring';
+import { parseTimeBlockToMinutes } from '../utils/conflicts';
 
 const TIME_OPTS = getTimeOptions();
 const DAY_OPTS = ['MON-FRI', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'MWF', 'TTH', 'TBA'];
@@ -42,6 +43,7 @@ function AssignmentRow({
   onRequestAddToSwap,
   onRequestHistory,
   isAdmin,
+  blockSession,
   variant = 'default',
 }) {
   const rowBorder = useColorModeValue('gray.100', 'gray.700');
@@ -212,6 +214,35 @@ function AssignmentRow({
     [onChange]
   );
 
+  const normalizeSessionKey = React.useCallback((v) => {
+    const txt = String(v || '').trim().toLowerCase();
+    if (!txt) return '';
+    if (txt.includes('morning') || txt.startsWith('m')) return 'morning';
+    if (txt.includes('afternoon') || txt.startsWith('a')) return 'afternoon';
+    if (txt.includes('evening') || txt.startsWith('e')) return 'evening';
+    return '';
+  }, []);
+
+  const sessionRange = React.useMemo(() => {
+    const key = normalizeSessionKey(blockSession || row?.session);
+    if (key === 'morning') return { start: 8 * 60, end: 12 * 60 };
+    if (key === 'afternoon') return { start: 13 * 60, end: 17 * 60 };
+    if (key === 'evening') return { start: 17 * 60, end: 21 * 60 };
+    return null;
+  }, [blockSession, normalizeSessionKey, row?.session]);
+
+  const timeOptions = React.useMemo(() => {
+    if (!sessionRange) return TIME_OPTS;
+    return TIME_OPTS.filter(t => {
+      if (!t) return true; // placeholder
+      const val = String(t).trim().toUpperCase();
+      if (val === 'TBA') return true;
+      const { start, end } = parseTimeBlockToMinutes(val);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+      return start >= sessionRange.start && end <= sessionRange.end;
+    });
+  }, [sessionRange]);
+
   const showAssigned = !!(row._faculty || row.faculty || row.instructor || row._facultyId);
 
   return (
@@ -288,7 +319,7 @@ function AssignmentRow({
             isDisabled={disabled || row._locked}
             maxW="160px"
           >
-            {TIME_OPTS.map(t => (
+            {timeOptions.map(t => (
               <option key={t} value={t}>
                 {t || 'Time'}
               </option>

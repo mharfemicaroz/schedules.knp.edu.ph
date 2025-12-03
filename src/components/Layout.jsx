@@ -27,6 +27,7 @@ import {
   TagLabel,
   Wrap,
   WrapItem,
+  Portal,
 } from '@chakra-ui/react';
 import Sidebar from './Sidebar';
 import { FiMoon, FiSun, FiMenu, FiSidebar, FiLogIn, FiUser, FiKey, FiLogOut } from 'react-icons/fi';
@@ -76,7 +77,7 @@ function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, 
       borderColor={border}
       position="sticky"
       top={0}
-      zIndex={10}
+      zIndex={120}
       className="glass"
     >
       <HStack spacing={3} align="center">
@@ -112,19 +113,21 @@ function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, 
           variant="ghost"
         />
         {authUser ? (
-          <Menu>
+          <Menu placement="bottom-end">
             <MenuButton as={Button} variant="ghost" px={2}>
               <HStack>
                 <Avatar size="sm" name={authUser.first_name ? `${authUser.first_name} ${authUser.last_name||''}` : (authUser.username || authUser.email)} src={authUser.avatar || undefined} />
                 <Text display={{ base: 'none', md: 'block' }} fontSize="sm">{authUser.username || authUser.email}</Text>
               </HStack>
             </MenuButton>
-            <MenuList>
-              <MenuItem icon={<FiUser />} onClick={onOpenProfile}>Profile</MenuItem>
-              <MenuItem icon={<FiKey />} onClick={onOpenChangePwd}>Change Password</MenuItem>
-              <MenuDivider />
-              <MenuItem icon={<FiLogOut />} onClick={onLogout}>Logout</MenuItem>
-            </MenuList>
+            <Portal>
+              <MenuList zIndex={2000}>
+                <MenuItem icon={<FiUser />} onClick={onOpenProfile}>Profile</MenuItem>
+                <MenuItem icon={<FiKey />} onClick={onOpenChangePwd}>Change Password</MenuItem>
+                <MenuDivider />
+                <MenuItem icon={<FiLogOut />} onClick={onLogout}>Logout</MenuItem>
+              </MenuList>
+            </Portal>
           </Menu>
         ) : (
           <Button leftIcon={<FiLogIn />} size="sm" colorScheme="blue" onClick={onOpenLogin}>Login</Button>
