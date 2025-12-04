@@ -1613,23 +1613,41 @@ const prefill = hit ? {
             const locked = (() => {
               const v = hit?.lock; if (typeof v === 'boolean') return v; const s = String(v || '').trim().toLowerCase(); return s === 'yes' || s === 'true' || s === '1';
             })();
-              const prefill = hit ? {
-                 _term: canonicalTerm(hit.term || ''),
-                 _time: hit.schedule || hit.time || '',
-                   _faculty: hit.facultyName || hit.faculty || hit.instructor || '',
-                 _day: hit.day || 'MON-FRI',
-                 room: hit.room || '',
-                } : { _term: '', _time: '', _faculty: '', _day: 'MON-FRI' };
-              rowsByBlock.push({
-                ...p,
-                ...prefill,
-                programcode: p.programcode || prog,
+            const prefill = hit
+              ? {
+                  _term: canonicalTerm(hit.term || ''),
+                  _time: hit.schedule || hit.time || '',
+                  _faculty: hit.facultyName || hit.faculty || hit.instructor || '',
+                  _facultyId: hit.facultyId ?? hit.faculty_id ?? null,
+                  _day: hit.day || 'MON-FRI',
+                  room: hit.room || '',
+                }
+              : { _term: '', _time: '', _faculty: '', _facultyId: null, _day: 'MON-FRI', room: '' };
+            const baseTerm = prefill._term || '';
+            const baseTime = prefill._time || '';
+            const baseDay = prefill._day || 'MON-FRI';
+            const baseFac = prefill._faculty || '';
+            const baseFacId = prefill._facultyId ?? null;
+            rowsByBlock.push({
+              ...p,
+              programcode: p.programcode || prog,
               section: sec,
               blockCode: sec,
               _existingId: hit?.id || null,
               _locked: !!(hit && locked),
               _selected: false,
               _status: hit ? 'Assigned' : 'Unassigned',
+              _term: prefill._term,
+              _time: prefill._time,
+              _faculty: prefill._faculty,
+              _facultyId: prefill._facultyId,
+              _day: prefill._day,
+              room: prefill.room,
+              _baseTerm: baseTerm,
+              _baseTime: baseTime,
+              _baseDay: baseDay,
+              _baseFaculty: baseFac,
+              _baseFacultyId: baseFacId,
             });
           }
         }
@@ -1647,7 +1665,14 @@ const prefill = hit ? {
             _term: '',
             _time: '',
             _faculty: '',
+            _facultyId: null,
             _day: 'MON-FRI',
+            room: '',
+            _baseTerm: '',
+            _baseTime: '',
+            _baseDay: 'MON-FRI',
+            _baseFaculty: '',
+            _baseFacultyId: null,
           });
         }
       }
