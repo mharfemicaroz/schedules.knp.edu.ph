@@ -129,47 +129,48 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
     }
   }, [prospectus, isAdmin, allowedDepts, allowedReady]);
 
-  // Build block options for selected program/year
-    React.useEffect(() => {
+  // Build block options for selected program/year (supports majors and plain programs)
+  React.useEffect(() => {
       if (!allowedReady && !isAdmin) {
         setBlockOptions([]);
         if (blockCode) setBlockCode('');
         return;
       }
 
-      const up = (s) => String(s || '').toUpperCase();
-      const prog = up(program);
-
-      // extract digits from yearlevel, e.g., "3rd Year" -> "3"
-      const ydig = (String(yearlevel || '').match(/(\d+)/) || [, ''])[1];
+      const normProg = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const selProg = normProg(program);
+      const selYear = (String(yearlevel || '').match(/(\d+)/) || [, ''])[1] || '';
 
       let opts = (blocksAll || [])
         .map(b => String(b.blockCode || b.block_code || '').trim())
         .filter(Boolean)
         .filter(code => {
-          const u = up(code);
-          const hasProg = prog ? u.includes(up(prog)) : true;
+          const meta = parseBlockMeta(code);
+          const blkProg = normProg(meta.programcode || code);
+          const blkYear = String(meta.yearlevel || '').replace(/\D/g, '');
+          const progOk = selProg ? blkProg === selProg : true;
+          const yearOk = selYear ? blkYear === selYear : true;
 
-          let hasYear = true;
-          if (ydig) {
-            const beforeDash = (u.split('-')[0] || '').trim();
-            const yearRegex = new RegExp(`\\b${ydig}\\b`);
-            hasYear = yearRegex.test(beforeDash);
+          // Fallback: if parsing failed, keep previous contains behaviour
+          if (!progOk || !yearOk) {
+            if (!meta.programcode && selProg) return normProg(code).includes(selProg) && (!selYear || normProg(code).includes(selYear));
+            if (!meta.yearlevel && selYear) return blkProg === selProg && normProg(code).includes(selYear);
           }
 
-          return hasProg && hasYear;
+          return progOk && yearOk;
         })
         .sort((a, b) => a.localeCompare(b));
 
       if (!isAdmin && Array.isArray(allowedDepts)) {
         const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
-        opts = opts.filter(code =>
-          allow.size === 0
+        opts = opts.filter(code => {
+          const meta = parseBlockMeta(code);
+          const prog = meta.programcode ? String(meta.programcode).toUpperCase() : '';
+          const cleaned = normProg(meta.programcode || code);
+          return allow.size === 0
             ? false
-            : allow.has(
-                String(parseBlockMeta(code).programcode || '').toUpperCase()
-              )
-        );
+            : allow.has(prog) || allow.has(cleaned);
+        });
       }
 
       setBlockOptions(opts);
