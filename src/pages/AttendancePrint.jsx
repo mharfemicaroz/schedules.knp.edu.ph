@@ -8,17 +8,24 @@ import { buildTable } from '../utils/printDesign';
 
 export default function AttendancePrint() {
   const [search] = useSearchParams();
-  const type = (search.get('type') || 'all').toLowerCase();
+  const type = normalizeStatus(search.get('type') || 'all');
   const startDate = search.get('startDate') || '';
   const endDate = search.get('endDate') || '';
   const term = search.get('term') || '';
   const facultyId = search.get('facultyId') || '';
   const faculty = search.get('faculty') || '';
+  const status = normalizeStatus(search.get('status') || '');
   const schedules = useSelector(selectAllCourses);
 
-  const { data, loading } = useAttendance({ page: 1, limit: '', startDate, endDate, term, facultyId, faculty, schedules });
+  const isSummary = ['present', 'absent', 'excused'].includes(type);
+  const summaryLabel = isSummary
+    ? (type === 'excused' ? 'Excuse' : `${type.slice(0,1).toUpperCase()}${type.slice(1)}`)
+    : '';
+  const statusFilter = isSummary ? type : status;
 
-  const title = type === 'absent' ? 'Absent Summary (Per Faculty)' : 'Attendance Report';
+  const { data, loading } = useAttendance({ page: 1, limit: '', startDate, endDate, term, facultyId, faculty, status: statusFilter, schedules });
+
+  const title = isSummary ? `${summaryLabel} Summary (Per Faculty)` : 'Attendance Report';
   const subBits = [];
   if (startDate || endDate) subBits.push(`Dates: ${startDate || '—'} to ${endDate || '—'}`);
   if (term) subBits.push(`Term: ${term}`);
@@ -28,10 +35,10 @@ export default function AttendancePrint() {
   const bodyHtml = React.useMemo(() => {
     if (loading) return '<p>Loading…</p>';
     const arr = Array.isArray(data) ? data : [];
-    if (type === 'absent') {
+    if (isSummary) {
       const by = new Map();
       arr.forEach(r => {
-        if (String(r.status || '').toLowerCase() !== 'absent') return;
+        if (normalizeStatus(r.status) !== type) return;
         const sch = r.schedule || {};
         const fac = sch.faculty || sch.instructor || '';
         const key = fac || '(Unknown Faculty)';
@@ -41,7 +48,7 @@ export default function AttendancePrint() {
         const a = by.get(key) || []; a.push(row); by.set(key, a);
       });
       const names = Array.from(by.keys()).sort((a,b)=>a.localeCompare(b));
-      if (!names.length) return '<p>No absent records match current filters.</p>';
+      if (!names.length) return `<p>No ${summaryLabel.toLowerCase()} records match current filters.</p>`;
       let html = '';
       names.forEach((name) => {
         const rows = by.get(name) || [];
@@ -58,7 +65,7 @@ export default function AttendancePrint() {
       });
       return buildTable(['Date','Status','Course','Schedule','Remarks'], rows);
     }
-  }, [type, data, loading]);
+  }, [isSummary, type, data, loading, summaryLabel]);
 
   const styles = `
     @page { size: A4 portrait; margin: 12mm; }
@@ -133,6 +140,12 @@ export default function AttendancePrint() {
       <Box dangerouslySetInnerHTML={{ __html: html }} />
     </Box>
   );
+}
+
+function normalizeStatus(val) {
+  const v = String(val || '').toLowerCase();
+  if (v === 'excuse') return 'excused';
+  return v;
 }
 
 function escapeHtml(val) {

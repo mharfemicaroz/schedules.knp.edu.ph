@@ -1,9 +1,9 @@
 ﻿import React from 'react';
 import {
   Box, Heading, Text, HStack, VStack, Button, useColorModeValue, Input, Select, Tag, TagLabel, TagCloseButton,
-  SimpleGrid, IconButton, useDisclosure, useToast, Divider
+  SimpleGrid, IconButton, useDisclosure, useToast, Divider, Menu, MenuButton, MenuItem, MenuList
 } from '@chakra-ui/react';
-import { FiRefreshCw, FiPlus, FiFilter, FiPrinter, FiExternalLink } from 'react-icons/fi';
+import { FiRefreshCw, FiPlus, FiFilter, FiPrinter, FiExternalLink, FiChevronDown } from 'react-icons/fi';
 import useAttendance from '../hooks/useAttendance';
 import apiService from '../services/apiService';
 import AttendanceTable from '../components/AttendanceTable';
@@ -20,6 +20,12 @@ const STATUS_OPTIONS = [
   { value: 'absent', label: 'Absent' },
   { value: 'late', label: 'Late' },
   { value: 'excused', label: 'Excused' },
+];
+
+const SUMMARY_STATUS_OPTIONS = [
+  { value: 'present', label: 'Present' },
+  { value: 'absent', label: 'Absent' },
+  { value: 'excused', label: 'Excuse' },
 ];
 
 export default function Attendance() {
@@ -108,12 +114,12 @@ export default function Attendance() {
     window.open(href, '_blank');
   }, [filters]);
 
-  // Build Absent-only grouped summary by faculty (based on current filters)
-  const absentGroups = React.useMemo(() => {
+  const buildSummaryGroups = React.useCallback((targetStatus) => {
     const list = Array.isArray(data) ? data : [];
     const by = new Map();
+    const normTarget = String(targetStatus || '').toLowerCase();
     list.forEach((r) => {
-      if (String(r?.status || '').toLowerCase() !== 'absent') return;
+      if (normTarget && String(r?.status || '').toLowerCase() !== normTarget) return;
       const sid = r?.schedule;
       const facId = sid?.facultyId ?? sid?.faculty_id;
       const name = facId != null ? (facultyById.get(String(facId)) || '') : '';
@@ -137,21 +143,26 @@ export default function Attendance() {
     return by;
   }, [data, facultyById]);
 
-  const onPrintAbsentConsolidated = React.useCallback(() => {
+  // Build Absent-only grouped summary by faculty (based on current filters)
+  const absentGroups = React.useMemo(() => buildSummaryGroups('absent'), [buildSummaryGroups]);
+
+  const onPrintSummary = React.useCallback((status) => {
     // Build a single printable page with sections per faculty
-    const titleBits = ['Absent Summary (Per Faculty)'];
+    const label = (SUMMARY_STATUS_OPTIONS.find(o => o.value === status)?.label) || 'Summary';
+    const titleBits = [`${label} Summary (Per Faculty)`];
     const sub = [];
-    if (filters.startDate || filters.endDate) sub.push(`Dates: ${filters.startDate || '—'} to ${filters.endDate || '—'}`);
+    if (filters.startDate || filters.endDate) sub.push(`Dates: ${filters.startDate || '-'} to ${filters.endDate || '-'}`);
     if (filters.term) sub.push(`Term: ${filters.term}`);
     const title = titleBits.join('');
     const subtitle = sub.join('  |  ');
     let bodyHtml = '';
-    const facNames = Array.from(absentGroups.keys()).sort((a,b)=>a.localeCompare(b));
+    const groups = buildSummaryGroups(status);
+    const facNames = Array.from(groups.keys()).sort((a,b)=>a.localeCompare(b));
     if (facNames.length === 0) {
-      bodyHtml = '<p>No absent records match current filters.</p>';
+      bodyHtml = '<p>No records match current filters.</p>';
     } else {
       facNames.forEach((name) => {
-        const rows = absentGroups.get(name) || [];
+        const rows = groups.get(name) || [];
         const table = buildTable(['Date', 'Subject', 'Time', 'Term'], rows.map(r => [r.date, r.subject, r.time, r.term]));
         const section = `
           <div style="margin-bottom: 12px;">
@@ -166,10 +177,12 @@ export default function Attendance() {
     if (filters.startDate) q.set('startDate', filters.startDate);
     if (filters.endDate) q.set('endDate', filters.endDate);
     if (filters.term) q.set('term', filters.term);
-    q.set('type', 'absent');
+    if (filters.facultyId) q.set('facultyId', filters.facultyId);
+    if (filters.faculty) q.set('faculty', filters.faculty);
+    q.set('type', status || 'all');
     const href = `${window.location.origin}${window.location.pathname}#/admin/attendance/print?${q.toString()}`;
     window.open(href, '_blank');
-  }, [filters]);
+  }, [buildSummaryGroups, filters]);
 
   const onOpenAbsentTabsPerFaculty = React.useCallback(() => {
     const facNames = Array.from(absentGroups.keys());
@@ -267,7 +280,16 @@ export default function Attendance() {
           <Button as={RouterLink} to="/admin/room-attendance" target="_blank" colorScheme="purple" variant="solid">Open Room Attendance</Button>
           <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={refresh} />
           <Button leftIcon={<FiPrinter />} variant="outline" onClick={onPrint}>Print</Button>
-          <Button leftIcon={<FiPrinter />} colorScheme="blue" variant="solid" onClick={onPrintAbsentConsolidated}>Absent Summary</Button>
+          <Menu>
+            <MenuButton as={Button} leftIcon={<FiPrinter />} rightIcon={<FiChevronDown />} colorScheme="blue" variant="solid">
+              Summary
+            </MenuButton>
+            <MenuList>
+              {SUMMARY_STATUS_OPTIONS.map(opt => (
+                <MenuItem key={opt.value} onClick={() => onPrintSummary(opt.value)}>{opt.label}</MenuItem>
+              ))}
+            </MenuList>
+          </Menu>
           <IconButton aria-label="Open tabs per faculty" icon={<FiExternalLink />} onClick={onOpenAbsentTabsPerFaculty} title="Open absent summary in tabs per faculty" />
           <Button leftIcon={<FiPlus />} colorScheme="blue" onClick={() => { setEditing(null); modal.onOpen(); }}>Add</Button>
         </HStack>
