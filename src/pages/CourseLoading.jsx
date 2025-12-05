@@ -775,6 +775,14 @@ export default function CourseLoading() {
   const savedTone = useColorModeValue('green.700','green.200');
   const draftTone = useColorModeValue('orange.700','orange.200');
   const totalTone = useColorModeValue('blue.700','blue.200');
+  const termBgFirst = useColorModeValue('blue.50','blue.900');
+  const termBgSecond = useColorModeValue('green.50','green.900');
+  const termBgSem = useColorModeValue('orange.50','orange.900');
+  const termBgOther = useColorModeValue('gray.50','gray.900');
+  const termBorderFirst = useColorModeValue('blue.200','blue.700');
+  const termBorderSecond = useColorModeValue('green.200','green.700');
+  const termBorderSem = useColorModeValue('orange.200','orange.700');
+  const termBorderOther = useColorModeValue('gray.200','gray.700');
   // Skeleton shared colors and overlay
   const skStart = useColorModeValue('gray.100','gray.700');
   const skEnd = useColorModeValue('gray.200','gray.600');
@@ -2018,6 +2026,7 @@ const prefill = hit ? {
         semester: settingsLoad.semester || undefined,
         blockCode: base.blockCode || base.section || '',
         courseName: base.courseName || base.code || '',
+        courseTitle: base.courseTitle || base.course_title || '',
         session: base.session || '',
       };
       const res = await api.checkScheduleConflict(id, payload);
@@ -2026,7 +2035,15 @@ const prefill = hit ? {
 
       // Department-agnostic fallback using instructor schedules
       if (!conflict) {
-        const fb = await detectConflictViaInstructor({ facultyName: payload.faculty, term, timeStr, excludeId: id });
+        const fb = await detectConflictViaInstructor({
+          facultyName: payload.faculty,
+          term,
+          timeStr,
+          excludeId: id,
+          courseName: payload.courseName,
+          courseTitle: base.courseTitle || base.course_title || '',
+          day: payload.day,
+        });
         if (fb.conflict) { conflict = true; details = details.concat(fb.details); }
       }
       // Inline load limit check for non-admin
@@ -2777,7 +2794,15 @@ const prefill = hit ? {
   };
 
   // Fallback: department-agnostic conflict detection via instructor schedules
-  const detectConflictViaInstructor = async ({ facultyName, term, timeStr, excludeId }) => {
+  const detectConflictViaInstructor = async ({ facultyName, term, timeStr, excludeId, courseName, courseTitle, day }) => {
+    const isTBA = (v) => String(v || '').trim().toUpperCase() === 'TBA';
+    const isPELike = () => {
+      const txt = [courseName, courseTitle].filter(Boolean).map(String).join(' ').toUpperCase();
+      return /\b(PE|NSTP|DEF\s*TACT)\b/.test(txt);
+    };
+    if (isPELike() && (isTBA(timeStr) || isTBA(term) || isTBA(day))) {
+      return { conflict: false, details: [] };
+    }
     try {
       const sy = settingsLoad.school_year || '';
       const sem = settingsLoad.semester || '';
@@ -2867,7 +2892,8 @@ const prefill = hit ? {
         schoolyear: sy || undefined,
         semester: sem || undefined,
         blockCode: selectedBlock?.blockCode || '',
-        courseName: row.course_name || row.courseName || row.code || ''
+        courseName: row.course_name || row.courseName || row.code || '',
+        courseTitle: row.course_title || row.courseTitle || row.title || ''
       };
       const idForCheck = row._existingId || 0;
       const res = await api.request(`/${encodeURIComponent(idForCheck)}/check`, { method: 'POST', body: JSON.stringify(payload) });
@@ -2876,7 +2902,15 @@ const prefill = hit ? {
 
       // Department-agnostic fallback using instructor schedules
       if (!conflict) {
-        const fb = await detectConflictViaInstructor({ facultyName: payload.faculty, term, timeStr, excludeId: idForCheck });
+        const fb = await detectConflictViaInstructor({
+          facultyName: payload.faculty,
+          term,
+          timeStr,
+          excludeId: idForCheck,
+          courseName: payload.courseName,
+          courseTitle: payload.courseTitle,
+          day: payload.day,
+        });
         if (fb.conflict) { conflict = true; details = details.concat(fb.details); }
       }
       // Inline load limit check for non-admin
@@ -3033,6 +3067,7 @@ const prefill = hit ? {
   const [swapBusy, setSwapBusy] = React.useState(false);
   const [autoArrange, setAutoArrange] = React.useState(false);
   const [autoArrangeOriginalTerms, setAutoArrangeOriginalTerms] = React.useState(new Map()); // key -> previous _term
+  const [termViewMode, setTermViewMode] = React.useState('regular'); // 'regular' | 'tiles'
   
 
   // Seamless tab switching: clear transient schedule state before switching views
@@ -4437,6 +4472,12 @@ const prefill = hit ? {
                           <MenuItem onClick={clearAutoAssignedTimes}>Clear Auto Times (unsaved rows)</MenuItem>
                         </MenuList>
                       </Menu>
+                      <Tooltip label="Toggle tiled term cards" hasArrow>
+                        <HStack pl={2} spacing={2}>
+                          <Switch size="sm" isChecked={termViewMode === 'tiles'} onChange={(e)=>setTermViewMode(e.target.checked ? 'tiles' : 'regular')} />
+                          <Text fontSize="sm">Tiles View</Text>
+                        </HStack>
+                      </Tooltip>
                     </HStack>
                   </Box>
                 </VStack>
@@ -4452,40 +4493,128 @@ const prefill = hit ? {
                     </HStack>
                     <Text fontSize="sm" color={subtle}>{group.items.length} course(s)</Text>
                   </HStack>
-          <VStack align="stretch" spacing={0} divider={<Divider borderColor={dividerBorder} />}> 
-            {group.items.map((r) => {
-              const idx = rowIndexMap.get(r) ?? -1;
-              return (
-                <Box
-                  key={`${r.id || r.course_name}-${idx}`}
-                  borderWidth="0px"
-                >
-                        <AssignmentRow
-                          row={r}
-                          faculties={facOptions}
-                          schedulesSource={(freshCache && freshCache.length) ? freshCache : (existing || [])}
-                          allCourses={(existing || [])}
-                          statsCourses={scopedCourses}
-                          blockCode={selectedBlock?.blockCode || ''}
-                          blockSession={selectedBlock?.session || ''}
-                          attendanceStats={attendanceStatsMap}
-                          disabled={!canLoad}
-                          onChange={(patch)=>handleRowChange(idx, patch)}
-                          onToggle={(ck)=>toggleRow(idx, ck)}
-                         onRequestLockChange={(next)=>requestLockChange(idx, next)}
-                          onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
-                          onRequestSuggest={()=>openSuggestions(idx)}
-                         onRequestAssign={()=>openAssignForRow(idx)}
-                          onRequestAddToSwap={()=>addToSwap(rows[idx])}
-                          onRequestDelete={()=>requestDelete(idx)}
-                          onRequestResolve={()=>requestResolve(idx)}
-                          onRequestHistory={openHistoryForRow}
-                          isAdmin={role==='admin' || role==='manager'}
-                        />
-                </Box>
-              );
-            })}
-          </VStack>
+                  {termViewMode === 'regular' ? (
+                    <VStack align="stretch" spacing={0} divider={<Divider borderColor={dividerBorder} />}>
+                      {group.items.map((r) => {
+                        const idx = rowIndexMap.get(r) ?? -1;
+                        return (
+                          <Box
+                            key={`${r.id || r.course_name}-${idx}`}
+                            borderWidth="0px"
+                          >
+                            <AssignmentRow
+                              row={r}
+                              faculties={facOptions}
+                              schedulesSource={(freshCache && freshCache.length) ? freshCache : (existing || [])}
+                              allCourses={(existing || [])}
+                              statsCourses={scopedCourses}
+                              blockCode={selectedBlock?.blockCode || ''}
+                              blockSession={selectedBlock?.session || ''}
+                              attendanceStats={attendanceStatsMap}
+                              disabled={!canLoad}
+                              onChange={(patch)=>handleRowChange(idx, patch)}
+                              onToggle={(ck)=>toggleRow(idx, ck)}
+                              onRequestLockChange={(next)=>requestLockChange(idx, next)}
+                              onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
+                              onRequestSuggest={()=>openSuggestions(idx)}
+                              onRequestAssign={()=>openAssignForRow(idx)}
+                              onRequestAddToSwap={()=>addToSwap(rows[idx])}
+                              onRequestDelete={()=>requestDelete(idx)}
+                              onRequestResolve={()=>requestResolve(idx)}
+                              onRequestHistory={openHistoryForRow}
+                              isAdmin={role==='admin' || role==='manager'}
+                            />
+                          </Box>
+                        );
+                      })}
+                    </VStack>
+                  ) : (
+                    (() => {
+                      const palette = {
+                        '1st': { label: '1st Term', badge: 'blue', bg: termBgFirst, border: termBorderFirst, accent: 'linear-gradient(120deg, rgba(59,130,246,0.18), transparent)' },
+                        '2nd': { label: '2nd Term', badge: 'green', bg: termBgSecond, border: termBorderSecond, accent: 'linear-gradient(120deg, rgba(16,185,129,0.18), transparent)' },
+                        'Sem': { label: 'Semestral', badge: 'orange', bg: termBgSem, border: termBorderSem, accent: 'linear-gradient(120deg, rgba(251,146,60,0.18), transparent)' },
+                        Other: { label: 'Unassigned Term', badge: 'pink', bg: termBgOther, border: termBorderOther, accent: 'linear-gradient(135deg, rgba(236,72,153,0.16), rgba(255,255,255,0))' },
+                      };
+                      const order = ['1st', '2nd', 'Sem', 'Other'];
+                      const bucketMap = new Map(order.map(k => [k, []]));
+                      group.items.forEach((r) => {
+                        // Only respect the explicitly set assignment term; missing terms fall into "Unassigned"
+                        const norm = canonicalTerm(r._term);
+                        const key = norm === '1st' ? '1st' : (norm === '2nd' ? '2nd' : (norm === 'Sem' ? 'Sem' : 'Other'));
+                        bucketMap.get(key).push(r);
+                      });
+                      const buckets = order.map(key => ({ key, items: bucketMap.get(key) || [], ...palette[key] })).filter(b => b.items.length > 0);
+                      return (
+                        <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={3}>
+                          {buckets.map(bucket => (
+                            <Box
+                              key={`${group.programcode}-${group.yearlevel}-${bucket.key}`}
+                              position="relative"
+                              borderWidth="1px"
+                              borderColor={bucket.border}
+                              rounded="lg"
+                              p={3}
+                              bg={bucket.bg}
+                              boxShadow="sm"
+                              overflow="hidden"
+                            >
+                              <Box position="absolute" inset={0} opacity={0.7} pointerEvents="none" style={{ backgroundImage: bucket.accent }} />
+                              <VStack align="stretch" spacing={2} position="relative">
+                                <HStack justify="space-between" align="center">
+                                  <HStack spacing={2}>
+                                    <Badge colorScheme={bucket.badge}>{bucket.label}</Badge>
+                                    <Tag size="sm" variant="subtle" colorScheme={bucket.badge}>Chronological</Tag>
+                                    {bucket.key === 'Other' && <Tag size="sm" colorScheme="pink" variant="solid">Needs term</Tag>}
+                                  </HStack>
+                                  <Tag size="sm" variant="solid" colorScheme={bucket.badge}>{bucket.items.length} course(s)</Tag>
+                                </HStack>
+                                {bucket.key === 'Other' && (
+                                  <Text fontSize="xs" color={subtle} bg={panelBg} px={2} py={1} rounded="md">
+                                    These courses have no term yet—assign 1st, 2nd, or Sem to place them in the proper lane.
+                                  </Text>
+                                )}
+                                <VStack align="stretch" spacing={0} divider={<Divider borderColor={dividerBorder} />}>
+                                  {bucket.items.map((r) => {
+                                    const idx = rowIndexMap.get(r) ?? -1;
+                                    return (
+                                      <Box
+                                        key={`${r.id || r.course_name}-${idx}`}
+                                        borderWidth="0px"
+                                      >
+                                        <AssignmentRow
+                                          row={r}
+                                          faculties={facOptions}
+                                          schedulesSource={(freshCache && freshCache.length) ? freshCache : (existing || [])}
+                                          allCourses={(existing || [])}
+                                          statsCourses={scopedCourses}
+                                          blockCode={selectedBlock?.blockCode || ''}
+                                          blockSession={selectedBlock?.session || ''}
+                                          attendanceStats={attendanceStatsMap}
+                                          disabled={!canLoad}
+                                          onChange={(patch)=>handleRowChange(idx, patch)}
+                                          onToggle={(ck)=>toggleRow(idx, ck)}
+                                          onRequestLockChange={(next)=>requestLockChange(idx, next)}
+                                          onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
+                                          onRequestSuggest={()=>openSuggestions(idx)}
+                                          onRequestAssign={()=>openAssignForRow(idx)}
+                                          onRequestAddToSwap={()=>addToSwap(rows[idx])}
+                                          onRequestDelete={()=>requestDelete(idx)}
+                                          onRequestResolve={()=>requestResolve(idx)}
+                                          onRequestHistory={openHistoryForRow}
+                                          isAdmin={role==='admin' || role==='manager'}
+                                        />
+                                      </Box>
+                                    );
+                                  })}
+                                </VStack>
+                              </VStack>
+                            </Box>
+                          ))}
+                        </SimpleGrid>
+                      );
+                    })()
+                  )}
                 </Box>
               ))}
               {grouped.length === 0 && (
