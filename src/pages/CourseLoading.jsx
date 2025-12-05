@@ -62,7 +62,7 @@ function VirtualBlockList({ items, renderRow, estimatedRowHeight = 76, overscan 
   return (
     <Box ref={containerRef} maxH={maxHeight} overflowY="auto" borderWidth="0px" onScroll={onScroll}>
       <Box style={{ paddingTop: padTop + 'px', paddingBottom: padBottom + 'px' }}>
-        <VStack align="stretch" spacing={0} divider={<Divider borderColor={dividerBorder} />}>
+        <VStack align="stretch" spacing={3} divider={<Divider borderColor={dividerBorder} />}>
           {slice.map((r, i) => renderRow(r, start + i))}
         </VStack>
       </Box>
@@ -4275,7 +4275,7 @@ const prefill = hit ? {
                   <HStack justify="space-between" mb={2}>
                     <HStack>
                       <Badge colorScheme="blue">{group.programcode}</Badge>
-                      <Badge colorScheme="orange">Year {group.yearlevel || ''}</Badge>
+                      <Badge colorScheme="orange">Year {group.yearlevel || 'N/A'}</Badge>
                     </HStack>
                     <Text fontSize="sm" color={subtle}>{group.items.length} course(s)</Text>
                   </HStack>
@@ -4489,7 +4489,7 @@ const prefill = hit ? {
                   <HStack justify="space-between" mb={2}>
                     <HStack>
                       <Badge colorScheme="blue">{group.programcode}</Badge>
-                      <Badge colorScheme="orange">Year {group.yearlevel || '—'}</Badge>
+                      <Badge colorScheme="orange">Year {group.yearlevel || 'N/A'}</Badge>
                     </HStack>
                     <Text fontSize="sm" color={subtle}>{group.items.length} course(s)</Text>
                   </HStack>
@@ -4546,7 +4546,7 @@ const prefill = hit ? {
                       });
                       const buckets = order.map(key => ({ key, items: bucketMap.get(key) || [], ...palette[key] })).filter(b => b.items.length > 0);
                       return (
-                        <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={3}>
+                        <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4}>
                           {buckets.map(bucket => (
                             <Box
                               key={`${group.programcode}-${group.yearlevel}-${bucket.key}`}
@@ -4554,13 +4554,15 @@ const prefill = hit ? {
                               borderWidth="1px"
                               borderColor={bucket.border}
                               rounded="lg"
-                              p={3}
+                              p={4}
                               bg={bucket.bg}
-                              boxShadow="sm"
+                              boxShadow="lg"
                               overflow="hidden"
+                              transition="all 0.2s ease"
+                              _hover={{ boxShadow: 'xl', transform: 'translateY(-2px)' }}
                             >
-                              <Box position="absolute" inset={0} opacity={0.7} pointerEvents="none" style={{ backgroundImage: bucket.accent }} />
-                              <VStack align="stretch" spacing={2} position="relative">
+                              <Box position="absolute" inset={0} opacity={0.7} pointerEvents="none" zIndex={0} style={{ backgroundImage: bucket.accent }} />
+                              <VStack align="stretch" spacing={3} position="relative" zIndex={1}>
                                 <HStack justify="space-between" align="center">
                                   <HStack spacing={2}>
                                     <Badge colorScheme={bucket.badge}>{bucket.label}</Badge>
@@ -4571,10 +4573,10 @@ const prefill = hit ? {
                                 </HStack>
                                 {bucket.key === 'Other' && (
                                   <Text fontSize="xs" color={subtle} bg={panelBg} px={2} py={1} rounded="md">
-                                    These courses have no term yet—assign 1st, 2nd, or Sem to place them in the proper lane.
+                                    These courses have no term yet - assign 1st, 2nd, or Sem to place them in the proper lane.
                                   </Text>
                                 )}
-                                <VStack align="stretch" spacing={0} divider={<Divider borderColor={dividerBorder} />}>
+                                <VStack align="stretch" spacing={3} divider={<Divider borderColor={dividerBorder} />}>
                                   {bucket.items.map((r) => {
                                     const idx = rowIndexMap.get(r) ?? -1;
                                     return (
@@ -4603,6 +4605,7 @@ const prefill = hit ? {
                                           onRequestResolve={()=>requestResolve(idx)}
                                           onRequestHistory={openHistoryForRow}
                                           isAdmin={role==='admin' || role==='manager'}
+                                          variant="tile"
                                         />
                                       </Box>
                                     );
@@ -5168,7 +5171,6 @@ const prefill = hit ? {
     </VStack>
   );
 }
-
 
 
 

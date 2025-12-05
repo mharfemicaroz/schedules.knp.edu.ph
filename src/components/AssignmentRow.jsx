@@ -48,6 +48,9 @@ function AssignmentRow({
 }) {
   const rowBorder = useColorModeValue('gray.100', 'gray.700');
   const mutedText = useColorModeValue('gray.600', 'gray.300');
+  const tileBg = useColorModeValue('white', 'gray.800');
+  const tileBorder = useColorModeValue('blue.100', 'blue.600');
+  const isTile = variant === 'tile';
 
   const isLocked = React.useMemo(
     () =>
@@ -248,14 +251,22 @@ function AssignmentRow({
   return (
     <HStack
       spacing={3}
-      py={2}
-      px={2}
-      borderBottomWidth="1px"
-      borderColor={rowBorder}
+      py={isTile ? 3 : 2}
+      px={isTile ? 3 : 2}
+      borderBottomWidth={isTile ? '0px' : '1px'}
+      borderWidth={isTile ? '1px' : undefined}
+      borderColor={isTile ? tileBorder : rowBorder}
+      bg={isTile ? tileBg : undefined}
+      rounded={isTile ? 'lg' : undefined}
+      boxShadow={isTile ? 'sm' : undefined}
+      transition={isTile ? 'all 0.15s ease' : undefined}
+      _hover={isTile ? { boxShadow: 'md', transform: 'translateY(-1px)' } : undefined}
       align="flex-start"
       w="full"
     >
       <Checkbox
+        colorScheme={isTile ? 'blue' : undefined}
+        size={isTile ? 'md' : 'sm'}
         isChecked={!!row._selected}
         onChange={handleToggle}
         isDisabled={disabled || isLocked}
