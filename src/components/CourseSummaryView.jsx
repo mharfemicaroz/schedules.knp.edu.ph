@@ -4,16 +4,16 @@ import {
   VStack,
   HStack,
   SimpleGrid,
+  Grid,
+  GridItem,
   Heading,
   Text,
   Select,
-  Stack,
   Badge,
   Tag,
   Button,
   useColorModeValue,
   useBreakpointValue,
-  Skeleton,
   SkeletonText,
   Progress,
   Text as ChakraText,
@@ -133,6 +133,43 @@ function Donut({ assigned = 0, unassigned = 0, size = 160 }) {
       <HStack justify="center" spacing={3} mt={2} fontSize="sm">
         <Badge colorScheme="green">Assigned {assigned}</Badge>
         <Badge colorScheme="red">Unassigned {unassigned}</Badge>
+      </HStack>
+    </Box>
+  );
+}
+
+function ProgramStatCard({ programcode, assigned, total }) {
+  const pct = total > 0 ? Math.min(100, Math.max(0, (assigned / total) * 100)) : 0;
+  const unassigned = Math.max(total - assigned, 0);
+  const tone = pct >= 90 ? 'green' : pct >= 70 ? 'blue' : pct >= 40 ? 'yellow' : 'red';
+  const cardBg = useColorModeValue('white', 'gray.900');
+  const cardBorder = useColorModeValue('gray.200', 'gray.700');
+  const progressBg = useColorModeValue('gray.100', 'gray.700');
+  return (
+    <Box
+      borderWidth="1px"
+      borderColor={cardBorder}
+      rounded="lg"
+      p={3}
+      bg={cardBg}
+      boxShadow="sm"
+      transition="all 0.15s ease"
+      _hover={{ transform: 'translateY(-2px)', boxShadow: 'md' }}
+    >
+      <HStack justify="space-between" align="start" spacing={2} mb={2}>
+        <Box minW={0}>
+          <ChakraText fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="0.08em">
+            Program
+          </ChakraText>
+          <Heading size="sm" noOfLines={1}>{programcode}</Heading>
+        </Box>
+        <Tag colorScheme={tone} variant="subtle" size="sm">{Math.round(pct)}%</Tag>
+      </HStack>
+      <Progress value={pct} size="sm" colorScheme={tone} borderRadius="full" bg={progressBg} />
+      <HStack spacing={2} mt={2} justify="space-between" fontSize="xs" color="gray.600">
+        <Badge colorScheme="green" variant="subtle">{assigned} assigned</Badge>
+        <Badge colorScheme="blue" variant="subtle">{total} total</Badge>
+        <Badge colorScheme="red" variant="subtle">{unassigned} open</Badge>
       </HStack>
     </Box>
   );
@@ -261,71 +298,49 @@ export default function CourseSummaryView() {
         <StatCard label="Total Blocks" value={stats?.totalBlocks ?? 0} tone="purple" helper="in this slice" />
       </SimpleGrid>
 
-      <SimpleGrid columns={{ base: 1, md: 2 }} gap={4}>
-        <Box borderWidth="1px" borderColor={border} bg={surface} rounded="xl" p={4} boxShadow="sm">
-          <Heading size="sm" mb={3}>Assignment Split</Heading>
-          {loading ? (
-            <SkeletonText noOfLines={3} spacing="3" />
-          ) : (
-            <Donut
-              assigned={stats?.assigned ?? 0}
-              unassigned={stats?.unassigned ?? 0}
-              size={donutSize || 160}
-            />
-          )}
-        </Box>
-        <Box borderWidth="1px" borderColor={border} bg={surface} rounded="xl" p={4} boxShadow="sm">
-          <Heading size="sm" mb={3}>Programs</Heading>
-          {loading && <SkeletonText noOfLines={4} spacing="3" />}
-          {!loading && programRows.length === 0 && (
-            <Text fontSize="sm" color="gray.500">No program data for this slice.</Text>
-          )}
-          {!loading && programRows.length > 0 && (
-            <VStack align="stretch" spacing={3}>
-              {programRows.map((p) => {
-                const total = Math.max(p.count, 1);
-                const assignedPct = Math.min(100, Math.max(0, (p.assigned / total) * 100));
-                const unassigned = Math.max(total - p.assigned, 0);
-                const pctLabel = `${Math.round(assignedPct)}% done`;
-                return (
-                  <Box
-                    key={p.programcode}
-                    borderWidth="1px"
-                    borderColor={border}
-                    rounded="lg"
-                    p={3}
-                    bg={useColorModeValue('gray.50', 'gray.800')}
-                    boxShadow="inner"
-                  >
-                    <HStack justify="space-between" mb={2} align="start">
-                      <VStack align="start" spacing={1} flex={1}>
-                        <Text fontWeight="700" noOfLines={1}>{p.programcode}</Text>
-                        <Text fontSize="xs" color="gray.500">{p.assigned} assigned out of {p.count}</Text>
-                      </VStack>
-                      <VStack spacing={1} align="end">
-                        <Tag colorScheme="green" size="sm" variant="subtle">{pctLabel}</Tag>
-                        <Tag colorScheme="blue" size="sm" variant="solid">{p.count} total</Tag>
-                      </VStack>
-                    </HStack>
-                    <Progress
-                      value={assignedPct}
-                      size="sm"
-                      colorScheme="green"
-                      borderRadius="full"
-                      mb={2}
-                      bg={useColorModeValue('red.100', 'red.900')}
+      <Grid templateColumns={{ base: '1fr', md: 'repeat(4, minmax(0, 1fr))' }} gap={4} alignItems="stretch">
+        <GridItem colSpan={{ base: 1, md: 1 }}>
+          <Box borderWidth="1px" borderColor={border} bg={surface} rounded="xl" p={4} boxShadow="sm" h="100%">
+            <Heading size="sm" mb={3}>Assignment Split</Heading>
+            {loading ? (
+              <SkeletonText noOfLines={3} spacing="3" />
+            ) : (
+              <Donut
+                assigned={stats?.assigned ?? 0}
+                unassigned={stats?.unassigned ?? 0}
+                size={donutSize || 160}
+              />
+            )}
+          </Box>
+        </GridItem>
+        <GridItem colSpan={{ base: 1, md: 3 }}>
+          <Box borderWidth="1px" borderColor={border} bg={surface} rounded="xl" p={4} boxShadow="sm" h="100%">
+            <Heading size="sm" mb={3}>Programs</Heading>
+            {loading && <SkeletonText noOfLines={4} spacing="3" />}
+            {!loading && programRows.length === 0 && (
+              <Text fontSize="sm" color="gray.500">No program data for this slice.</Text>
+            )}
+            {!loading && programRows.length > 0 && (
+              <>
+                <HStack justify="space-between" align="center" mb={3} spacing={2}>
+                  <ChakraText fontSize="xs" color="gray.500">Sorted by completion, compact grid to fit more on screen.</ChakraText>
+                  <Tag colorScheme="blue" variant="subtle" size="sm">{programRows.length} programs</Tag>
+                </HStack>
+                <SimpleGrid columns={{ base: 1, sm: 2, md: 3, xl: 4 }} spacing={3}>
+                  {programRows.map((p) => (
+                    <ProgramStatCard
+                      key={p.programcode}
+                      programcode={p.programcode}
+                      assigned={p.assigned}
+                      total={p.count}
                     />
-                    <HStack spacing={3} fontSize="xs" color="gray.600">
-                      <Badge colorScheme="green">Assigned {p.assigned}</Badge>
-                      <Badge colorScheme="red">Unassigned {unassigned}</Badge>
-                    </HStack>
-                  </Box>
-                );
-              })}
-            </VStack>
-          )}
-        </Box>
-      </SimpleGrid>
+                  ))}
+                </SimpleGrid>
+              </>
+            )}
+          </Box>
+        </GridItem>
+      </Grid>
 
       <Box borderWidth="1px" borderColor={border} bg={surface} rounded="xl" p={4} boxShadow="sm">
         <Heading size="sm" mb={2}>Year Level Coverage</Heading>
