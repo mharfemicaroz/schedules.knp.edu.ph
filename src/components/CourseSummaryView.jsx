@@ -161,7 +161,11 @@ export default function CourseSummaryView() {
         count: Number(p.count) || 0,
         assigned: Number(p.assigned) || 0,
       }))
-      .sort((a, b) => b.count - a.count);
+      .map((p) => ({
+        ...p,
+        pct: p.count > 0 ? p.assigned / p.count : 0,
+      }))
+      .sort((a, b) => (b.pct - a.pct) || (b.assigned - a.assigned) || (b.count - a.count) || a.programcode.localeCompare(b.programcode));
   }, [stats]);
 
   const fetchStats = React.useCallback(async ({ sy, sem, prog }) => {
@@ -282,11 +286,26 @@ export default function CourseSummaryView() {
                 const total = Math.max(p.count, 1);
                 const assignedPct = Math.min(100, Math.max(0, (p.assigned / total) * 100));
                 const unassigned = Math.max(total - p.assigned, 0);
+                const pctLabel = `${Math.round(assignedPct)}% done`;
                 return (
-                  <Box key={p.programcode} borderWidth="1px" borderColor={border} rounded="md" p={3}>
-                    <HStack justify="space-between" mb={1}>
-                      <Text fontWeight="600" noOfLines={1}>{p.programcode}</Text>
-                      <Tag colorScheme="blue" size="sm">{p.count} total</Tag>
+                  <Box
+                    key={p.programcode}
+                    borderWidth="1px"
+                    borderColor={border}
+                    rounded="lg"
+                    p={3}
+                    bg={useColorModeValue('gray.50', 'gray.800')}
+                    boxShadow="inner"
+                  >
+                    <HStack justify="space-between" mb={2} align="start">
+                      <VStack align="start" spacing={1} flex={1}>
+                        <Text fontWeight="700" noOfLines={1}>{p.programcode}</Text>
+                        <Text fontSize="xs" color="gray.500">{p.assigned} assigned out of {p.count}</Text>
+                      </VStack>
+                      <VStack spacing={1} align="end">
+                        <Tag colorScheme="green" size="sm" variant="subtle">{pctLabel}</Tag>
+                        <Tag colorScheme="blue" size="sm" variant="solid">{p.count} total</Tag>
+                      </VStack>
                     </HStack>
                     <Progress
                       value={assignedPct}
