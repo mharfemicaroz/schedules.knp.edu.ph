@@ -2074,6 +2074,25 @@ const prefill = hit ? {
     }
   };
 
+  const runServerConflictCheck = async (idForCheck, payload, { label } = {}) => {
+    try {
+      const res = await api.checkScheduleConflict(idForCheck || 0, payload);
+      if (res?.conflict) {
+        const detail = Array.isArray(res?.details) && res.details.length > 0 ? res.details[0].reason : null;
+        toast({
+          title: 'Conflict detected',
+          description: detail || label || 'Schedule conflicts with an existing record.',
+          status: 'error',
+        });
+        return true;
+      }
+    } catch (e) {
+      toast({ title: 'Conflict check failed', description: e?.message || 'Could not verify conflicts.', status: 'error' });
+      return true;
+    }
+    return false;
+  };
+
   const saveFacultyEdit = async (id) => {
     const base = facultySchedules.items.find(x => String(x.id) === String(id));
     if (!base || !canEditFacultyItem(base)) return;
@@ -2119,6 +2138,8 @@ const prefill = hit ? {
           faculty: base.faculty || base.instructor || selectedFaculty?.name || selectedFaculty?.faculty || '',
           prospectusId: base.prospectusId || base.prospectus_id || undefined,
         };
+        const hit = await runServerConflictCheck(0, payload, { label: `${payload.courseName || 'Schedule'} (${blkCode})` });
+        if (hit) return;
         await api.createSchedule(payload);
         await fetchFacultySchedules(selectedFaculty);
         dispatch(loadAllSchedules());
@@ -2129,18 +2150,30 @@ const prefill = hit ? {
       return;
     }
     const changes = {};
-    const termLabel = e.term || '';
-    const semLabel = resolveSemesterLabel(settingsLoad?.semester);
-    const nextTerm = e.term || '';
-    if (nextTerm && String(base.term || '').trim() !== String(nextTerm).trim()) {
-      changes.term = nextTerm;
-    }
+    const nextTerm = canonicalTerm(e.term || base.term || '');
+    const semLabel = resolveSemesterLabel(nextTerm, settingsLoad?.semester);
+    if (nextTerm) { changes.term = nextTerm; }
     const baseTime = String(base.schedule || base.time || '').trim();
     if (baseTime !== e.time) changes.time = e.time;
     if (String(base.day || '').trim() !== String(e.day || '').trim()) changes.day = e.day || '';
     if (semLabel) { changes.semester = semLabel; changes.sem = semLabel; }
     // In faculty view, faculty is implicit; do not change faculty assignment inline
     if (Object.keys(changes).length === 0) return;
+    const checkPayload = {
+      term: changes.term ?? base.term,
+      time: changes.time ?? base.time ?? base.schedule,
+      day: changes.day ?? base.day,
+      faculty: base.faculty || base.instructor || '',
+      facultyId: base.facultyId || base.faculty_id || null,
+      schoolyear: settingsLoad?.school_year || undefined,
+      semester: semLabel || settingsLoad?.semester || undefined,
+      blockCode: base.blockCode || base.section || '',
+      courseName: base.courseName || base.code || '',
+      courseTitle: base.courseTitle || base.title || '',
+      session: base.session || '',
+    };
+    const hit = await runServerConflictCheck(id, checkPayload, { label: `${checkPayload.courseName || 'Schedule'} (${checkPayload.blockCode || 'N/A'})` });
+    if (hit) return;
     try {
       if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) && changes.faculty_id != null) {
         const targetFac = findFacultyById(changes.faculty_id);
@@ -2467,6 +2500,7 @@ const prefill = hit ? {
     try {
       let created = 0;
       let updated = 0;
+      let conflicts = 0;
       for (const it of facSelectedItems) {
         const e = facEdits[it.id];
         if (!e) continue;
@@ -2514,6 +2548,8 @@ const prefill = hit ? {
               faculty: it.faculty || it.instructor || selectedFaculty?.name || selectedFaculty?.faculty || '',
               prospectusId: it.prospectusId || it.prospectus_id || undefined,
             };
+            const hit = await runServerConflictCheck(0, payload, { label: `${payload.courseName || 'Schedule'} (${blkCode || 'N/A'})` });
+            if (hit) { conflicts++; continue; }
             await api.createSchedule(payload);
             created++;
           } catch {}
@@ -2527,6 +2563,21 @@ const prefill = hit ? {
         if (semLabel) { changes.semester = semLabel; changes.sem = semLabel; }
         if (Object.keys(changes).length === 0) continue;
         try {
+          const payloadForCheck = {
+            term: changes.term ?? it.term,
+            time: changes.time ?? it.time ?? it.schedule,
+            day: changes.day ?? it.day ?? 'MON-FRI',
+            faculty: it.faculty || it.instructor || '',
+            facultyId: it.facultyId || it.faculty_id || e.facultyId || null,
+            schoolyear: settingsLoad?.school_year || undefined,
+            semester: semLabel || settingsLoad?.semester || undefined,
+            blockCode: it.blockCode || it.section || '',
+            courseName: it.courseName || it.code || '',
+            courseTitle: it.courseTitle || it.title || '',
+            session: it.session || '',
+          };
+          const hit = await runServerConflictCheck(it.id, payloadForCheck, { label: `${payloadForCheck.courseName || 'Schedule'} (${payloadForCheck.blockCode || 'N/A'})` });
+          if (hit) { conflicts++; continue; }
           await dispatch(updateScheduleThunk({ id: it.id, changes }));
           updated++;
         } catch {}
@@ -2537,7 +2588,8 @@ const prefill = hit ? {
         dispatch(loadAllSchedules());
       }
       const msg = [`${updated} updated`, `${created} created`].filter(s => !s.startsWith('0 ')).join(', ') || 'No changes';
-      toast({ title: 'Saved', description: msg, status: 'success' });
+      const conflictNote = conflicts ? ` (${conflicts} blocked by conflicts)` : '';
+      toast({ title: 'Saved', description: msg + conflictNote, status: 'success' });
     } catch (e) {
       toast({ title: 'Save failed', description: e?.message || 'Could not save selected schedules.', status: 'error' });
     } finally {
@@ -3759,6 +3811,8 @@ const prefill = hit ? {
     const r = rows[idx]; if (!r) return;
     const [item] = preparePayload([r]);
     const { _existingId, ...body } = item || {};
+    const hit = await runServerConflictCheck(_existingId || 0, body, { label: `${body.courseName || 'Schedule'} (${body.blockCode || 'N/A'})` });
+    if (hit) return;
     if (_existingId) await api.updateSchedule(_existingId, body); else await api.createSchedule(body);
   };
 

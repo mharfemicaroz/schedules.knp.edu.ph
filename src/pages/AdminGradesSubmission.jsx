@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Heading, HStack, VStack, Text, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Input, IconButton, Button, Badge, Tooltip, chakra, Progress, Accordion, AccordionItem, AccordionButton, AccordionPanel, AccordionIcon, Spinner, Center, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Select } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Text, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Input, IconButton, Button, Badge, Tooltip, chakra, Progress, Accordion, AccordionItem, AccordionButton, AccordionPanel, AccordionIcon, Spinner, Center, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Select, Tabs, TabList, Tab, TabPanels, TabPanel } from '@chakra-ui/react';
 import { useSelector, useDispatch } from 'react-redux';
 import FacultySelect from '../components/FacultySelect';
 import Pagination from '../components/Pagination';
@@ -9,6 +9,8 @@ import { loadFacultiesThunk } from '../store/facultyThunks';
 import { loadAllSchedules, loadAcademicCalendar } from '../store/dataThunks';
 import { FiEdit, FiChevronUp, FiChevronDown, FiX } from 'react-icons/fi';
 import { updateScheduleThunk } from '../store/dataThunks';
+import GradesSummaryCharts from '../components/GradesSummaryCharts';
+import { selectSettings } from '../store/settingsSlice';
 
 function parseDate(val) {
   if (!val) return null;
@@ -57,6 +59,7 @@ const fromDateInput = (s) => s ? new Date(`${s}T00:00:00`) : null;
 
 export default function AdminGradesSubmission() {
   const dispatch = useDispatch();
+  const settings = useSelector(selectSettings);
   const allCourses = useSelector(selectAllCourses);
   const acadData = useSelector(s => s.data.acadData);
   const loadingData = useSelector(s => s.data.loading);
@@ -87,6 +90,30 @@ export default function AdminGradesSubmission() {
   const [confirmMode, setConfirmMode] = React.useState(null); // 'submit' | 'save'
   const [pendingCourse, setPendingCourse] = React.useState(null);
   const [pendingDate, setPendingDate] = React.useState('');
+  const normalizeSemLabel = (v) => {
+    const s = String(v || '').trim().toLowerCase();
+    if (!s) return '';
+    if (s.startsWith('1')) return '1st Semester';
+    if (s.startsWith('2')) return '2nd Semester';
+    if (s.startsWith('s')) return 'Summer';
+    if (s.includes('summer')) return 'Summer';
+    return v;
+  };
+  const canonicalTerm = (v) => {
+    const s = String(v || '').trim().toLowerCase();
+    if (!s) return '';
+    if (s.startsWith('1')) return '1st';
+    if (s.startsWith('2')) return '2nd';
+    if (s.startsWith('s')) return 'Sem';
+    return v;
+  };
+
+  const defaultSy = settings?.schedulesView?.school_year || '';
+  const defaultSem = normalizeSemLabel(settings?.schedulesView?.semester || '');
+  const [summarySy, setSummarySy] = React.useState(defaultSy);
+  const [summarySem, setSummarySem] = React.useState(defaultSem);
+  const [summaryDept, setSummaryDept] = React.useState('');
+  const [summaryTerm, setSummaryTerm] = React.useState('');
 
   React.useEffect(() => {
     if (!acadData) dispatch(loadAcademicCalendar());
@@ -94,6 +121,9 @@ export default function AdminGradesSubmission() {
     if (!allCourses || allCourses.length === 0) dispatch(loadAllSchedules());
     // ensure we have up-to-date faculty profiles for dept/employment filters
     dispatch(loadFacultiesThunk({ limit: 100000 }));
+    // seed summary filters from settings when available
+    setSummarySy(defaultSy);
+    setSummarySem(defaultSem);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -103,6 +133,33 @@ export default function AdminGradesSubmission() {
     const norm = (s) => String(s || '').toLowerCase().trim();
     return list.filter(c => norm(c.facultyName || c.faculty || '') === norm(selectedFaculty));
   }, [allCourses, selectedFaculty]);
+
+  const summaryFilteredCourses = React.useMemo(() => {
+    const normSem = (v) => normalizeSemLabel(v);
+    const targetSy = String(summarySy || '').trim();
+    const targetSem = normSem(summarySem);
+    const targetTerm = canonicalTerm(summaryTerm);
+    const targetDept = String(summaryDept || '').trim().toLowerCase();
+    return (allCourses || []).filter((c) => {
+      if (targetSy) {
+        const sy = String(c.sy || c.schoolyear || c.schoolYear || '').trim();
+        if (sy !== targetSy) return false;
+      }
+      if (targetSem) {
+        const sem = normSem(c.sem || c.semester);
+        if (sem !== targetSem) return false;
+      }
+      if (targetTerm) {
+        const term = canonicalTerm(c.term);
+        if (term !== targetTerm) return false;
+      }
+      if (targetDept) {
+        const d = String(c.dept || '').trim().toLowerCase();
+        if (d !== targetDept) return false;
+      }
+      return true;
+    });
+  }, [allCourses, summarySy, summarySem, summaryDept, summaryTerm, normalizeSemLabel, canonicalTerm]);
 
   // Smooth large updates without blocking UI
   const rows = React.useDeferredValue(rowsBase);
@@ -180,6 +237,16 @@ export default function AdminGradesSubmission() {
     });
     return Array.from(set).sort((a,b)=>a.localeCompare(b));
   }, [facultyList]);
+  const syOptions = React.useMemo(() => {
+    const set = new Set();
+    (allCourses || []).forEach(c => {
+      const sy = String(c.sy || c.schoolyear || c.schoolYear || '').trim();
+      if (sy) set.add(sy);
+    });
+    if (defaultSy) set.add(defaultSy);
+    return Array.from(set).sort();
+  }, [allCourses, defaultSy]);
+  const semOptions = ['1st Semester', '2nd Semester', 'Summer'];
 
   // Reset expansion when data set changes (keeps initial rendering light)
   React.useEffect(() => { setExpanded([]); }, [rowsBase]);
@@ -361,6 +428,13 @@ export default function AdminGradesSubmission() {
 
   return (
     <Box>
+      <Tabs colorScheme="blue" isLazy>
+        <TabList mb={3}>
+          <Tab>Faculty</Tab>
+          <Tab>Summary</Tab>
+        </TabList>
+        <TabPanels>
+          <TabPanel px={0}>
       <HStack justify="space-between" mb={4}>
         <Heading size="md">Grades Submission</Heading>
         <HStack spacing={2}>
@@ -542,13 +616,38 @@ export default function AdminGradesSubmission() {
               </VStack>
             )}
           </AlertDialogBody>
-          <AlertDialogFooter>
-            <Button variant="ghost" onClick={confirmDisc.onClose}>Cancel</Button>
-            <Button colorScheme="blue" onClick={handleConfirm} ml={3}>Confirm</Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialogFooter>
+        <Button variant="ghost" onClick={confirmDisc.onClose}>Cancel</Button>
+        <Button colorScheme="blue" onClick={handleConfirm} ml={3}>Confirm</Button>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 
+          </TabPanel>
+          <TabPanel px={0}>
+            <VStack align="stretch" spacing={3} mb={4}>
+              <HStack spacing={2} flexWrap="wrap">
+                <Select placeholder="School Year (All)" value={summarySy} onChange={(e)=>setSummarySy(e.target.value)} maxW="180px" size="sm">
+                  {syOptions.map(sy => <option key={sy} value={sy}>{sy}</option>)}
+                </Select>
+                <Select placeholder="Semester (All)" value={summarySem} onChange={(e)=>setSummarySem(e.target.value)} maxW="200px" size="sm">
+                  {semOptions.map(sem => <option key={sem} value={sem}>{sem}</option>)}
+                </Select>
+                <Select placeholder="Department (All)" value={summaryDept} onChange={(e)=>setSummaryDept(e.target.value)} maxW="200px" size="sm">
+                  {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                </Select>
+                <Select placeholder="Term (All)" value={summaryTerm} onChange={(e)=>setSummaryTerm(e.target.value)} maxW="160px" size="sm">
+                  <option value="1st">1st</option>
+                  <option value="2nd">2nd</option>
+                  <option value="Sem">Sem</option>
+                </Select>
+                <Button size="sm" variant="ghost" onClick={()=>{ setSummarySy(''); setSummarySem(''); setSummaryDept(''); setSummaryTerm(''); }}>Clear Filters</Button>
+              </HStack>
+            </VStack>
+            <GradesSummaryCharts courses={summaryFilteredCourses} facultyList={facultyList || []} />
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
     </Box>
   );
 }
