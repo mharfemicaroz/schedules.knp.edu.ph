@@ -11,6 +11,10 @@ import { FiEdit, FiChevronUp, FiChevronDown, FiX } from 'react-icons/fi';
 import { updateScheduleThunk } from '../store/dataThunks';
 import GradesSummaryCharts from '../components/GradesSummaryCharts';
 import { selectSettings } from '../store/settingsSlice';
+import { getUserDepartmentsByUserThunk } from '../store/userDeptThunks';
+import { selectUserDeptItems } from '../store/userDeptSlice';
+import { selectBlocks } from '../store/blockSlice';
+import { loadBlocksThunk } from '../store/blockThunks';
 
 function parseDate(val) {
   if (!val) return null;
@@ -56,6 +60,23 @@ const statusColor = (st) => st === 'early' ? 'green' : st === 'ontime' ? 'blue' 
 const statusLabel = (st) => st ? (st === 'ontime' ? 'On Time' : (st.charAt(0).toUpperCase() + st.slice(1))) : 'No Submission';
 const toDateInput = (d) => { if (!d) return ''; const yy=d.getFullYear(); const mm=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${yy}-${mm}-${dd}`; };
 const fromDateInput = (s) => s ? new Date(`${s}T00:00:00`) : null;
+const ALWAYS_ALLOW = new Set(['GENED','PARTTIME','KNP PARTTIME','KNP-PARTTIME']);
+const programBase = (s) => {
+  const txt = String(s || '').trim().toUpperCase();
+  if (!txt) return '';
+  const head = txt.split('-')[0] || txt;
+  return head;
+};
+const blockBase = (s) => {
+  const txt = String(s || '').trim().toUpperCase();
+  if (!txt) return '';
+  const token = (txt.split(/\s+/)[0] || txt).replace(/[^A-Z0-9-]/g, '');
+  const m = token.match(/^([A-Z]+)(?:-[A-Z]+)?/); // grab leading program stem before digits/sections
+  if (m && m[1]) return m[1];
+  const head = token.split('-')[0] || token;
+  return head.replace(/[^A-Z]/g, '');
+};
+const courseBlockBase = (c) => blockBase(c?.blockCode ?? c?.block_code ?? c?.blockcode ?? c?.block ?? c?.section ?? '');
 
 export default function AdminGradesSubmission() {
   const dispatch = useDispatch();
@@ -63,16 +84,56 @@ export default function AdminGradesSubmission() {
   const allCourses = useSelector(selectAllCourses);
   const acadData = useSelector(s => s.data.acadData);
   const loadingData = useSelector(s => s.data.loading);
+  const blocks = useSelector(selectBlocks);
   // Source faculty profiles from Faculty API (not schedule-derived),
   // so department filtering uses faculty.dept as the source of truth
   const facultyList = useSelector(selectAllFaculty);
   const authUser = useSelector(s => s.auth.user);
   const roleStr = String(authUser?.role || '').toLowerCase();
+  const isAdmin = roleStr === 'admin' || roleStr === 'manager';
+  const isRegistrar = roleStr === 'registrar';
+  const isPrivileged = isAdmin || isRegistrar;
   const canEditDate = roleStr === 'admin' || roleStr === 'manager';
   const canConfirm = roleStr === 'admin' || roleStr === 'manager' || roleStr === 'registrar';
   const canClear = roleStr === 'admin';
   const border = useColorModeValue('gray.200','gray.700');
   const bg = useColorModeValue('white','gray.800');
+  const subtle = useColorModeValue('gray.600','gray.300');
+  const muted = subtle;
+  const accordionExpandedBg = useColorModeValue('gray.50','whiteAlpha.100');
+  const userDeptItems = useSelector(selectUserDeptItems);
+  const normalizeDept = (s) => String(s || '').trim().toUpperCase();
+  const baseDept = (s) => {
+    const txt = normalizeDept(s);
+    if (!txt) return '';
+    const m = txt.split(/[\s-]/)[0] || txt;
+    return m;
+  };
+  const ALL_DEPT = '__ALL__';
+  const allowedDeptSet = React.useMemo(() => {
+    try {
+      return new Set((Array.isArray(userDeptItems) ? userDeptItems : [])
+        .map((d) => normalizeDept(d.department || ''))
+        .filter(Boolean));
+    } catch {
+      return new Set();
+    }
+  }, [userDeptItems]);
+  const allowedDeptBaseSet = React.useMemo(() => {
+    const set = new Set();
+    allowedDeptSet.forEach((d) => { const b = baseDept(d); if (b) set.add(b); });
+    return set;
+  }, [allowedDeptSet]);
+  const allowDept = React.useCallback((dept) => {
+    if (isPrivileged) return true;
+    const d = normalizeDept(dept);
+    if (!d) return false;
+    if (ALWAYS_ALLOW.has(d)) return true;
+    const b = baseDept(d);
+    if (allowedDeptSet.has(d)) return true;
+    if (allowedDeptBaseSet.has(b)) return true;
+    return false;
+  }, [isPrivileged, allowedDeptSet, allowedDeptBaseSet]);
 
   const [selectedFaculty, setSelectedFaculty] = React.useState('');
   const [editingId, setEditingId] = React.useState(null);
@@ -84,12 +145,28 @@ export default function AdminGradesSubmission() {
   const [pageSize, setPageSize] = React.useState(10);
   const [groupSortBy, setGroupSortBy] = React.useState('faculty'); // 'faculty' | 'pct'
   const [groupSortOrder, setGroupSortOrder] = React.useState('asc'); // 'asc' | 'desc'
-  const [deptFilter, setDeptFilter] = React.useState('');
+  const [deptFilter, setDeptFilter] = React.useState(ALL_DEPT);
   const [empFilter, setEmpFilter] = React.useState('');
   const confirmDisc = useDisclosure();
   const [confirmMode, setConfirmMode] = React.useState(null); // 'submit' | 'save'
   const [pendingCourse, setPendingCourse] = React.useState(null);
   const [pendingDate, setPendingDate] = React.useState('');
+  const blockBaseFromCourse = React.useCallback((c) => {
+    if (!c) return '';
+    const bid = c.blockId ?? c.block_id ?? c.blockid;
+    const codeRaw = c.blockCode ?? c.block_code ?? c.blockcode ?? c.block ?? c.section;
+    let blk = null;
+    if (bid != null) {
+      blk = (blocks || []).find(b => String(b.id) === String(bid));
+    }
+    if (!blk && codeRaw) {
+      const normCode = String(codeRaw).toUpperCase();
+      blk = (blocks || []).find(b => String(b.blockCode || b.block_code || '').toUpperCase() === normCode);
+    }
+    const prog = blk?.programcode ?? blk?.program ?? '';
+    if (prog) return programBase(prog);
+    return blockBase(codeRaw || '');
+  }, [blocks]);
   const normalizeSemLabel = (v) => {
     const s = String(v || '').trim().toLowerCase();
     if (!s) return '';
@@ -114,6 +191,104 @@ export default function AdminGradesSubmission() {
   const [summarySem, setSummarySem] = React.useState(defaultSem);
   const [summaryDept, setSummaryDept] = React.useState('');
   const [summaryTerm, setSummaryTerm] = React.useState('');
+  const deptOptions = React.useMemo(() => {
+    const set = new Set();
+    (facultyList || []).forEach(f => {
+      const d = String(f.dept ?? f.department ?? '').trim();
+      if (d) set.add(d);
+    });
+    // Add base department codes for collapsed access (e.g., BSED-MATH -> BSED)
+    if (!isPrivileged) {
+      allowedDeptBaseSet.forEach((b) => { if (b) set.add(b); });
+    }
+    const arr = Array.from(set).filter(d => (isPrivileged ? true : allowDept(d))).sort((a,b)=>a.localeCompare(b));
+    ALWAYS_ALLOW.forEach(v => { if (!arr.includes(v)) arr.push(v); });
+    const withAll = [ALL_DEPT, ...arr];
+    return withAll;
+  }, [facultyList, isPrivileged, allowDept, allowedDeptBaseSet]);
+  const viewDeptOptions = React.useMemo(() => deptOptions, [deptOptions]);
+  const matchesDeptFilter = React.useCallback((dept, filter) => {
+    if (!filter || filter === ALL_DEPT) return true;
+    const nd = normalizeDept(dept);
+    const nf = normalizeDept(filter);
+    if (!nf) return true;
+    if (nd === nf) return true;
+    const bd = baseDept(dept);
+    const bf = baseDept(filter);
+    if (bd && bf && bd === bf) return true;
+    return false;
+  }, [normalizeDept, baseDept]);
+  const matchesGroupDept = React.useCallback((group, filter) => {
+    if (!filter || filter === ALL_DEPT) return true;
+    const nf = normalizeDept(filter);
+    const bf = baseDept(filter);
+    const hasDept = (dept) => {
+      if (!dept) return false;
+      if (matchesDeptFilter(dept, filter)) return true;
+      const nd = normalizeDept(dept);
+      const bd = baseDept(dept);
+      if (nf && nd && nf === nd) return true;
+      if (bf && bd && bf === bd) return true;
+      return false;
+    };
+    if (matchesDeptFilter(group?.department, filter)) {
+      // For always-allowed buckets, ensure the group also teaches a user-allowed dept/program
+      if (!isPrivileged && ALWAYS_ALLOW.has(nf || filter)) {
+        const intersectsAllowed =
+          (group?.deptSet instanceof Set && Array.from(group.deptSet).some(d => {
+            const nd = normalizeDept(d);
+            const bd = baseDept(d);
+            return allowedDeptSet.has(nd) || allowedDeptBaseSet.has(bd);
+          })) ||
+          (group?.deptBaseSet instanceof Set && Array.from(group.deptBaseSet).some(b => allowedDeptBaseSet.has(b))) ||
+          (group?.progBaseSet instanceof Set && Array.from(group.progBaseSet).some(p => allowedDeptBaseSet.has(p))) ||
+          (group?.blockBaseSet instanceof Set && Array.from(group.blockBaseSet).some(b => allowedDeptBaseSet.has(b)));
+        if (!intersectsAllowed) return false;
+      }
+      return true;
+    }
+    // Check schedule-derived dept sets
+    if (nf && group?.deptSet instanceof Set && group.deptSet.has(nf)) {
+      if (!isPrivileged && ALWAYS_ALLOW.has(nf)) {
+        const intersectsAllowed =
+          Array.from(group.deptBaseSet || []).some(b => allowedDeptBaseSet.has(b)) ||
+          Array.from(group.progBaseSet || []).some(p => allowedDeptBaseSet.has(p)) ||
+          Array.from(group.blockBaseSet || []).some(b => allowedDeptBaseSet.has(b));
+        if (!intersectsAllowed) return false;
+      }
+      return true;
+    }
+    if (bf && group?.deptBaseSet instanceof Set && group.deptBaseSet.has(bf)) {
+      if (!isPrivileged && ALWAYS_ALLOW.has(nf)) {
+        const intersectsAllowed =
+          Array.from(group.deptBaseSet || []).some(b => allowedDeptBaseSet.has(b)) ||
+          Array.from(group.progBaseSet || []).some(p => allowedDeptBaseSet.has(p)) ||
+          Array.from(group.blockBaseSet || []).some(b => allowedDeptBaseSet.has(b));
+        if (!intersectsAllowed) return false;
+      }
+      return true;
+    }
+    // Fallback: scan items if present
+    if (Array.isArray(group?.items)) {
+      const hit = group.items.some(it => hasDept(it.dept) || (bf && programBase(it.programcode || it.program || '') === bf) || (bf && courseBlockBase(it) === bf));
+      if (hit && !isPrivileged && ALWAYS_ALLOW.has(nf || filter)) {
+        const intersectsAllowed = Array.isArray(group.items) && group.items.some(it => {
+          const nd = normalizeDept(it.dept);
+          const bd = baseDept(it.dept);
+          const pb = programBase(it.programcode || it.program || '');
+          const bb = courseBlockBase(it);
+          return allowedDeptSet.has(nd) || allowedDeptBaseSet.has(bd) || allowedDeptBaseSet.has(pb) || allowedDeptBaseSet.has(bb);
+        });
+        if (!intersectsAllowed) return false;
+      }
+      if (hit) return true;
+    }
+    return false;
+  }, [matchesDeptFilter, normalizeDept, baseDept, isPrivileged, allowedDeptSet, allowedDeptBaseSet, blockBase]);
+  const renderDeptLabel = (v) => {
+    if (v === ALL_DEPT) return isPrivileged ? 'All Departments' : 'All (My Departments)';
+    return v;
+  };
 
   React.useEffect(() => {
     if (!acadData) dispatch(loadAcademicCalendar());
@@ -121,26 +296,60 @@ export default function AdminGradesSubmission() {
     if (!allCourses || allCourses.length === 0) dispatch(loadAllSchedules());
     // ensure we have up-to-date faculty profiles for dept/employment filters
     dispatch(loadFacultiesThunk({ limit: 100000 }));
+    // load blocks for reliable block-program mapping
+    dispatch(loadBlocksThunk({}));
     // seed summary filters from settings when available
     setSummarySy(defaultSy);
     setSummarySem(defaultSem);
+    if (!isPrivileged && authUser?.id) {
+      dispatch(getUserDepartmentsByUserThunk(authUser.id));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  React.useEffect(() => {
+    if (!isPrivileged && viewDeptOptions.length > 0) {
+      setDeptFilter((prev) => prev || ALL_DEPT);
+      setSummaryDept((prev) => prev || ALL_DEPT);
+    }
+  }, [isPrivileged, viewDeptOptions]);
+
+  const filteredCoursesAll = React.useMemo(() => {
+    let list = Array.isArray(allCourses) ? allCourses : [];
+    if (!isPrivileged) {
+      list = list.filter(c => {
+        const bb = courseBlockBase(c);
+        const bblock = blockBaseFromCourse(c);
+        if (allowedDeptBaseSet.has(bblock)) return true;
+        if (allowedDeptBaseSet.has(bb)) return true;
+        const pb = programBase(c.programcode || c.program || '');
+        if (allowedDeptBaseSet.has(pb)) return true;
+        const nd = normalizeDept(c.dept);
+        // For always-allowed tags (GENED/PARTTIME), only allow if block/program intersects allowed base set
+        if (ALWAYS_ALLOW.has(nd)) {
+          return false;
+        }
+        if (allowDept(c.dept)) return true;
+        return false;
+      });
+    }
+    return list;
+  }, [allCourses, isPrivileged, allowDept, allowedDeptBaseSet, normalizeDept, blockBaseFromCourse, courseBlockBase, programBase]);
+
   const rowsBase = React.useMemo(() => {
-    const list = Array.isArray(allCourses) ? allCourses : [];
+    const list = Array.isArray(filteredCoursesAll) ? filteredCoursesAll : [];
     if (!selectedFaculty) return list;
     const norm = (s) => String(s || '').toLowerCase().trim();
     return list.filter(c => norm(c.facultyName || c.faculty || '') === norm(selectedFaculty));
-  }, [allCourses, selectedFaculty]);
+  }, [filteredCoursesAll, selectedFaculty]);
 
   const summaryFilteredCourses = React.useMemo(() => {
     const normSem = (v) => normalizeSemLabel(v);
     const targetSy = String(summarySy || '').trim();
     const targetSem = normSem(summarySem);
     const targetTerm = canonicalTerm(summaryTerm);
-    const targetDept = String(summaryDept || '').trim().toLowerCase();
-    return (allCourses || []).filter((c) => {
+    const targetDept = String(summaryDept || '').trim();
+    return (filteredCoursesAll || []).filter((c) => {
       if (targetSy) {
         const sy = String(c.sy || c.schoolyear || c.schoolYear || '').trim();
         if (sy !== targetSy) return false;
@@ -154,12 +363,12 @@ export default function AdminGradesSubmission() {
         if (term !== targetTerm) return false;
       }
       if (targetDept) {
-        const d = String(c.dept || '').trim().toLowerCase();
-        if (d !== targetDept) return false;
+        const d = String(c.dept || '').trim();
+        if (!matchesDeptFilter(d, targetDept)) return false;
       }
       return true;
     });
-  }, [allCourses, summarySy, summarySem, summaryDept, summaryTerm, normalizeSemLabel, canonicalTerm]);
+  }, [filteredCoursesAll, summarySy, summarySem, summaryDept, summaryTerm, normalizeSemLabel, canonicalTerm, matchesDeptFilter]);
 
   // Smooth large updates without blocking UI
   const rows = React.useDeferredValue(rowsBase);
@@ -199,10 +408,25 @@ export default function AdminGradesSubmission() {
       const pct = total > 0 ? Math.round((submitted / total) * 100) : 0;
       // Build term groups per faculty here to avoid recomputing in render
       const termMap = new Map();
+      // Track departments from schedules as fallback when profile lacks dept
+      const deptSet = new Set();
+      const deptBaseSet = new Set();
+      const progBaseSet = new Set();
+      const blockBaseSet = new Set();
       items.forEach((it) => {
         const t = String(it.term || 'N/A');
         if (!termMap.has(t)) termMap.set(t, []);
         termMap.get(t).push(it);
+        const d = normalizeDept(it.dept || '');
+        if (d) {
+          deptSet.add(d);
+          const b = baseDept(d);
+          if (b) deptBaseSet.add(b);
+        }
+        const pb = programBase(it.programcode || it.program || '');
+        if (pb) progBaseSet.add(pb);
+        const bb = blockBaseFromCourse(it) || courseBlockBase(it);
+        if (bb) blockBaseSet.add(bb);
       });
       // Pull department and employment from Faculty API profile (dept as source of truth)
       const prof = profileMap.get(norm(faculty));
@@ -214,21 +438,14 @@ export default function AdminGradesSubmission() {
         const pp = tot > 0 ? Math.round((s / tot) * 100) : 0;
         return { term, items: tItems, submitted: s, total: tot, pct: pp };
       }).sort((a,b) => termOrder(a.term) - termOrder(b.term));
-      return { faculty, items, submitted, total, pct, terms, department: dept, employment };
+      return { faculty, items, submitted, total, pct, terms, department: dept, employment, deptSet, deptBaseSet, progBaseSet, blockBaseSet };
     });
     arr.sort((a,b) => a.faculty.localeCompare(b.faculty));
     return arr;
-  }, [rows]);
+  }, [rows, normalizeDept, baseDept, programBase, blockBaseFromCourse, courseBlockBase]);
 
-  // Build filter option lists from Faculty API profiles
-  const deptOptions = React.useMemo(() => {
-    const set = new Set();
-    (facultyList || []).forEach(f => {
-      const d = String(f.dept ?? f.department ?? '').trim();
-      if (d) set.add(d);
-    });
-    return Array.from(set).sort((a,b)=>a.localeCompare(b));
-  }, [facultyList]);
+
+
   const empOptions = React.useMemo(() => {
     const set = new Set();
     (facultyList || []).forEach(f => {
@@ -239,7 +456,7 @@ export default function AdminGradesSubmission() {
   }, [facultyList]);
   const syOptions = React.useMemo(() => {
     const set = new Set();
-    (allCourses || []).forEach(c => {
+    (filteredCoursesAll || []).forEach(c => {
       const sy = String(c.sy || c.schoolyear || c.schoolYear || '').trim();
       if (sy) set.add(sy);
     });
@@ -248,17 +465,14 @@ export default function AdminGradesSubmission() {
   }, [allCourses, defaultSy]);
   const semOptions = ['1st Semester', '2nd Semester', 'Summer'];
 
-  // Reset expansion when data set changes (keeps initial rendering light)
-  React.useEffect(() => { setExpanded([]); }, [rowsBase]);
-  // Sort faculty groups
   const filteredFacultyGroups = React.useMemo(() => {
     const norm = (s) => String(s || '').toLowerCase();
     return facultyGroups.filter(g => {
-      if (deptFilter && norm(g.department) !== norm(deptFilter)) return false;
+      if (deptFilter && !matchesGroupDept(g, deptFilter)) return false;
       if (empFilter && norm(g.employment) !== norm(empFilter)) return false;
       return true;
     });
-  }, [facultyGroups, deptFilter, empFilter]);
+  }, [facultyGroups, deptFilter, empFilter, matchesGroupDept]);
 
   const sortedFacultyGroups = React.useMemo(() => {
     const arr = filteredFacultyGroups.slice();
@@ -278,18 +492,75 @@ export default function AdminGradesSubmission() {
     return arr;
   }, [filteredFacultyGroups, groupSortBy, groupSortOrder]);
 
+  const filterGroupItems = React.useCallback((g) => {
+    const nf = normalizeDept(deptFilter);
+    const bf = baseDept(deptFilter);
+    const filterIsAlways = ALWAYS_ALLOW.has(nf);
+    let items = Array.isArray(g.items) ? g.items : [];
+    if (!isPrivileged && filterIsAlways) {
+      items = items.filter((it) => {
+        const bd = baseDept(it.dept);
+        const pb = programBase(it.programcode || it.program || '');
+        const bb = blockBaseFromCourse(it) || courseBlockBase(it);
+        return allowedDeptBaseSet.has(bd) || allowedDeptBaseSet.has(pb) || allowedDeptBaseSet.has(bb);
+      });
+    } else if (deptFilter && deptFilter !== ALL_DEPT) {
+      items = items.filter((it) => {
+        if (matchesDeptFilter(it.dept, deptFilter)) return true;
+        const pb = programBase(it.programcode || it.program || '');
+        const bb = blockBaseFromCourse(it) || courseBlockBase(it);
+        if (bf && pb && bf === pb) return true;
+        if (bf && bb && bf === bb) return true;
+        return false;
+      });
+    }
+    if (!isPrivileged && !filterIsAlways && (!deptFilter || deptFilter === ALL_DEPT)) {
+      items = items.filter((it) => {
+        const bd = baseDept(it.dept);
+        const pb = programBase(it.programcode || it.program || '');
+        const bb = blockBaseFromCourse(it) || courseBlockBase(it);
+        return allowedDeptBaseSet.has(bd) || allowedDeptBaseSet.has(pb) || allowedDeptBaseSet.has(bb);
+      });
+    }
+    const termMap = new Map();
+    items.forEach((it) => {
+      const t = String(it.term || 'N/A');
+      if (!termMap.has(t)) termMap.set(t, []);
+      termMap.get(t).push(it);
+    });
+    const terms = Array.from(termMap.entries()).map(([term, tItems]) => {
+      const s = tItems.reduce((acc, it) => acc + (parseDate(it.gradesSubmitted) ? 1 : 0), 0);
+      const tot = tItems.length;
+      const pp = tot > 0 ? Math.round((s / tot) * 100) : 0;
+      return { term, items: tItems, submitted: s, total: tot, pct: pp };
+    }).sort((a,b) => termOrder(a.term) - termOrder(b.term));
+    const submitted = items.reduce((acc, it) => acc + (parseDate(it.gradesSubmitted) ? 1 : 0), 0);
+    const total = items.length;
+    const pct = total > 0 ? Math.round((submitted / total) * 100) : 0;
+    if (!isPrivileged && total === 0) return null;
+    return { ...g, items, terms, submitted, total, pct };
+  }, [deptFilter, isPrivileged, allowedDeptBaseSet, matchesDeptFilter, normalizeDept, baseDept, programBase, blockBaseFromCourse, courseBlockBase]);
+
+  const groupsWithItems = React.useMemo(() => {
+    return sortedFacultyGroups.map(filterGroupItems).filter(Boolean);
+  }, [sortedFacultyGroups, filterGroupItems]);
+  // Reset expansion when underlying filtered set size changes
+  React.useEffect(() => { setExpanded([]); }, [groupsWithItems.length]);
+
   // Pagination of faculty groups to improve performance
-  const pageCount = React.useMemo(() => Math.max(1, Math.ceil(sortedFacultyGroups.length / pageSize)), [sortedFacultyGroups.length, pageSize]);
+  const pageCount = React.useMemo(() => Math.max(1, Math.ceil(groupsWithItems.length / pageSize)), [groupsWithItems.length, pageSize]);
   const pagedFacultyGroups = React.useMemo(() => {
     const p = Math.max(1, Math.min(page, pageCount));
     const start = (p - 1) * pageSize;
-    return sortedFacultyGroups.slice(start, start + pageSize);
-  }, [sortedFacultyGroups, page, pageSize, pageCount]);
-  React.useEffect(() => { setPage(1); }, [rowsBase]);
+    return groupsWithItems.slice(start, start + pageSize);
+  }, [groupsWithItems, page, pageSize, pageCount]);
+
+  const displayedFacultyGroups = React.useMemo(() => pagedFacultyGroups, [pagedFacultyGroups]);
+  React.useEffect(() => { setPage((prev) => Math.min(prev, pageCount)); }, [pageCount]);
   React.useEffect(() => { setPage(1); setExpanded([]); }, [groupSortBy, groupSortOrder, deptFilter, empFilter]);
   React.useEffect(() => { setExpanded([]); }, [page, pageSize]);
-  const allIdx = React.useMemo(() => pagedFacultyGroups.map((_, i) => i), [pagedFacultyGroups]);
-  const allExpanded = expanded.length === pagedFacultyGroups.length && pagedFacultyGroups.length > 0;
+  const allIdx = React.useMemo(() => displayedFacultyGroups.map((_, i) => i), [displayedFacultyGroups]);
+  const allExpanded = expanded.length === displayedFacultyGroups.length && displayedFacultyGroups.length > 0;
   const toggleAll = () => setExpanded(allExpanded ? [] : allIdx);
 
   const dayIndex = (d) => {
@@ -403,7 +674,7 @@ export default function AdminGradesSubmission() {
 
   const SortableTh = ({ id, children }) => {
     const active = sortBy === id;
-    const color = active ? 'brand.500' : useColorModeValue('gray.600','gray.300');
+    const color = active ? 'brand.500' : subtle;
     return (
       <Th cursor="pointer" onClick={() => onSort(id)} userSelect="none">
         <HStack spacing={1}>
@@ -426,6 +697,15 @@ export default function AdminGradesSubmission() {
     dispatch(loadAllSchedules());
   };
 
+  if (!isPrivileged && allowedDeptSet.size === 0) {
+    return (
+      <Box borderWidth="1px" borderColor={border} rounded="xl" p={6} bg={bg}>
+        <Heading size="md" mb={2}>Grades Submission</Heading>
+        <Text color={subtle}>You need a department assignment to view this page.</Text>
+      </Box>
+    );
+  }
+
   return (
     <Box>
       <Tabs colorScheme="blue" isLazy>
@@ -438,26 +718,36 @@ export default function AdminGradesSubmission() {
       <HStack justify="space-between" mb={4}>
         <Heading size="md">Grades Submission</Heading>
         <HStack spacing={2}>
-          <Box minW={{ base: '220px', md: '360px' }}>
-            <FacultySelect value={selectedFaculty} onChange={setSelectedFaculty} allowClear placeholder="Filter by faculty" />
-          </Box>
+          {isPrivileged && (
+            <Box minW={{ base: '220px', md: '360px' }}>
+              <FacultySelect value={selectedFaculty} onChange={setSelectedFaculty} allowClear placeholder="Filter by faculty" />
+            </Box>
+          )}
           <HStack spacing={1}>
-            <Select size="sm" placeholder="Dept" value={deptFilter} onChange={(e)=>setDeptFilter(e.target.value)} maxW="160px">
-              {deptOptions.map(d => (<option key={d} value={d}>{d}</option>))}
-            </Select>
-            <Select size="sm" placeholder="Employment" value={empFilter} onChange={(e)=>setEmpFilter(e.target.value)} maxW="160px">
+            <Select
+              size="sm"
+              placeholder="Employment"
+              value={empFilter}
+              onChange={(e)=>setEmpFilter(e.target.value)}
+              maxW="160px"
+            >
+              <option value="">All Employment</option>
               {empOptions.map(v => (<option key={v} value={v}>{v}</option>))}
             </Select>
-            <Select size="sm" value={groupSortBy} onChange={(e)=>setGroupSortBy(e.target.value)} maxW="160px">
-              <option value="faculty">Sort: Faculty Name</option>
-              <option value="pct">Sort: Percentage</option>
-              <option value="dept">Sort: Dept</option>
-              <option value="employment">Sort: Employment</option>
-            </Select>
-            <Select size="sm" value={groupSortOrder} onChange={(e)=>setGroupSortOrder(e.target.value)} maxW="120px">
-              <option value="asc">Asc</option>
-              <option value="desc">Desc</option>
-            </Select>
+            {isPrivileged && (
+              <>
+                <Select size="sm" value={groupSortBy} onChange={(e)=>setGroupSortBy(e.target.value)} maxW="160px">
+                  <option value="faculty">Sort: Faculty Name</option>
+                  <option value="pct">Sort: Percentage</option>
+                  <option value="dept">Sort: Dept</option>
+                  <option value="employment">Sort: Employment</option>
+                </Select>
+                <Select size="sm" value={groupSortOrder} onChange={(e)=>setGroupSortOrder(e.target.value)} maxW="120px">
+                  <option value="asc">Asc</option>
+                  <option value="desc">Desc</option>
+                </Select>
+              </>
+            )}
           </HStack>
           <Button size="sm" variant="outline" onClick={toggleAll}>{allExpanded ? 'Collapse All' : 'Expand All'}</Button>
         </HStack>
@@ -467,17 +757,17 @@ export default function AdminGradesSubmission() {
       {loadingData && (
         <Center py={10}>
           <Spinner mr={3} />
-          <Text color={useColorModeValue('gray.600','gray.300')}>Loading grades submission…</Text>
+          <Text color={muted}>Loading grades submission…</Text>
         </Center>
       )}
 
 
 
       <Accordion allowMultiple index={expanded} onChange={(idx) => setExpanded(Array.isArray(idx) ? idx : [idx])}>
-        {pagedFacultyGroups.map((g, idx) => (
+        {displayedFacultyGroups.map((g, idx) => (
           <AccordionItem key={g.faculty} border="none" mb={3}>
             <h2>
-              <AccordionButton borderWidth="1px" borderColor={border} rounded="md" _expanded={{ bg: useColorModeValue('gray.50','whiteAlpha.100') }} px={{ base: 3, md: 4 }} py={{ base: 3, md: 3 }}>
+              <AccordionButton borderWidth="1px" borderColor={border} rounded="md" _expanded={{ bg: accordionExpandedBg }} px={{ base: 3, md: 4 }} py={{ base: 3, md: 3 }}>
                 <VStack align="stretch" flex={1} spacing={1} pr={2}>
                   <HStack spacing={2} align="center" flexWrap="wrap">
                     <Heading size="sm" noOfLines={1}>{g.faculty}</Heading>
@@ -591,7 +881,7 @@ export default function AdminGradesSubmission() {
               <VStack align="stretch" spacing={1}>
                 <Text>Proceed to mark this schedule as submitted?</Text>
                 {pendingCourse && (
-                  <Text fontSize="sm" color={useColorModeValue('gray.600','gray.300')}>
+                  <Text fontSize="sm" color={muted}>
                     {(pendingCourse.code || pendingCourse.courseName || '') + ' — ' + (pendingCourse.title || pendingCourse.courseTitle || '')}
                   </Text>
                 )}
@@ -600,7 +890,7 @@ export default function AdminGradesSubmission() {
               <VStack align="stretch" spacing={1}>
                 <Text>Save the selected submitted date for this schedule?</Text>
                 {pendingCourse && (
-                  <Text fontSize="sm" color={useColorModeValue('gray.600','gray.300')}>
+                  <Text fontSize="sm" color={muted}>
                     {(pendingCourse.code || pendingCourse.courseName || '') + ' — ' + (pendingCourse.title || pendingCourse.courseTitle || '')}
                   </Text>
                 )}
@@ -609,7 +899,7 @@ export default function AdminGradesSubmission() {
               <VStack align="stretch" spacing={1}>
                 <Text>Remove the submitted date and status for this schedule?</Text>
                 {pendingCourse && (
-                  <Text fontSize="sm" color={useColorModeValue('gray.600','gray.300')}>
+                  <Text fontSize="sm" color={muted}>
                     {(pendingCourse.code || pendingCourse.courseName || '') + ' — ' + (pendingCourse.title || pendingCourse.courseTitle || '')}
                   </Text>
                 )}
@@ -627,21 +917,47 @@ export default function AdminGradesSubmission() {
           <TabPanel px={0}>
             <VStack align="stretch" spacing={3} mb={4}>
               <HStack spacing={2} flexWrap="wrap">
-                <Select placeholder="School Year (All)" value={summarySy} onChange={(e)=>setSummarySy(e.target.value)} maxW="180px" size="sm">
+                <Select
+                  placeholder={isPrivileged ? "School Year (All)" : undefined}
+                  value={summarySy}
+                  onChange={(e)=>setSummarySy(e.target.value)}
+                  maxW="180px"
+                  size="sm"
+                >
                   {syOptions.map(sy => <option key={sy} value={sy}>{sy}</option>)}
                 </Select>
-                <Select placeholder="Semester (All)" value={summarySem} onChange={(e)=>setSummarySem(e.target.value)} maxW="200px" size="sm">
+                <Select
+                  placeholder={isPrivileged ? "Semester (All)" : undefined}
+                  value={summarySem}
+                  onChange={(e)=>setSummarySem(e.target.value)}
+                  maxW="200px"
+                  size="sm"
+                >
                   {semOptions.map(sem => <option key={sem} value={sem}>{sem}</option>)}
                 </Select>
-                <Select placeholder="Department (All)" value={summaryDept} onChange={(e)=>setSummaryDept(e.target.value)} maxW="200px" size="sm">
-                  {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                <Select
+              placeholder={isPrivileged ? "Department (All)" : undefined}
+              value={summaryDept}
+              onChange={(e)=>setSummaryDept(e.target.value)}
+              maxW="200px"
+              size="sm"
+            >
+                  {viewDeptOptions.map(d => <option key={d} value={d}>{renderDeptLabel(d)}</option>)}
                 </Select>
-                <Select placeholder="Term (All)" value={summaryTerm} onChange={(e)=>setSummaryTerm(e.target.value)} maxW="160px" size="sm">
+                <Select
+                  placeholder={isPrivileged ? "Term (All)" : undefined}
+                  value={summaryTerm}
+                  onChange={(e)=>setSummaryTerm(e.target.value)}
+                  maxW="160px"
+                  size="sm"
+                >
                   <option value="1st">1st</option>
                   <option value="2nd">2nd</option>
                   <option value="Sem">Sem</option>
                 </Select>
-                <Button size="sm" variant="ghost" onClick={()=>{ setSummarySy(''); setSummarySem(''); setSummaryDept(''); setSummaryTerm(''); }}>Clear Filters</Button>
+                {isPrivileged && (
+                  <Button size="sm" variant="ghost" onClick={()=>{ setSummarySy(''); setSummarySem(''); setSummaryDept(''); setSummaryTerm(''); }}>Clear Filters</Button>
+                )}
               </HStack>
             </VStack>
             <GradesSummaryCharts courses={summaryFilteredCourses} facultyList={facultyList || []} />

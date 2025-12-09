@@ -93,8 +93,8 @@ function App() {
               <Route path="/admin/academic-calendar" element={<RequireAdmin><AdminAcademicCalendar /></RequireAdmin>} />
               <Route path="/admin/settings" element={<RequireAdmin><AdminSettings /></RequireAdmin>} />
               <Route path="/admin/blocks" element={<RequireAdmin><AdminBlockSettings /></RequireAdmin>} />
-              <Route path="/admin/grades-submission" element={<RequireRole roles={['admin','manager','registrar']}><AdminGradesSubmission /></RequireRole>} />
-              <Route path="/admin/v2/grades-submission" element={<RequireRole roles={['admin','manager','registrar']}><AdminGradesSubmission /></RequireRole>} />
+              <Route path="/admin/grades-submission" element={<RequireRole roles={['admin','manager','registrar']} allowDeptMapping><AdminGradesSubmission /></RequireRole>} />
+              <Route path="/admin/v2/grades-submission" element={<RequireRole roles={['admin','manager','registrar']} allowDeptMapping><AdminGradesSubmission /></RequireRole>} />
               <Route path="/admin/course-loading" element={<RequireAuth><RequireCourseLoadingAccess><CourseLoading /></RequireCourseLoadingAccess></RequireAuth>} />
               <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
               <Route path="/admin/user-departments" element={<RequireAdmin><AdminUserDepartments /></RequireAdmin>} />

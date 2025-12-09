@@ -191,7 +191,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             {(isAdmin || isChecker) && (
               <NavItem to="/admin/attendance" icon={FiCheckSquare} onClick={onNavigate} chipLabel={chip}>Attendance</NavItem>
             )}
-            {(isAdmin || isRegistrar) && (
+            {(isAdmin || isRegistrar || hasDeptMapping) && (
               <NavItem to="/admin/grades-submission" icon={FiFileText} onClick={onNavigate} chipLabel={chip}>Grades Submission</NavItem>
             )}
             {(isAdmin || (!isAdmin && hasDeptMapping)) && (
