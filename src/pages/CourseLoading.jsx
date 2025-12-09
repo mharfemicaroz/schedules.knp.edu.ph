@@ -2904,6 +2904,7 @@ const prefill = hit ? {
     if (!row) return;
     const term = String(row._term || '').trim();
     const timeStr = String(row._time || '').trim();
+    const dayStr = String(row._day || '').trim();
 
     // build faculty identifiers to try (label, value, facultyName)
     const opt = (facOptions || []).find(o => String(o.value) === String(row._faculty));
@@ -2955,7 +2956,9 @@ const prefill = hit ? {
       let details = Array.isArray(res?.details) ? res.details.slice() : [];
 
       // Department-agnostic fallback using instructor schedules
-      if (!conflict) {
+      const timeIsPlaceholder = isBlankTime(timeStr);
+      const dayIsPlaceholder = isBlankTime(dayStr);
+      if (!conflict && !timeIsPlaceholder && !dayIsPlaceholder) {
         const fb = await detectConflictViaInstructor({
           facultyName: payload.faculty,
           term,
@@ -2966,6 +2969,9 @@ const prefill = hit ? {
           day: payload.day,
         });
         if (fb.conflict) { conflict = true; details = details.concat(fb.details); }
+      } else if (!conflict && (timeIsPlaceholder || dayIsPlaceholder)) {
+        // Do not flag conflicts when placeholders like TBA are used; trust server result
+        details = [];
       }
       // Inline load limit check for non-admin
       let loadExceeded = false;
