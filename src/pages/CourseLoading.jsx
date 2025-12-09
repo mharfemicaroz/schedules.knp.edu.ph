@@ -2150,9 +2150,11 @@ const prefill = hit ? {
       return;
     }
     const changes = {};
-    const nextTerm = canonicalTerm(e.term || base.term || '');
-    const semLabel = resolveSemesterLabel(nextTerm, settingsLoad?.semester);
+    // Always align sem/semester with the Schedules Load settings, not ad-hoc edits
+    const settingsSemLabel = resolveSemesterLabel(settingsLoad?.semester);
+    const nextTerm = canonicalTerm(e.term || base.term || settingsSemLabel || '');
     if (nextTerm) { changes.term = nextTerm; }
+    const semLabel = settingsSemLabel || resolveSemesterLabel(nextTerm, settingsLoad?.semester);
     const baseTime = String(base.schedule || base.time || '').trim();
     if (baseTime !== e.time) changes.time = e.time;
     if (String(base.day || '').trim() !== String(e.day || '').trim()) changes.day = e.day || '';
