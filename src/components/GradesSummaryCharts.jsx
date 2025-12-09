@@ -27,6 +27,7 @@ const donutColors = ['#2563EB', '#38B2AC', '#F6AD55', '#E53E3E', '#805AD5', '#2F
 
 function DonutChart({ data = [], size = 180, thickness = 22, title }) {
   const total = data.reduce((acc, it) => acc + (it.value || 0), 0);
+  const safeTotal = total > 0 ? total : 1; // avoid divide-by-zero when all values are zero
   const radius = (size - thickness) / 2;
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
@@ -47,9 +48,10 @@ function DonutChart({ data = [], size = 180, thickness = 22, title }) {
             />
             {data.map((d, idx) => {
               const val = d.value || 0;
-              const pct = total > 0 ? val / total : 0;
+              if (val <= 0 || total <= 0) return null;
+              const pct = val / safeTotal;
               const dash = `${pct * circumference} ${circumference}`;
-              const rot = (offset / total) * 360;
+              const rot = (offset / safeTotal) * 360;
               offset += val;
               return (
                 <circle

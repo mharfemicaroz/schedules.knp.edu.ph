@@ -60,7 +60,7 @@ const statusColor = (st) => st === 'early' ? 'green' : st === 'ontime' ? 'blue' 
 const statusLabel = (st) => st ? (st === 'ontime' ? 'On Time' : (st.charAt(0).toUpperCase() + st.slice(1))) : 'No Submission';
 const toDateInput = (d) => { if (!d) return ''; const yy=d.getFullYear(); const mm=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${yy}-${mm}-${dd}`; };
 const fromDateInput = (s) => s ? new Date(`${s}T00:00:00`) : null;
-const ALWAYS_ALLOW = new Set(['GENED','PARTTIME','KNP PARTTIME','KNP-PARTTIME']);
+const ALWAYS_ALLOW = new Set(['GENED','PARTTIME','KNP PARTTIME']);
 const programBase = (s) => {
   const txt = String(s || '').trim().toUpperCase();
   if (!txt) return '';
@@ -76,7 +76,6 @@ const blockBase = (s) => {
   const head = token.split('-')[0] || token;
   return head.replace(/[^A-Z]/g, '');
 };
-const courseBlockBase = (c) => blockBase(c?.blockCode ?? c?.block_code ?? c?.blockcode ?? c?.block ?? c?.section ?? '');
 
 export default function AdminGradesSubmission() {
   const dispatch = useDispatch();
@@ -147,26 +146,11 @@ export default function AdminGradesSubmission() {
   const [groupSortOrder, setGroupSortOrder] = React.useState('asc'); // 'asc' | 'desc'
   const [deptFilter, setDeptFilter] = React.useState(ALL_DEPT);
   const [empFilter, setEmpFilter] = React.useState('');
+  const [termFilter, setTermFilter] = React.useState('');
   const confirmDisc = useDisclosure();
   const [confirmMode, setConfirmMode] = React.useState(null); // 'submit' | 'save'
   const [pendingCourse, setPendingCourse] = React.useState(null);
   const [pendingDate, setPendingDate] = React.useState('');
-  const blockBaseFromCourse = React.useCallback((c) => {
-    if (!c) return '';
-    const bid = c.blockId ?? c.block_id ?? c.blockid;
-    const codeRaw = c.blockCode ?? c.block_code ?? c.blockcode ?? c.block ?? c.section;
-    let blk = null;
-    if (bid != null) {
-      blk = (blocks || []).find(b => String(b.id) === String(bid));
-    }
-    if (!blk && codeRaw) {
-      const normCode = String(codeRaw).toUpperCase();
-      blk = (blocks || []).find(b => String(b.blockCode || b.block_code || '').toUpperCase() === normCode);
-    }
-    const prog = blk?.programcode ?? blk?.program ?? '';
-    if (prog) return programBase(prog);
-    return blockBase(codeRaw || '');
-  }, [blocks]);
   const normalizeSemLabel = (v) => {
     const s = String(v || '').trim().toLowerCase();
     if (!s) return '';
@@ -241,8 +225,7 @@ export default function AdminGradesSubmission() {
             return allowedDeptSet.has(nd) || allowedDeptBaseSet.has(bd);
           })) ||
           (group?.deptBaseSet instanceof Set && Array.from(group.deptBaseSet).some(b => allowedDeptBaseSet.has(b))) ||
-          (group?.progBaseSet instanceof Set && Array.from(group.progBaseSet).some(p => allowedDeptBaseSet.has(p))) ||
-          (group?.blockBaseSet instanceof Set && Array.from(group.blockBaseSet).some(b => allowedDeptBaseSet.has(b)));
+          (group?.progBaseSet instanceof Set && Array.from(group.progBaseSet).some(p => allowedDeptBaseSet.has(p)));
         if (!intersectsAllowed) return false;
       }
       return true;
@@ -252,8 +235,7 @@ export default function AdminGradesSubmission() {
       if (!isPrivileged && ALWAYS_ALLOW.has(nf)) {
         const intersectsAllowed =
           Array.from(group.deptBaseSet || []).some(b => allowedDeptBaseSet.has(b)) ||
-          Array.from(group.progBaseSet || []).some(p => allowedDeptBaseSet.has(p)) ||
-          Array.from(group.blockBaseSet || []).some(b => allowedDeptBaseSet.has(b));
+          Array.from(group.progBaseSet || []).some(p => allowedDeptBaseSet.has(p));
         if (!intersectsAllowed) return false;
       }
       return true;
@@ -262,22 +244,20 @@ export default function AdminGradesSubmission() {
       if (!isPrivileged && ALWAYS_ALLOW.has(nf)) {
         const intersectsAllowed =
           Array.from(group.deptBaseSet || []).some(b => allowedDeptBaseSet.has(b)) ||
-          Array.from(group.progBaseSet || []).some(p => allowedDeptBaseSet.has(p)) ||
-          Array.from(group.blockBaseSet || []).some(b => allowedDeptBaseSet.has(b));
+          Array.from(group.progBaseSet || []).some(p => allowedDeptBaseSet.has(p));
         if (!intersectsAllowed) return false;
       }
       return true;
     }
     // Fallback: scan items if present
     if (Array.isArray(group?.items)) {
-      const hit = group.items.some(it => hasDept(it.dept) || (bf && programBase(it.programcode || it.program || '') === bf) || (bf && courseBlockBase(it) === bf));
+      const hit = group.items.some(it => hasDept(it.dept) || (bf && programBase(it.programcode || it.program || '') === bf));
       if (hit && !isPrivileged && ALWAYS_ALLOW.has(nf || filter)) {
         const intersectsAllowed = Array.isArray(group.items) && group.items.some(it => {
           const nd = normalizeDept(it.dept);
           const bd = baseDept(it.dept);
           const pb = programBase(it.programcode || it.program || '');
-          const bb = courseBlockBase(it);
-          return allowedDeptSet.has(nd) || allowedDeptBaseSet.has(bd) || allowedDeptBaseSet.has(pb) || allowedDeptBaseSet.has(bb);
+          return allowedDeptSet.has(nd) || allowedDeptBaseSet.has(bd) || allowedDeptBaseSet.has(pb);
         });
         if (!intersectsAllowed) return false;
       }
@@ -296,8 +276,6 @@ export default function AdminGradesSubmission() {
     if (!allCourses || allCourses.length === 0) dispatch(loadAllSchedules());
     // ensure we have up-to-date faculty profiles for dept/employment filters
     dispatch(loadFacultiesThunk({ limit: 100000 }));
-    // load blocks for reliable block-program mapping
-    dispatch(loadBlocksThunk({}));
     // seed summary filters from settings when available
     setSummarySy(defaultSy);
     setSummarySem(defaultSem);
@@ -314,61 +292,51 @@ export default function AdminGradesSubmission() {
     }
   }, [isPrivileged, viewDeptOptions]);
 
-  const filteredCoursesAll = React.useMemo(() => {
-    let list = Array.isArray(allCourses) ? allCourses : [];
-    if (!isPrivileged) {
-      list = list.filter(c => {
-        const bb = courseBlockBase(c);
-        const bblock = blockBaseFromCourse(c);
-        if (allowedDeptBaseSet.has(bblock)) return true;
-        if (allowedDeptBaseSet.has(bb)) return true;
-        const pb = programBase(c.programcode || c.program || '');
-        if (allowedDeptBaseSet.has(pb)) return true;
-        const nd = normalizeDept(c.dept);
-        // For always-allowed tags (GENED/PARTTIME), only allow if block/program intersects allowed base set
-        if (ALWAYS_ALLOW.has(nd)) {
-          return false;
-        }
-        if (allowDept(c.dept)) return true;
-        return false;
-      });
-    }
-    return list;
-  }, [allCourses, isPrivileged, allowDept, allowedDeptBaseSet, normalizeDept, blockBaseFromCourse, courseBlockBase, programBase]);
+  const courseVisibleToUser = React.useCallback((c) => {
+  if (isPrivileged) return true;
+
+  const pb = programBase(c.programcode || c.program || '');
+  const nd = normalizeDept(c.dept);
+  const bd = baseDept(c.dept);
+
+  const progAllowed = pb && allowedDeptBaseSet.has(pb);
+  const deptAllowed =
+    allowedDeptSet.has(nd) ||
+    allowedDeptBaseSet.has(bd);
+
+  // GENED / PARTTIME / KNP PARTTIME etc:
+  // only visible if their program matches an allowed base
+  if (ALWAYS_ALLOW.has(nd)) {
+    return progAllowed;
+  }
+
+  // If we know the program base, require it to be allowed
+  if (pb) {
+    return progAllowed && deptAllowed;
+  }
+
+  // No program info → fall back to department only
+  return deptAllowed;
+}, [isPrivileged, normalizeDept, baseDept, allowedDeptSet, allowedDeptBaseSet]);
+
+
+const filteredCoursesAll = React.useMemo(() => {
+  const list = Array.isArray(allCourses) ? allCourses : [];
+  if (isPrivileged) return list;
+  return list.filter(courseVisibleToUser);
+}, [allCourses, isPrivileged, courseVisibleToUser]);
+
 
   const rowsBase = React.useMemo(() => {
     const list = Array.isArray(filteredCoursesAll) ? filteredCoursesAll : [];
-    if (!selectedFaculty) return list;
     const norm = (s) => String(s || '').toLowerCase().trim();
-    return list.filter(c => norm(c.facultyName || c.faculty || '') === norm(selectedFaculty));
-  }, [filteredCoursesAll, selectedFaculty]);
-
-  const summaryFilteredCourses = React.useMemo(() => {
-    const normSem = (v) => normalizeSemLabel(v);
-    const targetSy = String(summarySy || '').trim();
-    const targetSem = normSem(summarySem);
-    const targetTerm = canonicalTerm(summaryTerm);
-    const targetDept = String(summaryDept || '').trim();
-    return (filteredCoursesAll || []).filter((c) => {
-      if (targetSy) {
-        const sy = String(c.sy || c.schoolyear || c.schoolYear || '').trim();
-        if (sy !== targetSy) return false;
-      }
-      if (targetSem) {
-        const sem = normSem(c.sem || c.semester);
-        if (sem !== targetSem) return false;
-      }
-      if (targetTerm) {
-        const term = canonicalTerm(c.term);
-        if (term !== targetTerm) return false;
-      }
-      if (targetDept) {
-        const d = String(c.dept || '').trim();
-        if (!matchesDeptFilter(d, targetDept)) return false;
-      }
+    const targetTerm = canonicalTerm(termFilter);
+    return list.filter(c => {
+      if (selectedFaculty && norm(c.facultyName || c.faculty || '') !== norm(selectedFaculty)) return false;
+      if (targetTerm && canonicalTerm(c.term) !== targetTerm) return false;
       return true;
     });
-  }, [filteredCoursesAll, summarySy, summarySem, summaryDept, summaryTerm, normalizeSemLabel, canonicalTerm, matchesDeptFilter]);
+  }, [filteredCoursesAll, selectedFaculty, termFilter, canonicalTerm]);
 
   // Smooth large updates without blocking UI
   const rows = React.useDeferredValue(rowsBase);
@@ -425,7 +393,7 @@ export default function AdminGradesSubmission() {
         }
         const pb = programBase(it.programcode || it.program || '');
         if (pb) progBaseSet.add(pb);
-        const bb = blockBaseFromCourse(it) || courseBlockBase(it);
+        const bb = blockBase(it.blockCode || it.block || it.section || '');
         if (bb) blockBaseSet.add(bb);
       });
       // Pull department and employment from Faculty API profile (dept as source of truth)
@@ -442,7 +410,7 @@ export default function AdminGradesSubmission() {
     });
     arr.sort((a,b) => a.faculty.localeCompare(b.faculty));
     return arr;
-  }, [rows, normalizeDept, baseDept, programBase, blockBaseFromCourse, courseBlockBase]);
+  }, [rows, normalizeDept, baseDept, programBase, blockBase]);
 
 
 
@@ -501,16 +469,13 @@ export default function AdminGradesSubmission() {
       items = items.filter((it) => {
         const bd = baseDept(it.dept);
         const pb = programBase(it.programcode || it.program || '');
-        const bb = blockBaseFromCourse(it) || courseBlockBase(it);
-        return allowedDeptBaseSet.has(bd) || allowedDeptBaseSet.has(pb) || allowedDeptBaseSet.has(bb);
+        return allowedDeptBaseSet.has(bd) || allowedDeptBaseSet.has(pb);
       });
     } else if (deptFilter && deptFilter !== ALL_DEPT) {
       items = items.filter((it) => {
         if (matchesDeptFilter(it.dept, deptFilter)) return true;
         const pb = programBase(it.programcode || it.program || '');
-        const bb = blockBaseFromCourse(it) || courseBlockBase(it);
         if (bf && pb && bf === pb) return true;
-        if (bf && bb && bf === bb) return true;
         return false;
       });
     }
@@ -518,8 +483,7 @@ export default function AdminGradesSubmission() {
       items = items.filter((it) => {
         const bd = baseDept(it.dept);
         const pb = programBase(it.programcode || it.program || '');
-        const bb = blockBaseFromCourse(it) || courseBlockBase(it);
-        return allowedDeptBaseSet.has(bd) || allowedDeptBaseSet.has(pb) || allowedDeptBaseSet.has(bb);
+        return allowedDeptBaseSet.has(bd) || allowedDeptBaseSet.has(pb);
       });
     }
     const termMap = new Map();
@@ -539,11 +503,63 @@ export default function AdminGradesSubmission() {
     const pct = total > 0 ? Math.round((submitted / total) * 100) : 0;
     if (!isPrivileged && total === 0) return null;
     return { ...g, items, terms, submitted, total, pct };
-  }, [deptFilter, isPrivileged, allowedDeptBaseSet, matchesDeptFilter, normalizeDept, baseDept, programBase, blockBaseFromCourse, courseBlockBase]);
+  }, [deptFilter, isPrivileged, allowedDeptBaseSet, matchesDeptFilter, normalizeDept, baseDept, programBase]);
 
   const groupsWithItems = React.useMemo(() => {
     return sortedFacultyGroups.map(filterGroupItems).filter(Boolean);
   }, [sortedFacultyGroups, filterGroupItems]);
+
+  const summaryFilteredCourses = React.useMemo(() => {
+    const normSem = (v) => normalizeSemLabel(v);
+    const targetSy = String(summarySy || '').trim();
+    const targetSem = normSem(summarySem);
+    const targetTerm = canonicalTerm(summaryTerm);
+    const targetDept = String(summaryDept || '').trim();
+    const baseCourses = Array.isArray(filteredCoursesAll) ? filteredCoursesAll : [];
+    return baseCourses.filter((c) => {
+      if (targetSy) {
+        const sy = String(c.sy || c.schoolyear || c.schoolYear || '').trim();
+        if (sy !== targetSy) return false;
+      }
+      if (targetSem) {
+        const sem = normSem(c.sem || c.semester);
+        if (sem !== targetSem) return false;
+      }
+      if (targetTerm) {
+        const term = canonicalTerm(c.term);
+        if (term !== targetTerm) return false;
+      }
+      if (targetDept) {
+        const d = String(c.dept || '').trim();
+        if (!matchesDeptFilter(d, targetDept)) return false;
+      }
+      return true;
+    });
+  }, [filteredCoursesAll, summarySy, summarySem, summaryDept, summaryTerm, normalizeSemLabel, canonicalTerm, matchesDeptFilter]);
+  const facultySelectOptions = React.useMemo(() => {
+    const set = new Set();
+    groupsWithItems.forEach((g) => {
+      const name = String(g?.faculty || '').trim();
+      if (name) set.add(name);
+    });
+    // Fallback to faculty list to avoid empty options while data loads
+    if (set.size === 0 && Array.isArray(facultyList)) {
+      facultyList.forEach((f) => {
+        const name = String(f.name || f.faculty || '').trim();
+        if (name) set.add(name);
+      });
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b)).map((name) => ({
+      label: name,
+      value: name,
+      id: name,
+    }));
+  }, [groupsWithItems, facultyList]);
+  React.useEffect(() => {
+    if (!selectedFaculty) return;
+    const exists = facultySelectOptions.some((o) => o.value === selectedFaculty);
+    if (!exists) setSelectedFaculty('');
+  }, [facultySelectOptions, selectedFaculty]);
   // Reset expansion when underlying filtered set size changes
   React.useEffect(() => { setExpanded([]); }, [groupsWithItems.length]);
 
@@ -557,7 +573,7 @@ export default function AdminGradesSubmission() {
 
   const displayedFacultyGroups = React.useMemo(() => pagedFacultyGroups, [pagedFacultyGroups]);
   React.useEffect(() => { setPage((prev) => Math.min(prev, pageCount)); }, [pageCount]);
-  React.useEffect(() => { setPage(1); setExpanded([]); }, [groupSortBy, groupSortOrder, deptFilter, empFilter]);
+  React.useEffect(() => { setPage(1); setExpanded([]); }, [groupSortBy, groupSortOrder, deptFilter, empFilter, termFilter]);
   React.useEffect(() => { setExpanded([]); }, [page, pageSize]);
   const allIdx = React.useMemo(() => displayedFacultyGroups.map((_, i) => i), [displayedFacultyGroups]);
   const allExpanded = expanded.length === displayedFacultyGroups.length && displayedFacultyGroups.length > 0;
@@ -715,13 +731,38 @@ export default function AdminGradesSubmission() {
         </TabList>
         <TabPanels>
           <TabPanel px={0}>
-      <HStack justify="space-between" mb={4}>
+      <HStack justify="space-between" mb={4} flexWrap="wrap" spacing={3}>
         <Heading size="md">Grades Submission</Heading>
-        <HStack spacing={2}>
+        <HStack spacing={2} flexWrap="wrap" justify="flex-end">
+          <Box minW={{ base: '220px', md: '320px' }}>
+            <FacultySelect
+              value={selectedFaculty}
+              onChange={setSelectedFaculty}
+              allowClear
+              placeholder="Filter by faculty"
+              options={facultySelectOptions}
+            />
+          </Box>
+          <Select
+            size="sm"
+            value={termFilter}
+            onChange={(e)=>setTermFilter(e.target.value)}
+            maxW="140px"
+          >
+            <option value="">All Terms</option>
+            <option value="1st">1st</option>
+            <option value="2nd">2nd</option>
+            <option value="Sem">Sem</option>
+          </Select>
           {isPrivileged && (
-            <Box minW={{ base: '220px', md: '360px' }}>
-              <FacultySelect value={selectedFaculty} onChange={setSelectedFaculty} allowClear placeholder="Filter by faculty" />
-            </Box>
+            <Select
+              size="sm"
+              value={deptFilter}
+              onChange={(e)=>setDeptFilter(e.target.value || ALL_DEPT)}
+              maxW="200px"
+            >
+              {viewDeptOptions.map((d) => (<option key={d} value={d}>{renderDeptLabel(d)}</option>))}
+            </Select>
           )}
           <HStack spacing={1}>
             <Select
@@ -734,20 +775,15 @@ export default function AdminGradesSubmission() {
               <option value="">All Employment</option>
               {empOptions.map(v => (<option key={v} value={v}>{v}</option>))}
             </Select>
-            {isPrivileged && (
-              <>
-                <Select size="sm" value={groupSortBy} onChange={(e)=>setGroupSortBy(e.target.value)} maxW="160px">
-                  <option value="faculty">Sort: Faculty Name</option>
-                  <option value="pct">Sort: Percentage</option>
-                  <option value="dept">Sort: Dept</option>
-                  <option value="employment">Sort: Employment</option>
-                </Select>
-                <Select size="sm" value={groupSortOrder} onChange={(e)=>setGroupSortOrder(e.target.value)} maxW="120px">
-                  <option value="asc">Asc</option>
-                  <option value="desc">Desc</option>
-                </Select>
-              </>
-            )}
+            <Select size="sm" value={groupSortBy} onChange={(e)=>setGroupSortBy(e.target.value)} maxW="160px">
+              <option value="faculty">Sort: Faculty Name</option>
+              <option value="pct">Sort: Percentage</option>
+              <option value="employment">Sort: Employment</option>
+            </Select>
+            <Select size="sm" value={groupSortOrder} onChange={(e)=>setGroupSortOrder(e.target.value)} maxW="120px">
+              <option value="asc">Asc</option>
+              <option value="desc">Desc</option>
+            </Select>
           </HStack>
           <Button size="sm" variant="outline" onClick={toggleAll}>{allExpanded ? 'Collapse All' : 'Expand All'}</Button>
         </HStack>
@@ -942,19 +978,20 @@ export default function AdminGradesSubmission() {
               maxW="200px"
               size="sm"
             >
-                  {viewDeptOptions.map(d => <option key={d} value={d}>{renderDeptLabel(d)}</option>)}
-                </Select>
-                <Select
-                  placeholder={isPrivileged ? "Term (All)" : undefined}
-                  value={summaryTerm}
-                  onChange={(e)=>setSummaryTerm(e.target.value)}
-                  maxW="160px"
-                  size="sm"
-                >
-                  <option value="1st">1st</option>
-                  <option value="2nd">2nd</option>
-                  <option value="Sem">Sem</option>
-                </Select>
+              {viewDeptOptions.map(d => <option key={d} value={d}>{renderDeptLabel(d)}</option>)}
+            </Select>
+            <Select
+              placeholder={isPrivileged ? "Term (All)" : undefined}
+              value={summaryTerm}
+              onChange={(e)=>setSummaryTerm(e.target.value)}
+              maxW="160px"
+              size="sm"
+            >
+              <option value="">All Terms</option>
+              <option value="1st">1st</option>
+              <option value="2nd">2nd</option>
+              <option value="Sem">Sem</option>
+            </Select>
                 {isPrivileged && (
                   <Button size="sm" variant="ghost" onClick={()=>{ setSummarySy(''); setSummarySem(''); setSummaryDept(''); setSummaryTerm(''); }}>Clear Filters</Button>
                 )}
