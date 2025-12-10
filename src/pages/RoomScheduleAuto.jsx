@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
+import { selectSettings } from '../store/settingsSlice';
 import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGrid, Button, Icon, Divider, Avatar, useDisclosure, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider, IconButton, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, Input, InputGroup, InputLeftElement } from '@chakra-ui/react';
 import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiChevronLeft, FiChevronRight, FiSearch } from 'react-icons/fi';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
@@ -22,8 +23,9 @@ function normRoom(s){ return String(s||'').trim().replace(/\s+/g,' ').toUpperCas
 
 function termLabelOf(s) {
   const t = String(s || '').toLowerCase();
-  if (/1(st)?|first/.test(t)) return '1st Term';
-  if (/2(nd)?|second/.test(t)) return '2nd Term';
+  if (/1(st)?|first/.test(t)) return '1st';
+  if (/2(nd)?|second/.test(t)) return '2nd';
+  if (/sem/.test(t)) return 'Sem';
   return t ? s : 'Other';
 }
 
@@ -47,6 +49,18 @@ function sessionOfRecord(rec) {
   return 'AM';
 }
 
+const normalizeSem = (val) => {
+  const v = String(val || '').trim().toLowerCase();
+  if (!v) return '';
+  if (v.startsWith('1')) return '1st';
+  if (v.startsWith('2')) return '2nd';
+  if (v.startsWith('s')) return 'Sem';
+  if (/first/.test(v)) return '1st';
+  if (/second/.test(v)) return '2nd';
+  if (/sem/.test(v)) return 'Sem';
+  return '';
+};
+
 export default function RoomScheduleAuto() {
   const { room: roomParam } = useParams();
   const room = decodeURIComponent(roomParam || '');
@@ -54,6 +68,7 @@ export default function RoomScheduleAuto() {
   const all = useSelector(selectAllCourses);
   const acadData = useSelector(s => s.data.acadData);
   const authUser = useSelector(s => s.auth.user);
+  const settings = useSelector(selectSettings);
   const roleStr = String(authUser?.role || '').toLowerCase();
   const canAttend = !!authUser && (roleStr === 'admin' || roleStr === 'manager' || roleStr === 'checker');
   const dispatch = useDispatch();
@@ -123,9 +138,23 @@ export default function RoomScheduleAuto() {
     } catch { return []; }
   }, [tokens]);
 
+  const prefSy = useMemo(() => {
+    return String(settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || settings?.school_year || '').trim();
+  }, [settings]);
+
+  const prefSem = useMemo(() => {
+    const raw = settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || settings?.semester || '';
+    return normalizeSem(raw);
+  }, [settings]);
+
   const rows = useMemo(() => {
     const key = normRoom(room);
     const list = (all || []).filter(c => {
+      const syVal = String(c.school_year || c.schoolYear || c.schoolyear || c.sy || '').trim();
+      if (prefSy && syVal && syVal !== prefSy) return false;
+      const semVal = normalizeSem(c.semester || c.sem || c.term);
+      const isSemestral = semVal === 'Sem';
+      if (prefSem && semVal && semVal !== prefSem && !isSemestral) return false;
       const roomsForToday = getRoomsForDay(c, day);
       if (!roomsForToday || roomsForToday.length === 0) return false;
       return roomsForToday.some(r => normRoom(r) === key);
@@ -149,36 +178,96 @@ export default function RoomScheduleAuto() {
     try {
       const cal = Array.isArray(acadData) ? acadData[0]?.academic_calendar : acadData?.academic_calendar;
       const first = cal?.first_semester || {};
-      const ft = first.first_term || {};
-      const st = first.second_term || {};
+      const terms = [
+        { key: '1st', data: first.first_term || {} },
+        { key: '2nd', data: first.second_term || {} },
+      ];
+      const parseDateVal = (val) => {
+        if (!val) return null;
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      };
+      const expandDateRange = (token) => {
+        const m = String(token || '').match(/^([A-Za-z]+)\s+(\d+)-(\d+),\s*(\d{4})$/);
+        if (!m) return [];
+        const month = m[1]; const startD = parseInt(m[2], 10); const endD = parseInt(m[3], 10); const year = parseInt(m[4], 10);
+        const out = [];
+        for (let d = startD; d <= endD; d++) {
+          const dt = new Date(`${month} ${d}, ${year}`);
+          if (!isNaN(dt.getTime())) out.push(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()));
+        }
+        return out;
+      };
+      const endFromActivities = (acts = []) => {
+        let max = null;
+        acts.forEach(a => {
+          if (a.date_range) {
+            expandDateRange(a.date_range).forEach(dt => { if (!max || dt > max) max = dt; });
+          }
+          const dates = Array.isArray(a.date) ? a.date : [a.date].filter(Boolean);
+          dates.forEach(v => {
+            const dt = parseDateVal(v);
+            if (dt && (!max || dt > max)) max = dt;
+          });
+        });
+        return max;
+      };
+      const windows = terms.map(t => {
+        const start = parseDateVal(t.data.start) || (t.data.date_range ? expandDateRange(t.data.date_range)[0] : null);
+        let end = parseDateVal(t.data.end) || (t.data.date_range ? expandDateRange(t.data.date_range).pop() : null);
+        const actEnd = endFromActivities(t.data.activities);
+        if (!end || (actEnd && actEnd > end)) end = actEnd;
+        return { key: t.key, start, end };
+      }).filter(w => w.start && w.end);
+      if (windows.length === 0) return null;
       const now = new Date(); now.setHours(0,0,0,0);
-      const d = (v)=> { const dd = new Date(v); return isNaN(dd.getTime()) ? null : new Date(dd.getFullYear(), dd.getMonth(), dd.getDate()); };
-      const fs = d(ft.start), fe = d(ft.end), ss = d(st.start), se = d(st.end);
-      if (fs && fe && fs <= now && now <= fe) return '1st Term';
-      if (ss && se && ss <= now && now <= se) return '2nd Term';
-      return null;
+      const hit = windows.find(w => w.start <= now && now <= w.end);
+      if (hit) return hit.key;
+      const sorted = windows.slice().sort((a,b)=>a.start - b.start);
+      if (now < sorted[0].start) return sorted[0].key;
+      return sorted[sorted.length - 1].key;
     } catch { return null; }
   }, [acadData]);
 
   // Filter rows to current term if known
   const rowsTerm = useMemo(() => {
-    if (!currentTermKey) return rows;
-    return rows.filter(r => termLabelOf(r.term) === currentTermKey);
-  }, [rows, currentTermKey]);
+    const curr = currentTermKey || prefSem || null;
+    if (!curr) return rows;
+    return rows.filter(r => {
+      const t = termLabelOf(r.term);
+      if (t === 'Sem') return true; // always include semestral
+      if (!t || t === 'Other') return true; // keep untagged to avoid hiding data
+      return t === curr;
+    });
+  }, [rows, currentTermKey, prefSem]);
 
   const byTerm = useMemo(() => {
     const m = new Map();
     rowsTerm.forEach(r => { const k = termLabelOf(r.term); const a = m.get(k) || []; a.push(r); m.set(k, a); });
-    // Ensure 1st then 2nd then Others order
     const keys = Array.from(m.keys());
-    keys.sort((a,b)=>{
-      const rank = (x)=> x.startsWith('1st') ? 1 : x.startsWith('2nd') ? 2 : 9;
-      const ra = rank(a), rb = rank(b); return ra - rb || a.localeCompare(b);
-    });
-    // If we know current term, restrict to it
-    const order = currentTermKey ? keys.filter(k => k === currentTermKey) : keys;
-    return { order, map: m };
+    // Build ordered list: 1st, 2nd, Sem, others
+    const order = [];
+    if (m.has('1st')) order.push('1st');
+    if (m.has('2nd')) order.push('2nd');
+    if (m.has('Sem')) order.push('Sem');
+    keys.forEach(k => { if (!order.includes(k)) order.push(k); });
+    // If current term is known and not Sem, prefer that first but still keep Sem afterwards
+    const finalOrder = (() => {
+      if (!currentTermKey || currentTermKey === 'Sem') return order;
+      const o = order.filter(k => k === currentTermKey || k === 'Sem');
+      keys.forEach(k => { if (!o.includes(k)) o.push(k); });
+      return o;
+    })();
+    return { order: finalOrder, map: m };
   }, [rowsTerm, currentTermKey]);
+
+  const bucketTime = (start) => {
+    if (!Number.isFinite(start)) return null;
+    if (start < 8 * 60) return null; // before 8AM ignore
+    if (start < 12 * 60) return 'AM';
+    if (start < 17 * 60) return 'PM';
+    return 'Evening';
+  };
 
   const getInterval = (rec) => {
     let s = rec.timeStartMinutes, e = rec.timeEndMinutes;
@@ -188,10 +277,13 @@ export default function RoomScheduleAuto() {
   };
   const isNow = (rec) => {
     const [s, e] = getInterval(rec);
-    return Number.isFinite(s) && Number.isFinite(e) && s <= nowMin && nowMin < e;
+    if (!Number.isFinite(s) || !Number.isFinite(e)) return false;
+    const bucket = bucketTime(s);
+    // Require overlap with current time AND valid bucket session
+    return bucket !== null && s <= nowMin && nowMin < e;
   };
   const nowList = useMemo(() => {
-    const filtered = rowsTerm.filter(isNow);
+    const filtered = rowsTerm.filter(r => termLabelOf(r.term) !== 'Sem' && isNow(r));
     const seen = new Set();
     const out = [];
     for (const it of filtered) {
