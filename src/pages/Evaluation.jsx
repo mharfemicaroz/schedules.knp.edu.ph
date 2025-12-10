@@ -119,12 +119,12 @@ function Evaluation() {
       setStudentId(digits);
       return;
     }
-    if (digits.length <= 7) {
+    if (digits.length <= 8) { // allow 3-5 digits after dash
       const formatted = `${digits.slice(0,3)}-${digits.slice(3)}`;
       setStudentId(formatted);
       return;
     }
-    // Exceeds 7 digits: remove dash, keep digits only
+    // Exceeds 8 digits: remove dash, keep digits only
     setStudentId(digits);
   };
 
