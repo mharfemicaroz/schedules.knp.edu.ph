@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import {
   Box, Heading, Text, HStack, VStack, Button, useColorModeValue, Input, Select, Tag, TagLabel, TagCloseButton,
-  SimpleGrid, IconButton, useDisclosure, useToast, Divider, Menu, MenuButton, MenuItem, MenuList
+  SimpleGrid, IconButton, useDisclosure, useToast, Divider, Menu, MenuButton, MenuItem, MenuList, Wrap, WrapItem
 } from '@chakra-ui/react';
 import { FiRefreshCw, FiPlus, FiFilter, FiPrinter, FiExternalLink, FiChevronDown } from 'react-icons/fi';
 import useAttendance from '../hooks/useAttendance';
@@ -32,8 +32,8 @@ export default function Attendance() {
   const cardBg = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
   const [page, setPage] = React.useState(1);
-  // '' means All (no limit)
-  const [limit, setLimit] = React.useState('');
+  // default to 10 rows per page; 'all' will show everything
+  const [limit, setLimit] = React.useState(10);
   const [filters, setFilters] = React.useState({ startDate: '', endDate: '', status: '', faculty: '', facultyId: '', term: '' });
   const schedules = useSelector(selectAllCourses);
   const { data, loading, error, refresh } = useAttendance({ page, limit, ...filters, schedules });
@@ -260,6 +260,21 @@ export default function Attendance() {
     return items;
   }, [data, facultyById, sortKey, sortOrder]);
 
+  // Client-side pagination
+  const perPage = React.useMemo(() => {
+    if (limit === '' || limit === 'all' || limit == null) return sortedItems.length || 1;
+    const n = Number(limit);
+    return Number.isFinite(n) && n > 0 ? n : 10;
+  }, [limit, sortedItems.length]);
+  const pageCount = Math.max(1, Math.ceil((sortedItems.length || 0) / perPage));
+  React.useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+  const pagedItems = React.useMemo(() => {
+    const start = (page - 1) * perPage;
+    return sortedItems.slice(start, start + perPage);
+  }, [sortedItems, page, perPage]);
+
   const handleSortChange = React.useCallback((key) => {
     if (sortKey === key) {
       setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -271,49 +286,67 @@ export default function Attendance() {
 
   return (
     <Box>
-      <HStack justify="space-between" align="center" mb={4}>
-        <VStack align="start" spacing={0}>
-          <Heading size="md">Attendance</Heading>
-          <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>Track attendance per schedule, with quick filters.</Text>
-        </VStack>
-        <HStack>
-          <Button as={RouterLink} to="/admin/room-attendance" target="_blank" colorScheme="purple" variant="solid">Open Room Attendance</Button>
-          <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={refresh} />
-          <Button leftIcon={<FiPrinter />} variant="outline" onClick={onPrint}>Print</Button>
-          <Menu>
-            <MenuButton as={Button} leftIcon={<FiPrinter />} rightIcon={<FiChevronDown />} colorScheme="blue" variant="solid">
-              Summary
-            </MenuButton>
-            <MenuList>
-              {SUMMARY_STATUS_OPTIONS.map(opt => (
-                <MenuItem key={opt.value} onClick={() => onPrintSummary(opt.value)}>{opt.label}</MenuItem>
-              ))}
-            </MenuList>
-          </Menu>
-          <IconButton aria-label="Open tabs per faculty" icon={<FiExternalLink />} onClick={onOpenAbsentTabsPerFaculty} title="Open absent summary in tabs per faculty" />
-          <Button leftIcon={<FiPlus />} colorScheme="blue" onClick={() => { setEditing(null); modal.onOpen(); }}>Add</Button>
-        </HStack>
-      </HStack>
+      <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="lg" p={4} mb={4}>
+        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} alignItems="center">
+          <VStack align="start" spacing={0}>
+            <Heading size="md">Attendance</Heading>
+            <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>Track attendance per schedule with quick filters.</Text>
+          </VStack>
+          <VStack align="stretch" spacing={2}>
+            <Wrap spacing={2} justify={{ base: 'flex-start', md: 'flex-end' }}>
+              <WrapItem>
+                <Button leftIcon={<FiPlus />} colorScheme="blue" onClick={() => { setEditing(null); modal.onOpen(); }} w="full">Add Record</Button>
+              </WrapItem>
+              <WrapItem>
+                <Menu>
+                  <MenuButton as={Button} leftIcon={<FiPrinter />} rightIcon={<FiChevronDown />} colorScheme="blue" variant="outline" w="full">
+                    Summary
+                  </MenuButton>
+                  <MenuList>
+                    {SUMMARY_STATUS_OPTIONS.map(opt => (
+                      <MenuItem key={opt.value} onClick={() => onPrintSummary(opt.value)}>{opt.label}</MenuItem>
+                    ))}
+                  </MenuList>
+                </Menu>
+              </WrapItem>
+              <WrapItem>
+                <Button leftIcon={<FiPrinter />} variant="outline" onClick={onPrint} w="full">Print All</Button>
+              </WrapItem>
+              <WrapItem>
+                <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={refresh} />
+              </WrapItem>
+            </Wrap>
+            <Wrap spacing={2} justify={{ base: 'flex-start', md: 'flex-end' }}>
+              <WrapItem>
+                <Button as={RouterLink} to="/admin/room-attendance" target="_blank" colorScheme="purple" variant="outline" w="full">Room Attendance</Button>
+              </WrapItem>
+              <WrapItem>
+                <Button leftIcon={<FiExternalLink />} variant="ghost" onClick={onOpenAbsentTabsPerFaculty} title="Open absent summary in tabs per faculty">Open Absent Tabs</Button>
+              </WrapItem>
+            </Wrap>
+          </VStack>
+        </SimpleGrid>
+      </Box>
 
       <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="lg" p={4} mb={4}>
-        <HStack spacing={3} align="end" flexWrap="wrap">
+        <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={3}>
           <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>Start Date</Text>
-            <Input type="date" value={filters.startDate} onChange={(e) => setFilters(f => ({ ...f, startDate: e.target.value }))} maxW="180px" />
+            <Input type="date" value={filters.startDate} onChange={(e) => setFilters(f => ({ ...f, startDate: e.target.value }))} />
           </Box>
           <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>End Date</Text>
-            <Input type="date" value={filters.endDate} onChange={(e) => setFilters(f => ({ ...f, endDate: e.target.value }))} maxW="180px" />
+            <Input type="date" value={filters.endDate} onChange={(e) => setFilters(f => ({ ...f, endDate: e.target.value }))} />
           </Box>
           <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>Status</Text>
-            <Select placeholder="All" value={filters.status} onChange={(e) => setFilters(f => ({ ...f, status: e.target.value }))} maxW="180px">
+            <Select placeholder="All" value={filters.status} onChange={(e) => setFilters(f => ({ ...f, status: e.target.value }))}>
               {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
           </Box>
           <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>Term</Text>
-            <Select placeholder="All" value={filters.term} onChange={(e) => setFilters(f => ({ ...f, term: e.target.value }))} maxW="160px">
+            <Select placeholder="All" value={filters.term} onChange={(e) => setFilters(f => ({ ...f, term: e.target.value }))}>
               <option value="1st">1st</option>
               <option value="2nd">2nd</option>
               <option value="Sem">Sem</option>
@@ -331,12 +364,14 @@ export default function Attendance() {
           </Box>
           <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>Page Size</Text>
-            <Select value={String(limit)} onChange={(e) => setLimit(e.target.value)} maxW="160px">
-              <option value="">All (no limit)</option>
-              {[50,100,200,500,1000].map(n => <option key={n} value={String(n)}>{n}</option>)}
+            <Select value={String(limit)} onChange={(e) => { const v = e.target.value; setLimit(v === 'all' ? 'all' : Number(v)); setPage(1); }}>
+              {['10','20','50','all'].map(n => <option key={n} value={n}>{n === 'all' ? 'All' : `${n}/page`}</option>)}
             </Select>
           </Box>
-          <Button leftIcon={<FiFilter />} onClick={onApply}>Apply</Button>
+        </SimpleGrid>
+        <HStack spacing={3} mt={3} justify="flex-end" flexWrap="wrap">
+          <Button leftIcon={<FiFilter />} onClick={onApply} colorScheme="blue">Apply</Button>
+          <Button variant="ghost" onClick={() => { setFilters({ startDate: '', endDate: '', status: '', faculty: '', facultyId: '', term: '' }); setPage(1); }}>Reset</Button>
         </HStack>
         {(filters.status || filters.term) && (
           <HStack spacing={2} mt={3}>
@@ -357,14 +392,17 @@ export default function Attendance() {
       </Box>
 
       <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="lg" p={0}>
-        <HStack spacing={3} px={4} py={3} borderBottomWidth="1px" borderColor={border}>
-          <Tag colorScheme="gray">Total: {stats.total || 0}</Tag>
-          {Object.entries(stats.byStatus || {}).map(([k, v]) => (
-            <Tag key={k} colorScheme={k==='present'?'green':k==='absent'?'red':k==='late'?'orange':'blue'}>{k}: {v}</Tag>
-          ))}
+        <HStack spacing={3} px={4} py={3} borderBottomWidth="1px" borderColor={border} justify="space-between" flexWrap="wrap">
+          <Text fontWeight="600">Attendance Records</Text>
+          <Wrap spacing={2}>
+            <WrapItem><Tag colorScheme="gray">Total: {stats.total || 0}</Tag></WrapItem>
+            {Object.entries(stats.byStatus || {}).map(([k, v]) => (
+              <WrapItem key={k}><Tag colorScheme={k==='present'?'green':k==='absent'?'red':k==='late'?'orange':'blue'} textTransform="capitalize">{k}: {v}</Tag></WrapItem>
+            ))}
+          </Wrap>
         </HStack>
         <AttendanceTable
-          items={sortedItems}
+          items={pagedItems}
           loading={loading}
           sortKey={sortKey}
           sortOrder={sortOrder}
@@ -372,15 +410,19 @@ export default function Attendance() {
           onEdit={(row) => { setEditing(row); modal.onOpen(); }}
           onDelete={onDelete}
         />
-        {String(limit) !== '' && (
-          <HStack justify="space-between" px={4} py={3}>
-            <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>Page {page}</Text>
-            <HStack>
-              <Button size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} isDisabled={page <= 1}>Prev</Button>
-              <Button size="sm" onClick={() => setPage(p => p + 1)} isDisabled={Array.isArray(data) && Number(data.length) < Number(limit)}>Next</Button>
-            </HStack>
+        <HStack justify="space-between" px={4} py={3} flexWrap="wrap" spacing={3}>
+          <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>
+            Showing {pagedItems.length ? (page - 1) * perPage + 1 : 0}-{pagedItems.length ? (page - 1) * perPage + pagedItems.length : 0} of {sortedItems.length}
+          </Text>
+          <HStack spacing={2}>
+            <Select size="sm" value={String(limit)} onChange={(e) => { const v = e.target.value; setLimit(v === 'all' ? 'all' : Number(v)); setPage(1); }} maxW="110px">
+              {['10','20','50','all'].map(n => <option key={n} value={n}>{n === 'all' ? 'All' : `${n}/page`}</option>)}
+            </Select>
+            <Button size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} isDisabled={page <= 1}>Prev</Button>
+            <Button size="sm" onClick={() => setPage(p => Math.min(pageCount, p + 1))} isDisabled={page >= pageCount}>Next</Button>
+            <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>Page {page} / {pageCount}</Text>
           </HStack>
-        )}
+        </HStack>
       </Box>
 
       <AttendanceFormModal isOpen={modal.isOpen} onClose={modal.onClose} initial={editing} onSaved={onSaved} />

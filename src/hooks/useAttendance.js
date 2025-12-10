@@ -7,7 +7,7 @@ const TTL_MS = 2 * 60 * 1000;
 
 function keyFor(params) {
   try {
-    const { schedules, ...rest } = params || {};
+    const { schedules, page, limit, ...rest } = params || {};
     return JSON.stringify(rest || {});
   } catch { return 'k'; }
 }
@@ -26,6 +26,8 @@ export default function useAttendance(params = {}) {
     // Do not forward local-only params to the API
     const p2 = { ...(p || {}) };
     if ('schedules' in p2) delete p2.schedules;
+    if ('page' in p2) delete p2.page;
+    if ('limit' in p2) delete p2.limit;
     // Prefer facultyId over name-based filters for API consistency
     if ('faculty' in p2) delete p2.faculty;
     if ('facultyName' in p2) delete p2.facultyName;
@@ -34,11 +36,9 @@ export default function useAttendance(params = {}) {
       // Also provide snake_case variant some backends expect
       p2.faculty_id = p2.facultyId;
     }
-    // Server now supports faculty filters; keep requested page/limit
-    // When UI selects 'All', request a very high limit to approximate no-limit
-    if (p && (p.limit === '' || p.limit === 'all' || p.limit == null)) {
-      p2.limit = 100000;
-    }
+    // Always request a large limit so UI pagination is client-side
+    p2.limit = 100000;
+    p2.page = 1;
 
     let list = [];
     if (p && p.scheduleId) {
