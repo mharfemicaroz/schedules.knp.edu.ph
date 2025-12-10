@@ -66,8 +66,14 @@ export default function AdminEvaluations() {
   const authUser = useSelector(s => s.auth.user);
   const roleStr = String(authUser?.role || '').toLowerCase();
   const isOsas = roleStr === 'osas';
+  const settings = useSelector(selectSettings);
+  const defaultFilters = React.useMemo(() => {
+    const defaultSy = settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || '';
+    const defaultSem = settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || '';
+    return { programcode: '', coursecode: '', faculty: '', dept: '', employment: '', term: '', student: '', sy: defaultSy, sem: defaultSem };
+  }, [settings]);
   const [view, setView] = React.useState(isOsas ? 'student' : 'course'); // 'course' | 'faculty' | 'student'
-  const [filters, setFilters] = React.useState({ programcode: '', coursecode: '', faculty: '', term: '', student: '' });
+  const [filters, setFilters] = React.useState({ programcode: '', coursecode: '', faculty: '', dept: '', employment: '', term: '', student: '', sy: '', sem: '', q: '' });
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(10);
   const [loading, setLoading] = React.useState(true);
@@ -80,16 +86,24 @@ export default function AdminEvaluations() {
   const [summaryMode, setSummaryMode] = React.useState('schedule'); // schedule|faculty
   const [summaryId, setSummaryId] = React.useState(null);
   const [summaryCtx, setSummaryCtx] = React.useState({});
-  const settings = useSelector(selectSettings);
+  const requestSeq = React.useRef(0);
+  const changeView = (next) => {
+    setFilters(defaultFilters);
+    setRows([]);
+    setPage(1);
+    setView(next);
+  };
 
   const fetchData = React.useCallback(async () => {
+    const seq = ++requestSeq.current;
     setLoading(true);
     try {
       const search = new URLSearchParams();
       Object.entries(filters).forEach(([k, v]) => {
-        if (!v) return;
-        if (view === 'faculty' && k === 'faculty') return; // apply faculty filter client-side using faculty data, not instructor
-        search.set(k, v);
+        if (v === undefined || v === null) return;
+        const val = String(v).trim();
+        if (!val) return;
+        search.set(k, val);
       });
       const path = view === 'course'
         ? '/evaluations/aggregate/schedule'
@@ -97,11 +111,17 @@ export default function AdminEvaluations() {
         ? '/evaluations/aggregate/faculty'
         : '/evaluations/aggregate/student';
       const data = await apiService.requestAbs(`${path}${search.toString() ? `?${search.toString()}` : ''}`, { method: 'GET' });
-      setRows(Array.isArray(data) ? data : []);
+      if (requestSeq.current === seq) {
+        setRows(Array.isArray(data) ? data : []);
+      }
     } catch {
-      setRows([]);
+      if (requestSeq.current === seq) {
+        setRows([]);
+      }
     } finally {
-      setLoading(false);
+      if (requestSeq.current === seq) {
+        setLoading(false);
+      }
     }
   }, [view, filters]);
 
@@ -120,33 +140,114 @@ export default function AdminEvaluations() {
   // Reset pagination on filter/view changes
   React.useEffect(() => { setPage(1); }, [view, filters]);
 
+  // Initialize school year / semester defaults from settings
+  React.useEffect(() => {
+    setFilters(prev => ({
+      ...defaultFilters,
+      sy: prev.sy || defaultFilters.sy,
+      sem: prev.sem || defaultFilters.sem,
+    }));
+  }, [defaultFilters]);
+
+  const mergedFacultyRows = React.useMemo(() => {
+    const list = Array.isArray(rows) ? rows : [];
+    const norm = (v) => String(v || '').trim().toLowerCase();
+    const mergedMap = new Map();
+    list.forEach((r, idx) => {
+      const nameKey = norm(r?.faculty?.faculty || r?.faculty?.name || r?.instructor);
+      const key = r.faculty_id != null ? `id:${r.faculty_id}` : nameKey ? `name:${nameKey}` : `row:${idx}`;
+      const existing = mergedMap.get(key);
+      const mergedFaculty = { ...(existing?.faculty || {}), ...(r.faculty || {}) };
+      const merged = existing ? { ...existing } : { ...r };
+      merged.faculty = mergedFaculty;
+      merged.faculty_id = merged.faculty_id ?? r.faculty_id;
+      merged.instructor = merged.instructor || r.instructor;
+      merged.dept = mergedFaculty.dept || mergedFaculty.department || merged.dept || r.dept;
+      merged.employment = mergedFaculty.employment || merged.employment || r.employment;
+      merged.total = (Number(existing?.total) || 0) + (Number(r.total) || 0);
+      merged.schedules = merged.schedules || r.schedules || [];
+      mergedMap.set(key, merged);
+    });
+    return Array.from(mergedMap.values());
+  }, [rows]);
+
   const filteredRows = React.useMemo(() => {
     const list = Array.isArray(rows) ? rows : [];
-    if (view === 'faculty' && filters.faculty) {
-      const norm = (v) => String(v || '').trim().toLowerCase();
+    if (view !== 'faculty') return list;
+    const norm = (v) => String(v || '').trim().toLowerCase();
+
+    let mergedRows = mergedFacultyRows;
+    if (filters.faculty) {
       const target = norm(filters.faculty);
-      return list.filter(r => {
+      mergedRows = mergedRows.filter(r => {
         const facName = norm(r?.faculty?.faculty || r?.faculty?.name);
         const instructorName = norm(r?.instructor);
         return facName === target || instructorName === target;
       });
     }
+    if (filters.dept) {
+      const target = norm(filters.dept);
+      mergedRows = mergedRows.filter(r => norm(r?.faculty?.dept || r?.faculty?.department || r?.dept) === target);
+    }
+    if (filters.employment) {
+      const target = norm(filters.employment);
+      mergedRows = mergedRows.filter(r => norm(r?.faculty?.employment || r?.employment) === target);
+    }
+    return mergedRows;
+  }, [rows, view, filters.faculty, filters.dept, filters.employment, mergedFacultyRows]);
+
+  const sortedRows = React.useMemo(() => {
+    const list = filteredRows.slice();
+    const norm = (v) => String(v || '').trim();
+    if (view === 'course') {
+      return list.sort((a, b) => {
+        const ap = norm(a?.schedule?.programcode);
+        const bp = norm(b?.schedule?.programcode);
+        if (ap !== bp) return ap.localeCompare(bp);
+        const ac = norm(a?.schedule?.course_name);
+        const bc = norm(b?.schedule?.course_name);
+        if (ac !== bc) return ac.localeCompare(bc);
+        const ai = norm(a?.schedule?.instructor || a?.faculty?.faculty || a?.faculty?.name || a?.instructor);
+        const bi = norm(b?.schedule?.instructor || b?.faculty?.faculty || b?.faculty?.name || b?.instructor);
+        return ai.localeCompare(bi);
+      });
+    }
+    if (view === 'faculty') {
+      return list.sort((a, b) => {
+        const af = norm(a?.faculty?.faculty || a?.faculty?.name || a?.instructor);
+        const bf = norm(b?.faculty?.faculty || b?.faculty?.name || b?.instructor);
+        if (af !== bf) return af.localeCompare(bf);
+        const ad = norm(a?.faculty?.dept || a?.faculty?.department || a?.dept);
+        const bd = norm(b?.faculty?.dept || b?.faculty?.department || b?.dept);
+        return ad.localeCompare(bd);
+      });
+    }
+    if (view === 'student') {
+      return list.sort((a, b) => {
+        const an = norm(a?.student_name || a?.student?.name || a?.name);
+        const bn = norm(b?.student_name || b?.student?.name || b?.name);
+        if (an !== bn) return an.localeCompare(bn);
+        const aid = norm(a?.student_id || a?.student?.id || a?.id);
+        const bid = norm(b?.student_id || b?.student?.id || b?.id);
+        return aid.localeCompare(bid);
+      });
+    }
     return list;
-  }, [rows, view, filters.faculty]);
+  }, [filteredRows, view]);
 
   // Clamp page when data or size changes
   React.useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil((filteredRows?.length || 0) / pageSize));
+    const maxPage = Math.max(1, Math.ceil((sortedRows?.length || 0) / pageSize));
     if (page > maxPage) setPage(maxPage);
-  }, [filteredRows, pageSize, page]);
+  }, [sortedRows, pageSize, page]);
 
   const pagedRows = React.useMemo(() => {
-    const list = filteredRows;
+    const list = sortedRows;
     const start = (page - 1) * pageSize;
     return list.slice(start, start + pageSize);
-  }, [filteredRows, page, pageSize]);
+  }, [sortedRows, page, pageSize]);
 
-  const pageCount = Math.max(1, Math.ceil((filteredRows?.length || 0) / pageSize));
+  const pageCount = Math.max(1, Math.ceil((sortedRows?.length || 0) / pageSize));
 
   // Load prospectus for select options (programs, courses)
   const opts = useSelector(selectProspectusFilterOptions);
@@ -169,6 +270,22 @@ export default function AdminEvaluations() {
     });
     return Array.from(names).sort((a,b)=>a.localeCompare(b));
   }, [allCourses]);
+  const deptOptions = React.useMemo(() => {
+    const names = new Set();
+    mergedFacultyRows.forEach(r => {
+      const dept = String(r?.faculty?.dept || r?.faculty?.department || r?.dept || '').trim();
+      if (dept) names.add(dept);
+    });
+    return Array.from(names).sort((a,b)=>a.localeCompare(b));
+  }, [mergedFacultyRows]);
+  const employmentOptions = React.useMemo(() => {
+    const names = new Set();
+    mergedFacultyRows.forEach(r => {
+      const emp = String(r?.faculty?.employment || r?.employment || '').trim();
+      if (emp) names.add(emp);
+    });
+    return Array.from(names).sort((a,b)=>a.localeCompare(b));
+  }, [mergedFacultyRows]);
 
   const termOptions = [
     { value: '', label: 'All terms' },
@@ -176,6 +293,28 @@ export default function AdminEvaluations() {
     { value: '2nd', label: '2nd' },
     { value: 'Sem', label: 'Sem' },
   ];
+  const semOptions = [
+    { value: '', label: 'All semesters' },
+    { value: '1st', label: '1st Semester' },
+    { value: '2nd', label: '2nd Semester' },
+    { value: 'Summer', label: 'Summer' },
+  ];
+  const schoolYearOptions = React.useMemo(() => {
+    const list = new Set();
+    const pick = settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year;
+    const baseYear = (() => {
+      if (pick && /^\d{4}-\d{4}$/.test(pick)) return Number(pick.slice(0,4));
+      const now = new Date();
+      return now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1; // school year start heuristic
+    })();
+    for (let offset = -3; offset <= 3; offset++) {
+      const start = baseYear + offset;
+      const end = start + 1;
+      list.add(`${start}-${end}`);
+    }
+    if (pick) list.add(pick);
+    return Array.from(list).sort();
+  }, [settings]);
 
   const openSummary = async (mode, id, title, ctx = {}) => {
     setSummaryMode(mode);
@@ -242,6 +381,7 @@ export default function AdminEvaluations() {
       if (mode === 'student') {
         const studentName = String(ctx?.student || ctx?.student_name || title || '').trim();
         if (studentName) search.set('student', studentName);
+        if (filters?.q) search.set('q', filters.q);
       } else {
         search.set('id', String(id));
       }
@@ -283,9 +423,9 @@ export default function AdminEvaluations() {
     </HStack>
   ) : (
     <HStack spacing={2}>
-      <Button size="sm" variant={view==='course'?'solid':'outline'} colorScheme="blue" onClick={()=>setView('course')}>By Course</Button>
-      <Button size="sm" variant={view==='faculty'?'solid':'outline'} colorScheme="blue" onClick={()=>setView('faculty')}>By Faculty</Button>
-      <Button size="sm" variant={view==='student'?'solid':'outline'} colorScheme="blue" onClick={()=>setView('student')}>By Students</Button>
+      <Button size="sm" variant={view==='course'?'solid':'outline'} colorScheme="blue" onClick={()=>changeView('course')}>By Course</Button>
+      <Button size="sm" variant={view==='faculty'?'solid':'outline'} colorScheme="blue" onClick={()=>changeView('faculty')}>By Faculty</Button>
+      <Button size="sm" variant={view==='student'?'solid':'outline'} colorScheme="blue" onClick={()=>changeView('student')}>By Students</Button>
     </HStack>
   );
 
@@ -298,11 +438,30 @@ export default function AdminEvaluations() {
 
       <Box bg={panel} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
         <HStack spacing={3} flexWrap="wrap">
-          {!isOsas && (
+          <Select value={filters.sy} onChange={(e)=>setFilters(s=>({...s, sy: e.target.value }))} maxW="160px" placeholder="School year" isDisabled={isOsas}>
+            {schoolYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+          </Select>
+          <Select value={filters.sem} onChange={(e)=>setFilters(s=>({...s, sem: e.target.value }))} maxW="180px" isDisabled={isOsas}>
+            {semOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+          <Select value={filters.term} onChange={(e)=>setFilters(s=>({...s, term: e.target.value }))} maxW="160px">
+            {termOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+          {!isOsas && view!=='faculty' && (
             <Select value={filters.programcode} onChange={(e)=>setFilters(s=>({...s, programcode: e.target.value, coursecode: '' }))} maxW="220px">
               <option value="">All programs</option>
               {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
             </Select>
+          )}
+          {!isOsas && view==='faculty' && (
+            <>
+              <Select value={filters.dept} onChange={(e)=>setFilters(s=>({...s, dept: e.target.value }))} maxW="220px" placeholder="All departments" isDisabled={deptOptions.length===0}>
+                {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+              </Select>
+              <Select value={filters.employment} onChange={(e)=>setFilters(s=>({...s, employment: e.target.value }))} maxW="200px" placeholder="All employment" isDisabled={employmentOptions.length===0}>
+                {employmentOptions.map(emp => <option key={emp} value={emp}>{emp}</option>)}
+              </Select>
+            </>
           )}
           {view==='course' && !isOsas && (
             <Select value={filters.coursecode} onChange={(e)=>setFilters(s=>({...s, coursecode: e.target.value }))} maxW="260px" isDisabled={courseOptions.length===0} placeholder={courseOptions.length? 'Select course' : 'No courses'}>
@@ -315,11 +474,10 @@ export default function AdminEvaluations() {
             </Select>
           )}
           {view==='student' && (
-            <Input value={filters.student} onChange={(e)=>setFilters(s=>({...s, student: e.target.value }))} maxW="260px" placeholder="Search student (ID or name)" />
+            <>
+              <Input value={filters.q} onChange={(e)=>setFilters(s=>({...s, q: e.target.value }))} maxW="260px" placeholder="Search student (ID or name)" />
+            </>
           )}
-          <Select value={filters.term} onChange={(e)=>setFilters(s=>({...s, term: e.target.value }))} maxW="160px">
-            {termOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </Select>
           <Button leftIcon={<FiBarChart2 />} onClick={fetchData} colorScheme="blue" variant="solid">Apply</Button>
         </HStack>
       </Box>
@@ -359,7 +517,7 @@ export default function AdminEvaluations() {
               Array.from({ length: 6 }).map((_, i) => (
                 <Tr key={i}><Td colSpan={6}><Skeleton height="20px" /></Td></Tr>
               ))
-            ) : filteredRows.length === 0 ? (
+            ) : sortedRows.length === 0 ? (
               <Tr><Td colSpan={6}><Text color={subtle} p={4}>No evaluations found.</Text></Td></Tr>
             ) : view==='course' ? (
               pagedRows.map((r) => (
