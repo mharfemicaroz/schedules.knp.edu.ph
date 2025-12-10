@@ -3,6 +3,7 @@ import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGri
 import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiDownload, FiShare2, FiExternalLink, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
+import { selectSettings } from '../store/settingsSlice';
 import { loadAllSchedules, loadAcademicCalendar } from '../store/dataThunks';
 import { getCurrentWeekDays, DAY_CODES, formatDayLabel } from '../utils/week';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
@@ -43,12 +44,24 @@ function deriveSession(timeStartMinutes, explicit) {
 function normRoom(s){ return String(s||'').trim().replace(/\s+/g,' ').toUpperCase(); }
 
 const ROOM_SPLIT_THRESHOLD = 10;
+const normalizeSem = (val) => {
+  const v = String(val || '').trim().toLowerCase();
+  if (!v) return '';
+  if (v.startsWith('1')) return '1st';
+  if (v.startsWith('2')) return '2nd';
+  if (v.startsWith('s')) return 'Sem';
+  if (/first/.test(v)) return '1st';
+  if (/second/.test(v)) return '2nd';
+  if (/sem/.test(v)) return 'Sem';
+  return '';
+};
 
 export default function RoomAttendance() {
   const dispatch = useDispatch();
   const all = useSelector(selectAllCourses);
   const acadData = useSelector(s => s.data.acadData);
   const authUser = useSelector(s => s.auth.user);
+  const settings = useSelector(selectSettings);
   const border = useColorModeValue('gray.200','gray.700');
   const panel = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.400');
@@ -103,46 +116,70 @@ export default function RoomAttendance() {
       const cal = Array.isArray(acadData) ? acadData[0]?.academic_calendar : acadData?.academic_calendar;
       if (!cal) return null;
       const base = new Date(selectedDate); base.setHours(0,0,0,0);
-      const norm = (v) => {
-        if (!v) return null;
-        const d = new Date(v);
+      const parseDateVal = (val) => {
+        if (!val) return null;
+        const d = new Date(val);
         return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
       };
-      // First semester
-      const fs = cal.first_semester || {};
-      const ft = fs.first_term || {}, st = fs.second_term || {};
-      const ftS = norm(ft.start), ftE = norm(ft.end), stS = norm(st.start), stE = norm(st.end);
-      if (ftS && ftE && ftS <= base && base <= ftE) return '1st';
-      if (stS && stE && stS <= base && base <= stE) return '2nd';
-      // Second semester (fallback)
-      const ss = cal.second_semester || {};
-      const ft2 = ss.first_term || {}, st2 = ss.second_term || {};
-      const ft2S = norm(ft2.start), ft2E = norm(ft2.end), st2S = norm(st2.start), st2E = norm(st2.end);
-      if (ft2S && ft2E && ft2S <= base && base <= ft2E) return '1st';
-      if (st2S && st2E && st2S <= base && base <= st2E) return '2nd';
-      return null;
+      const expandDateRange = (token) => {
+        const m = String(token || '').match(/^([A-Za-z]+)\s+(\d+)-(\d+),\s*(\d{4})$/);
+        if (!m) return [];
+        const month = m[1]; const startD = parseInt(m[2], 10); const endD = parseInt(m[3], 10); const year = parseInt(m[4], 10);
+        const out = [];
+        for (let d = startD; d <= endD; d++) {
+          const dt = new Date(`${month} ${d}, ${year}`);
+          if (!isNaN(dt.getTime())) out.push(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()));
+        }
+        return out;
+      };
+      const endFromActivities = (acts = []) => {
+        let max = null;
+        acts.forEach(a => {
+          if (a.date_range) {
+            expandDateRange(a.date_range).forEach(dt => { if (!max || dt > max) max = dt; });
+          }
+          const dates = Array.isArray(a.date) ? a.date : [a.date].filter(Boolean);
+          dates.forEach(v => {
+            const dt = parseDateVal(v);
+            if (dt && (!max || dt > max)) max = dt;
+          });
+        });
+        return max;
+      };
+      const first = cal.first_semester || {};
+      const terms = [
+        { key: '1st', data: first.first_term || {} },
+        { key: '2nd', data: first.second_term || {} },
+      ];
+      const windows = terms.map(t => {
+        const start = parseDateVal(t.data.start) || (t.data.date_range ? expandDateRange(t.data.date_range)[0] : null);
+        let end = parseDateVal(t.data.end) || (t.data.date_range ? expandDateRange(t.data.date_range).pop() : null);
+        const actEnd = endFromActivities(t.data.activities);
+        if (!end || (actEnd && actEnd > end)) end = actEnd;
+        return { key: t.key, start, end };
+      }).filter(w => w.start && w.end);
+      if (!windows.length) return null;
+      const hit = windows.find(w => w.start <= base && base <= w.end);
+      if (hit) return hit.key;
+      const sorted = windows.slice().sort((a,b)=>a.start - b.start);
+      if (base < sorted[0].start) return sorted[0].key;
+      return sorted[sorted.length - 1].key;
     } catch { return null; }
   }, [acadData, selectedDate]);
 
   // Term filter (UI). If autoTerm is available, enforce it while always including Sem schedules.
   const [termFilter, setTermFilter] = React.useState('all');
   function termMatches(t) {
-    const s = String(t || '').toLowerCase().trim();
-    if (!s) return false;
-    // Always include semester-long entries
-    if (/(^|\b)(sem|semester)(\b|$)/i.test(s)) return true;
-    // Enforce auto term when known
+    const norm = normalizeSem(t);
+    if (!norm) return true; // allow untagged
+    if (norm === 'Sem') return false; // exclude semestral here
     if (autoTerm) {
-      if (autoTerm.startsWith('1')) return /(^|\b)(1|first|1st)(\b|$)/i.test(s);
-      if (autoTerm.startsWith('2')) return /(^|\b)(2|second|2nd)(\b|$)/i.test(s);
-      return true;
+      return norm === autoTerm;
     }
-    // Fallback to manual selection
     const f = String(termFilter || 'all').toLowerCase();
     if (f === 'all') return true;
-    if (f.startsWith('1')) return /(^|\b)(1|first|1st)(\b|$)/i.test(s);
-    if (f.startsWith('2')) return /(^|\b)(2|second|2nd)(\b|$)/i.test(s);
-    if (f.startsWith('sem')) return /(^|\b)(sem|semester)(\b|$)/i.test(s);
+    if (f.startsWith('1')) return norm === '1st';
+    if (f.startsWith('2')) return norm === '2nd';
     return true;
   }
 
@@ -172,7 +209,25 @@ export default function RoomAttendance() {
   }, [slots]);
   const [slotIndex, setSlotIndex] = React.useState(defaultSlotIndex);
 
-  
+  const prefSy = React.useMemo(() => {
+    return String(settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || '').trim();
+  }, [settings]);
+
+  const prefSem = React.useMemo(() => {
+    const raw = settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || '';
+    return normalizeSem(raw);
+  }, [settings]);
+
+  const filteredSchedules = React.useMemo(() => {
+    return (all || []).filter(c => {
+      const syVal = String(c.school_year || c.schoolYear || c.sy || '').trim();
+      if (prefSy && syVal && syVal !== prefSy) return false;
+      const semVal = normalizeSem(c.semester || c.sem || c.term);
+      if (semVal === 'Sem') return false; // exclude semestral for this view
+      if (prefSem && semVal && semVal !== prefSem) return false;
+      return true;
+    });
+  }, [all, prefSy, prefSem]);
 
   const tokens = React.useCallback((s) => String(s || '').split(',').map(t => t.trim()).filter(Boolean), []);
   const getRoomsForDay = React.useCallback((rec, d) => {
@@ -192,7 +247,7 @@ export default function RoomAttendance() {
   // Build matrix for selected day
   const matrix = React.useMemo(() => {
     const roomsSet = new Map(); // norm -> display
-    (all || []).forEach(c => {
+    (filteredSchedules || []).forEach(c => {
       const termOk = termMatches(c.term);
       if (!termOk) return;
       const rs = getRoomsForDay(c, selectedDayCode);
@@ -201,7 +256,7 @@ export default function RoomAttendance() {
     const rooms = Array.from(roomsSet.values()).sort((a,b)=>String(a).localeCompare(String(b)));
     const m = { Morning: new Map(), Afternoon: new Map(), Evening: new Map() };
     rooms.forEach(r => { m.Morning.set(r, new Map()); m.Afternoon.set(r, new Map()); m.Evening.set(r, new Map()); });
-    (all || []).forEach(c => {
+    (filteredSchedules || []).forEach(c => {
       const termOk = termMatches(c.term);
       if (!termOk) return;
       const rs = getRoomsForDay(c, selectedDayCode);
@@ -217,7 +272,7 @@ export default function RoomAttendance() {
       });
     });
     return { rooms, matrix: m };
-  }, [all, selectedDayCode, getRoomsForDay, termFilter]);
+  }, [filteredSchedules, selectedDayCode, getRoomsForDay, termFilter]);
 
   // Attendance mapping for today
   const presentPulse = keyframes`
@@ -268,7 +323,7 @@ export default function RoomAttendance() {
     };
     const statusByFacultyId = new Map();
     const idToName = new Map();
-    (all || []).forEach((c) => {
+    (filteredSchedules || []).forEach((c) => {
       const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
       if (!daysArr.includes(selectedDayCode)) return;
       if (!termMatches(c.term)) return;
@@ -293,7 +348,7 @@ export default function RoomAttendance() {
     });
     present.sort(); absent.sort(); late.sort(); excused.sort();
     return { present, absent, late, excused };
-  }, [all, bySched, slotIndex, selectedDayCode, termFilter, autoTerm]);
+  }, [filteredSchedules, bySched, slotIndex, selectedDayCode, termFilter, autoTerm]);
 
   
 
@@ -310,7 +365,7 @@ export default function RoomAttendance() {
     })();
 
     const getCell = (room, slot) => {
-      const candidates = (all || []).filter(c => {
+      const candidates = (filteredSchedules || []).filter(c => {
         const rs = getRoomsForDay(c, selectedDayCode);
         if (!rs.find(rr => normRoom(rr) === normRoom(room))) return false;
         // Filter by selected term
@@ -462,7 +517,7 @@ export default function RoomAttendance() {
       timeSlots.forEach((sl) => {
         const rowVals = [sl.label];
         grp.forEach((r) => {
-          const candidates = (all || []).filter(c => {
+          const candidates = (filteredSchedules || []).filter(c => {
             const rs = getRoomsForDay(c, selectedDayCode);
             if (!rs.find(rr => normRoom(rr) === normRoom(r))) return false;
             const termOk = termMatches(c.term);
@@ -535,7 +590,7 @@ export default function RoomAttendance() {
               const slIdx = r - 3; // data row index into timeSlots
               const roomName = grp[c - 2];
               const sl = timeSlots[slIdx];
-              const candidates = (all || []).filter(rec => {
+              const candidates = (filteredSchedules || []).filter(rec => {
                 const rs = getRoomsForDay(rec, selectedDayCode);
                 if (!rs.find(rr => normRoom(rr) === normRoom(roomName))) return false;
                 const termOk = termMatches(rec.term);
@@ -842,12 +897,12 @@ export default function RoomAttendance() {
                       ) : (
                         <Wrap spacing={2}>
                           {arr.map((b) => {
-                            const candidates = (all || []).filter(c => {
-                              const blk = c.section || c.blockCode || c.block_code;
-                              if (String(blk) !== String(b)) return false;
-                              const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
-                              const termOk = termMatches(c.term);
-                              return termOk && daysArr.includes(selectedDayCode) && withinSlot(c, slots[slotIndex]);
+          const candidates = (filteredSchedules || []).filter(c => {
+            const blk = c.section || c.blockCode || c.block_code;
+            if (String(blk) !== String(b)) return false;
+            const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
+            const termOk = termMatches(c.term);
+            return termOk && daysArr.includes(selectedDayCode) && withinSlot(c, slots[slotIndex]);
                             });
                             let chosen = null;
                             candidates.forEach(c => { const st = bySched[c.id]; if (st) chosen = st; });
@@ -913,7 +968,7 @@ export default function RoomAttendance() {
                                 <HStack spacing={2} wrap="wrap" align="start">
                                   {arr.map((b) => {
                                     // Determine highlight for this block at current time
-                                    const candidates = (all || []).filter(c => {
+                                    const candidates = (filteredSchedules || []).filter(c => {
                                       const blk = c.section || c.blockCode || c.block_code;
                                       if (String(blk) !== String(b)) return false;
                                       const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
