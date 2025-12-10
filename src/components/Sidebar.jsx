@@ -50,7 +50,8 @@ export default function Sidebar({ mobile = false, onNavigate }) {
   const isAdmin = !!authUser && (roleStr === 'admin' || roleStr === 'manager');
   const isRegistrar = !!authUser && roleStr === 'registrar';
   const isChecker = !!authUser && roleStr === 'checker';
-  const isUser = !!authUser && !isAdmin && !isChecker;
+  const isOsas = !!authUser && roleStr === 'osas';
+  const isUser = !!authUser && !isAdmin && !isChecker && !isOsas;
 
   // Load current user's department mappings (used to gate Course Loading visibility for non-admins)
   React.useEffect(() => {
@@ -174,7 +175,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
         {(isAdmin || isUser) && <NavItem to="/views/faculty" icon={FiUsers} onClick={onNavigate}>By Faculty</NavItem>}
         {(isAdmin || isUser) && <NavItem to="/views/courses" icon={FiBook} onClick={onNavigate}>By Courses</NavItem>}
         <NavItem to="/views/departments" icon={FiLayers} onClick={onNavigate}>By Department</NavItem>
-        <NavItem to="/views/rooms" icon={FiMapPin} onClick={onNavigate}>By Rooms</NavItem>
+        {!isOsas && <NavItem to="/views/rooms" icon={FiMapPin} onClick={onNavigate}>By Rooms</NavItem>}
         {(isAdmin || isUser) && <NavItem to="/views/session" icon={FiSun} onClick={onNavigate}>By Session</NavItem>}
         {(isAdmin || isUser) && (
           <>
@@ -185,7 +186,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             <NavItem to="/reports/faculty-summary" icon={FiFileText} onClick={onNavigate}>Faculty Summary</NavItem>
           </>
         )}
-        {(isAdmin || isChecker || isRegistrar || hasDeptMapping) && (
+        {(isAdmin || isChecker || isRegistrar || hasDeptMapping || isOsas) && (
           <>
             <Text fontSize="sm" fontWeight="700" color={sectionHeaderColor} px={2} mt={4} mb={1}>Admin</Text>
             {(isAdmin || isChecker) && (
@@ -210,10 +211,12 @@ export default function Sidebar({ mobile = false, onNavigate }) {
                 Course Loading
               </NavItem>
             )}
+            {(isAdmin || isOsas) && (
+              <NavItem to="/admin/evaluations" icon={FiBarChart2} onClick={onNavigate}>Evaluations</NavItem>
+            )}
             {isAdmin && (
               <>
                 <NavItem to="/admin/faculty" icon={FiUsers} onClick={onNavigate}>Faculty</NavItem>
-                <NavItem to="/admin/evaluations" icon={FiBarChart2} onClick={onNavigate}>Evaluations</NavItem>
                 <NavItem to="/admin/prospectus" icon={FiBook} onClick={onNavigate}>Prospectus</NavItem>
                 <NavItem to="/admin/user-departments" icon={FiBook} onClick={onNavigate}>User Departments</NavItem>
                 <NavItem to="/admin/academic-calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>

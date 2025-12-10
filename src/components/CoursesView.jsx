@@ -844,7 +844,7 @@ export default function CoursesView() {
       .filter(Boolean).join(' • ');
     const prep = authUser?.username || authUser?.email || 'User';
     const preparedRole = (authUser?.role || '').toString();
-    printContent({ title: titleText, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
+    printContent({ title: titleText, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
   };
 
   return (

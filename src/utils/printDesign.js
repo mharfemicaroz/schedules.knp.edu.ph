@@ -109,12 +109,19 @@ export function printContent(
   }; font-weight: 700; }
     .prt-role { color: #444; font-size: 12px; }
     .prt-notice { margin: ${compact ? "6px 0 10px" : "12px 0 16px"}; padding: ${
-    compact ? "6px 8px" : "10px 12px"
-  }; background: #f8fafc; border-left: 3px solid #2563eb; border-radius: 6px; }
+      compact ? "6px 8px" : "10px 12px"
+    }; background: #f8fafc; border-left: 3px solid #2563eb; border-radius: 6px; }
     .prt-notice-title { font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; margin: 0 0 ${
       compact ? "4px" : "6px"
     } 0; font-size: 12px; color: #0a0a0a; }
     .prt-notice p { margin: ${compact ? "2px 0" : "4px 0"}; font-size: 12px; color: #111; }
+    .prt-banner { margin: ${compact ? "10px 0 12px" : "14px 0 16px"}; padding: ${
+      compact ? "10px 12px" : "14px 16px"
+    }; background: linear-gradient(120deg, #eef2ff, #f0f9ff); border: 1px solid #dbeafe; border-radius: 12px; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.12); }
+    .prt-banner-title { font-weight: 900; letter-spacing: 0.4px; text-transform: uppercase; color: #1d4ed8; margin: 0 0 ${
+      compact ? "4px" : "6px"
+    } 0; font-size: 12px; }
+    .prt-banner-text { margin: 0; color: #0f172a; font-size: 12px; line-height: 1.45; }
     .prt-conforme { padding: 0 ${compact ? "12px" : "24px"}; margin: ${
     compact ? "8px 0 4px" : "12px 0 8px"
   }; font-size: 13px; font-weight: 800; }

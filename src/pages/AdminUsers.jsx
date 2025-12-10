@@ -57,7 +57,7 @@ export default function AdminUsers() {
         <HStack>
           <Input placeholder="Search by name, email, username" value={q} onChange={(e)=>{ setQ(e.target.value); setPage(1); }} maxW="320px" />
           <Select placeholder="Role" value={role} onChange={(e)=>{ setRole(e.target.value); setPage(1); }} maxW="180px">
-            {['admin','manager','registrar','checker','user'].map(r => <option key={r} value={r}>{r}</option>)}
+            {['admin','manager','registrar','checker','osas','user'].map(r => <option key={r} value={r}>{r}</option>)}
           </Select>
           <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)||15); setPage(1); }} maxW="110px">
             {[10,15,20,30,50].map(n => <option key={n} value={n}>{n}/page</option>)}
@@ -248,11 +248,11 @@ function UserUpsertModal({ isOpen, onClose, user, onSaved }) {
               <Input type="email" value={form.email} onChange={(e)=>setForm(f=>({ ...f, email: e.target.value }))} />
             </FormControl>
             <HStack>
-              <FormControl isRequired>
-                <FormLabel>Role</FormLabel>
-                <Select placeholder="Select role" value={form.role} onChange={(e)=>setForm(f=>({ ...f, role: e.target.value }))}>
-                  {['admin','manager','registrar','checker','user'].map(r => <option key={r} value={r}>{r}</option>)}
-                </Select>
+            <FormControl isRequired>
+              <FormLabel>Role</FormLabel>
+              <Select placeholder="Select role" value={form.role} onChange={(e)=>setForm(f=>({ ...f, role: e.target.value }))}>
+                {['admin','manager','registrar','checker','osas','user'].map(r => <option key={r} value={r}>{r}</option>)}
+              </Select>
               </FormControl>
               <FormControl>
                 <FormLabel>Active</FormLabel>

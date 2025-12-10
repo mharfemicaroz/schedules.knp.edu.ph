@@ -63,8 +63,13 @@ export default function AdminEvaluations() {
   const feedbackBg = useColorModeValue('gray.50','gray.700');
 
   const dispatch = useDispatch();
-  const [view, setView] = React.useState('course'); // 'course' | 'faculty' | 'student'
+  const authUser = useSelector(s => s.auth.user);
+  const roleStr = String(authUser?.role || '').toLowerCase();
+  const isOsas = roleStr === 'osas';
+  const [view, setView] = React.useState(isOsas ? 'student' : 'course'); // 'course' | 'faculty' | 'student'
   const [filters, setFilters] = React.useState({ programcode: '', coursecode: '', faculty: '', term: '', student: '' });
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(10);
   const [loading, setLoading] = React.useState(true);
   const [rows, setRows] = React.useState([]);
 
@@ -102,6 +107,28 @@ export default function AdminEvaluations() {
   React.useEffect(() => {
     setRows([]);
   }, [view]);
+
+  // OSAS role is limited to the student view
+  React.useEffect(() => {
+    if (isOsas && view !== 'student') setView('student');
+  }, [isOsas, view]);
+
+  // Reset pagination on filter/view changes
+  React.useEffect(() => { setPage(1); }, [view, filters]);
+
+  // Clamp page when data or size changes
+  React.useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    if (page > maxPage) setPage(maxPage);
+  }, [rows, pageSize, page]);
+
+  const pagedRows = React.useMemo(() => {
+    const list = Array.isArray(rows) ? rows : [];
+    const start = (page - 1) * pageSize;
+    return list.slice(start, start + pageSize);
+  }, [rows, page, pageSize]);
+
+  const pageCount = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
 
   // Load prospectus for select options (programs, courses)
   const opts = useSelector(selectProspectusFilterOptions);
@@ -228,7 +255,11 @@ export default function AdminEvaluations() {
     });
   };
 
-  const viewSwitch = (
+  const viewSwitch = isOsas ? (
+    <HStack spacing={2}>
+      <Button size="sm" variant="solid" colorScheme="blue" isDisabled>By Students</Button>
+    </HStack>
+  ) : (
     <HStack spacing={2}>
       <Button size="sm" variant={view==='course'?'solid':'outline'} colorScheme="blue" onClick={()=>setView('course')}>By Course</Button>
       <Button size="sm" variant={view==='faculty'?'solid':'outline'} colorScheme="blue" onClick={()=>setView('faculty')}>By Faculty</Button>
@@ -245,18 +276,22 @@ export default function AdminEvaluations() {
 
       <Box bg={panel} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
         <HStack spacing={3} flexWrap="wrap">
-          <Select value={filters.programcode} onChange={(e)=>setFilters(s=>({...s, programcode: e.target.value, coursecode: '' }))} maxW="220px">
-            <option value="">All programs</option>
-            {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
-          </Select>
-          {view==='course' && (
+          {!isOsas && (
+            <Select value={filters.programcode} onChange={(e)=>setFilters(s=>({...s, programcode: e.target.value, coursecode: '' }))} maxW="220px">
+              <option value="">All programs</option>
+              {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
+            </Select>
+          )}
+          {view==='course' && !isOsas && (
             <Select value={filters.coursecode} onChange={(e)=>setFilters(s=>({...s, coursecode: e.target.value }))} maxW="260px" isDisabled={courseOptions.length===0} placeholder={courseOptions.length? 'Select course' : 'No courses'}>
               {courseOptions.map(c => <option key={c} value={c}>{c}</option>)}
             </Select>
           )}
-          <Select value={filters.faculty} onChange={(e)=>setFilters(s=>({...s, faculty: e.target.value }))} maxW="260px" placeholder="All faculty">
-            {facultyOptions.map(f => <option key={f} value={f}>{f}</option>)}
-          </Select>
+          {!isOsas && (
+            <Select value={filters.faculty} onChange={(e)=>setFilters(s=>({...s, faculty: e.target.value }))} maxW="260px" placeholder="All faculty">
+              {facultyOptions.map(f => <option key={f} value={f}>{f}</option>)}
+            </Select>
+          )}
           {view==='student' && (
             <Input value={filters.student} onChange={(e)=>setFilters(s=>({...s, student: e.target.value }))} maxW="260px" placeholder="Search student (ID or name)" />
           )}
@@ -305,7 +340,7 @@ export default function AdminEvaluations() {
             ) : rows.length === 0 ? (
               <Tr><Td colSpan={6}><Text color={subtle} p={4}>No evaluations found.</Text></Td></Tr>
             ) : view==='course' ? (
-              rows.map((r) => (
+              pagedRows.map((r) => (
                 <Tr key={`${r.schedule_id}-${r.accesscode}`}>
                   <Td><Tag colorScheme="blue" variant="subtle"><TagLabel>{r.schedule?.programcode || '-'}</TagLabel></Tag></Td>
                   <Td>
@@ -325,7 +360,7 @@ export default function AdminEvaluations() {
                 </Tr>
               ))
             ) : view==='faculty' ? (
-              rows.map((r, idx) => (
+              pagedRows.map((r, idx) => (
                 <Tr key={`${r.faculty_id || 'x'}-${idx}`}>
                   <Td><Text fontWeight="600">{r.faculty?.faculty || r.instructor || 'Unassigned'}</Text></Td>
                   <Td><Text>{r.faculty?.dept || r.dept || '-'}</Text></Td>
@@ -336,7 +371,7 @@ export default function AdminEvaluations() {
                 </Tr>
               ))
             ) : view==='student' ? (
-              rows.map((r, idx) => {
+              pagedRows.map((r, idx) => {
                 const sid = r.student_id || r.student?.id || r.id || idx;
                 const sname = r.student_name || r.student?.name || r.name || 'Student';
                 const program = r.program || r.student?.program || r.programcode || '-';
@@ -360,6 +395,17 @@ export default function AdminEvaluations() {
           </Tbody>
         </Table>
       </Box>
+
+      <HStack justify="space-between" align="center">
+        <Text fontSize="sm" color={subtle}>Page {page} / {pageCount}</Text>
+        <HStack spacing={2}>
+          <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value) || 10); setPage(1); }} maxW="110px">
+            {[10, 20, 30, 50].map(n => <option key={n} value={n}>{n}/page</option>)}
+          </Select>
+          <Button size="sm" variant="outline" onClick={()=>setPage(p=>Math.max(1, p-1))} isDisabled={page <= 1}>Prev</Button>
+          <Button size="sm" variant="solid" colorScheme="blue" onClick={()=>setPage(p=>Math.min(pageCount, p+1))} isDisabled={page >= pageCount}>Next</Button>
+        </HStack>
+      </HStack>
 
       <Modal isOpen={summaryDisc.isOpen} onClose={summaryDisc.onClose} size="xl">
         <ModalOverlay />

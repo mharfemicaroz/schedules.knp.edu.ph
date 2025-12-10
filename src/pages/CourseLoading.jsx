@@ -1111,7 +1111,8 @@ export default function CourseLoading() {
         return String(primary?.position || any?.position || 'Academic Head');
       } catch { return 'Academic Head'; }
     })();
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
+    // Faculty view: print in portrait for better per-faculty listing
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
   };
 
   const onPrintProgram = () => {
@@ -1186,7 +1187,15 @@ export default function CourseLoading() {
           ]);
         });
       });
-    const bodyHtml = buildTable(headers, rowsOut);
+    const noteHtml = `
+      <div style="margin-top:12px;padding:10px;border:1px dashed #CBD5E0;border-radius:10px;background:#F7FAFC;">
+        <div style="font-weight:700;color:#2D3748;">Tentative Load</div>
+        <div style="font-size:12px;color:#4A5568;">
+          This load is subject to changes and does not represent the final teaching assignment.
+        </div>
+      </div>
+    `;
+    const bodyHtml = buildTable(headers, rowsOut) + noteHtml;
     const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
     const preparedRole = (() => {
       try {
@@ -1196,7 +1205,7 @@ export default function CourseLoading() {
         return String(primary?.position || any?.position || 'Academic Head');
       } catch { return 'Academic Head'; }
     })();
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
   };
 
   const onPrintFaculty = () => {
@@ -1266,7 +1275,12 @@ export default function CourseLoading() {
       <tr><th>Load Release Units</th><td>${esc(String(f.loadReleaseUnits ?? f.load_release_units ?? 0))}</td><th>Schedules</th><td>${esc(String(list.length))}</td></tr>
       <tr><th>Total Units</th><td>${esc(String(totalUnits))}</td><th></th><td></td></tr>
     </tbody></table>`;
-    const bodyHtml = [metaHtml, buildTable(headers, bodyRows), termSummaryHtmlF].join('');
+    const tentativeNoteHtml = `
+      <div class="prt-banner">
+        <div class="prt-banner-title">Tentative Load</div>
+        <p class="prt-banner-text">This is a tentative teaching load and not final. Assignments may change after validations and approvals.</p>
+      </div>`;
+    const bodyHtml = [metaHtml, tentativeNoteHtml, buildTable(headers, bodyRows), termSummaryHtmlF].join('');
     // FacultyDetail-style layout triggers conforme signature block (based on title prefix)
     const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
     const preparedRole = (() => {
@@ -1277,7 +1291,7 @@ export default function CourseLoading() {
         return String(primary?.position || any?.position || 'Academic Head');
       } catch { return 'Academic Head'; }
     })();
-    printContent({ title, subtitle: '', bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
+    printContent({ title, subtitle: '', bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
   };
 
   // Limit load/overload scoring to current load SY/Sem defaults

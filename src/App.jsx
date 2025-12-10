@@ -89,7 +89,7 @@ function App() {
               <Route path="/admin/room-attendance" element={<RequireRole roles={['admin','manager','checker']}><RoomAttendance /></RequireRole>} />
               <Route path="/admin/faculty" element={<RequireAdmin><AdminFaculty /></RequireAdmin>} />
               <Route path="/admin/prospectus" element={<RequireAdmin><AdminProspectus /></RequireAdmin>} />
-              <Route path="/admin/evaluations" element={<RequireAdmin><AdminEvaluations /></RequireAdmin>} />
+              <Route path="/admin/evaluations" element={<RequireAdmin extraRoles={['osas']}><AdminEvaluations /></RequireAdmin>} />
               <Route path="/admin/academic-calendar" element={<RequireAdmin><AdminAcademicCalendar /></RequireAdmin>} />
               <Route path="/admin/settings" element={<RequireAdmin><AdminSettings /></RequireAdmin>} />
               <Route path="/admin/blocks" element={<RequireAdmin><AdminBlockSettings /></RequireAdmin>} />
