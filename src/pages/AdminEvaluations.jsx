@@ -86,7 +86,11 @@ export default function AdminEvaluations() {
     setLoading(true);
     try {
       const search = new URLSearchParams();
-      Object.entries(filters).forEach(([k, v]) => { if (v) search.set(k, v); });
+      Object.entries(filters).forEach(([k, v]) => {
+        if (!v) return;
+        if (view === 'faculty' && k === 'faculty') return; // apply faculty filter client-side using faculty data, not instructor
+        search.set(k, v);
+      });
       const path = view === 'course'
         ? '/evaluations/aggregate/schedule'
         : view === 'faculty'
@@ -116,19 +120,33 @@ export default function AdminEvaluations() {
   // Reset pagination on filter/view changes
   React.useEffect(() => { setPage(1); }, [view, filters]);
 
+  const filteredRows = React.useMemo(() => {
+    const list = Array.isArray(rows) ? rows : [];
+    if (view === 'faculty' && filters.faculty) {
+      const norm = (v) => String(v || '').trim().toLowerCase();
+      const target = norm(filters.faculty);
+      return list.filter(r => {
+        const facName = norm(r?.faculty?.faculty || r?.faculty?.name);
+        const instructorName = norm(r?.instructor);
+        return facName === target || instructorName === target;
+      });
+    }
+    return list;
+  }, [rows, view, filters.faculty]);
+
   // Clamp page when data or size changes
   React.useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+    const maxPage = Math.max(1, Math.ceil((filteredRows?.length || 0) / pageSize));
     if (page > maxPage) setPage(maxPage);
-  }, [rows, pageSize, page]);
+  }, [filteredRows, pageSize, page]);
 
   const pagedRows = React.useMemo(() => {
-    const list = Array.isArray(rows) ? rows : [];
+    const list = filteredRows;
     const start = (page - 1) * pageSize;
     return list.slice(start, start + pageSize);
-  }, [rows, page, pageSize]);
+  }, [filteredRows, page, pageSize]);
 
-  const pageCount = Math.max(1, Math.ceil((rows?.length || 0) / pageSize));
+  const pageCount = Math.max(1, Math.ceil((filteredRows?.length || 0) / pageSize));
 
   // Load prospectus for select options (programs, courses)
   const opts = useSelector(selectProspectusFilterOptions);
@@ -144,8 +162,12 @@ export default function AdminEvaluations() {
     return Array.from(new Set(list)).sort();
   }, [allPros, filters.programcode]);
   const facultyOptions = React.useMemo(() => {
-    const list = (allCourses || []).map(c => String(c.facultyName || c.instructor || '').trim()).filter(Boolean);
-    return Array.from(new Set(list)).sort((a,b)=>a.localeCompare(b));
+    const names = new Set();
+    (allCourses || []).forEach(c => {
+      const name = String(c.faculty?.faculty || c.facultyName || c.instructor || '').trim();
+      if (name) names.add(name);
+    });
+    return Array.from(names).sort((a,b)=>a.localeCompare(b));
   }, [allCourses]);
 
   const termOptions = [
@@ -337,7 +359,7 @@ export default function AdminEvaluations() {
               Array.from({ length: 6 }).map((_, i) => (
                 <Tr key={i}><Td colSpan={6}><Skeleton height="20px" /></Td></Tr>
               ))
-            ) : rows.length === 0 ? (
+            ) : filteredRows.length === 0 ? (
               <Tr><Td colSpan={6}><Text color={subtle} p={4}>No evaluations found.</Text></Td></Tr>
             ) : view==='course' ? (
               pagedRows.map((r) => (
