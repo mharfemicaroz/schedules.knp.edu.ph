@@ -1879,6 +1879,20 @@ const prefill = hit ? {
   const [facultySchedules, setFacultySchedules] = React.useState({ items: [], loading: false });
   const [facSelected, setFacSelected] = React.useState(new Set());
   const [facEdits, setFacEdits] = React.useState({}); // id -> { term,time,faculty,facultyId,_checking,_conflict,_details }
+  const [facSavingIds, setFacSavingIds] = React.useState(new Set());
+  const markFacSaving = React.useCallback((id, saving) => {
+    if (id == null) return;
+    const key = String(id);
+    setFacSavingIds(prev => {
+      const next = new Set(prev);
+      if (saving) next.add(key); else next.delete(key);
+      return next;
+    });
+  }, []);
+  const isFacSaving = React.useCallback((id) => {
+    if (id == null) return false;
+    return facSavingIds.has(String(id));
+  }, [facSavingIds]);
   const facCheckTimers = React.useRef(new Map());
   const fetchFacultySchedules = async (fac) => {
     if (!fac) return setFacultySchedules({ items: [], loading: false });
@@ -2112,102 +2126,108 @@ const prefill = hit ? {
     if (!base || !canEditFacultyItem(base)) return;
     const e = facEdits[id];
     if (!e) return;
-    const isDraft = String(base.id || '').startsWith('tmp:') || !!base._draft;
-    if (isDraft) {
-      const okLimit = await ensureFacultyLoadLimitForFacultyView([base]);
-      if (!okLimit) return;
-      try {
-        const yrLabel = (() => {
-          const raw = String(base.yearlevel ?? '').trim();
-          if (!raw) return '';
-          const m = raw.match(/(\d+)/);
-          const n = m ? parseInt(m[1], 10) : NaN;
-          if (!Number.isFinite(n)) return raw; // already labeled
-          const ord = (k) => {
-            const sfx = (k % 10 === 1 && k % 100 !== 11) ? 'st' : (k % 10 === 2 && k % 100 !== 12) ? 'nd' : (k % 10 === 3 && k % 100 !== 13) ? 'rd' : 'th';
-            return `${k}${sfx}`;
+    if (isFacSaving(id)) return;
+    markFacSaving(id, true);
+    try {
+      const isDraft = String(base.id || '').startsWith('tmp:') || !!base._draft;
+      if (isDraft) {
+        const okLimit = await ensureFacultyLoadLimitForFacultyView([base]);
+        if (!okLimit) return;
+        try {
+          const yrLabel = (() => {
+            const raw = String(base.yearlevel ?? '').trim();
+            if (!raw) return '';
+            const m = raw.match(/(\d+)/);
+            const n = m ? parseInt(m[1], 10) : NaN;
+            if (!Number.isFinite(n)) return raw; // already labeled
+            const ord = (k) => {
+              const sfx = (k % 10 === 1 && k % 100 !== 11) ? 'st' : (k % 10 === 2 && k % 100 !== 12) ? 'nd' : (k % 10 === 3 && k % 100 !== 13) ? 'rd' : 'th';
+              return `${k}${sfx}`;
+            };
+            return `${ord(n)} Year`;
+          })();
+          const termLabel = e.term;
+          const semLabel = resolveSemesterLabel(settingsLoad?.semester);
+          const blkCode = base.blockCode || base.section || '';
+          const blkMeta = (blocksAll || []).find(b => String(b.blockCode || '').trim().toLowerCase() === String(blkCode).trim().toLowerCase());
+          const session = blkMeta?.session || '';
+          const payload = {
+            programcode: base.programcode,
+            courseName: base.courseName || base.code,
+            courseTitle: base.courseTitle || base.title,
+            unit: base.unit,
+            day: e.day || base.day || 'MON-FRI',
+            time: e.time,
+            term: termLabel || e.term,
+            schoolyear: settingsLoad?.school_year || '',
+            sem: semLabel || '',
+            semester: semLabel || '',
+            yearlevel: yrLabel || base.yearlevel,
+            blockCode: blkCode,
+            session: session,
+            facultyId: (e.facultyId != null ? e.facultyId : (base.facultyId ?? null)),
+            faculty: base.faculty || base.instructor || selectedFaculty?.name || selectedFaculty?.faculty || '',
+            prospectusId: base.prospectusId || base.prospectus_id || undefined,
           };
-          return `${ord(n)} Year`;
-        })();
-        const termLabel = e.term;
-        const semLabel = resolveSemesterLabel(settingsLoad?.semester);
-        const blkCode = base.blockCode || base.section || '';
-        const blkMeta = (blocksAll || []).find(b => String(b.blockCode || '').trim().toLowerCase() === String(blkCode).trim().toLowerCase());
-        const session = blkMeta?.session || '';
-        const payload = {
-          programcode: base.programcode,
-          courseName: base.courseName || base.code,
-          courseTitle: base.courseTitle || base.title,
-          unit: base.unit,
-          day: e.day || base.day || 'MON-FRI',
-          time: e.time,
-          term: termLabel || e.term,
-          schoolyear: settingsLoad?.school_year || '',
-          sem: semLabel || '',
-          semester: semLabel || '',
-          yearlevel: yrLabel || base.yearlevel,
-          blockCode: blkCode,
-          session: session,
-          facultyId: (e.facultyId != null ? e.facultyId : (base.facultyId ?? null)),
-          faculty: base.faculty || base.instructor || selectedFaculty?.name || selectedFaculty?.faculty || '',
-          prospectusId: base.prospectusId || base.prospectus_id || undefined,
-        };
-        const hit = await runServerConflictCheck(0, payload, { label: `${payload.courseName || 'Schedule'} (${blkCode})` });
-        if (hit) return;
-        await api.createSchedule(payload);
+          const hit = await runServerConflictCheck(0, payload, { label: `${payload.courseName || 'Schedule'} (${blkCode})` });
+          if (hit) return;
+          await api.createSchedule(payload);
+          await fetchFacultySchedules(selectedFaculty);
+          dispatch(loadAllSchedules());
+          toast({ title: 'Saved', description: `${payload.courseName} created.`, status: 'success' });
+        } catch (e2) {
+          toast({ title: 'Save failed', description: e2?.message || 'Could not create schedule.', status: 'error' });
+        }
+        return;
+      }
+      const changes = {};
+      // Always align sem/semester with the Schedules Load settings, not ad-hoc edits
+      const settingsSemLabel = resolveSemesterLabel(settingsLoad?.semester);
+      const nextTerm = canonicalTerm(e.term || base.term || settingsSemLabel || '');
+      if (nextTerm) { changes.term = nextTerm; }
+      const semLabel = settingsSemLabel || resolveSemesterLabel(nextTerm, settingsLoad?.semester);
+      const baseTime = String(base.schedule || base.time || '').trim();
+      if (baseTime !== e.time) changes.time = e.time;
+      if (String(base.day || '').trim() !== String(e.day || '').trim()) changes.day = e.day || '';
+      if (semLabel) { changes.semester = semLabel; changes.sem = semLabel; }
+      // In faculty view, faculty is implicit; do not change faculty assignment inline
+      if (Object.keys(changes).length === 0) return;
+      const checkPayload = {
+        term: changes.term ?? base.term,
+        time: changes.time ?? base.time ?? base.schedule,
+        day: changes.day ?? base.day,
+        faculty: base.faculty || base.instructor || '',
+        facultyId: base.facultyId || base.faculty_id || null,
+        schoolyear: settingsLoad?.school_year || undefined,
+        semester: semLabel || settingsLoad?.semester || undefined,
+        blockCode: base.blockCode || base.section || '',
+        courseName: base.courseName || base.code || '',
+        courseTitle: base.courseTitle || base.title || '',
+        session: base.session || '',
+      };
+      const hit = await runServerConflictCheck(id, checkPayload, { label: `${checkPayload.courseName || 'Schedule'} (${checkPayload.blockCode || 'N/A'})` });
+      if (hit) return;
+      try {
+        if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) && changes.faculty_id != null) {
+          const targetFac = findFacultyById(changes.faculty_id);
+          const targetName = targetFac?.name || targetFac?.faculty || '';
+          const max = maxUnitsFor(targetFac);
+          const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); qs.set("instructor", targetName); if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
+          const same = normalizeName(targetName) === normalizeName(base.faculty || base.instructor || '');
+          const addU = same ? 0 : Number(base.unit || 0);
+          if (current + addU > max) {
+            toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(targetFac)==='part-time'?'Part-time max 12':'Full-time max 36'} units. Current ${current}, adding ${addU} ? ${current+addU}. Only admin can exceed.`, status: 'warning' });
+            return;
+          }
+        }
+        await dispatch(updateScheduleThunk({ id, changes }));
+        // Refresh schedule list to reflect persisted data
         await fetchFacultySchedules(selectedFaculty);
         dispatch(loadAllSchedules());
-        toast({ title: 'Saved', description: `${payload.courseName} created.`, status: 'success' });
-      } catch (e2) {
-        toast({ title: 'Save failed', description: e2?.message || 'Could not create schedule.', status: 'error' });
-      }
-      return;
+      } catch {}
+    } finally {
+      markFacSaving(id, false);
     }
-    const changes = {};
-    // Always align sem/semester with the Schedules Load settings, not ad-hoc edits
-    const settingsSemLabel = resolveSemesterLabel(settingsLoad?.semester);
-    const nextTerm = canonicalTerm(e.term || base.term || settingsSemLabel || '');
-    if (nextTerm) { changes.term = nextTerm; }
-    const semLabel = settingsSemLabel || resolveSemesterLabel(nextTerm, settingsLoad?.semester);
-    const baseTime = String(base.schedule || base.time || '').trim();
-    if (baseTime !== e.time) changes.time = e.time;
-    if (String(base.day || '').trim() !== String(e.day || '').trim()) changes.day = e.day || '';
-    if (semLabel) { changes.semester = semLabel; changes.sem = semLabel; }
-    // In faculty view, faculty is implicit; do not change faculty assignment inline
-    if (Object.keys(changes).length === 0) return;
-    const checkPayload = {
-      term: changes.term ?? base.term,
-      time: changes.time ?? base.time ?? base.schedule,
-      day: changes.day ?? base.day,
-      faculty: base.faculty || base.instructor || '',
-      facultyId: base.facultyId || base.faculty_id || null,
-      schoolyear: settingsLoad?.school_year || undefined,
-      semester: semLabel || settingsLoad?.semester || undefined,
-      blockCode: base.blockCode || base.section || '',
-      courseName: base.courseName || base.code || '',
-      courseTitle: base.courseTitle || base.title || '',
-      session: base.session || '',
-    };
-    const hit = await runServerConflictCheck(id, checkPayload, { label: `${checkPayload.courseName || 'Schedule'} (${checkPayload.blockCode || 'N/A'})` });
-    if (hit) return;
-    try {
-      if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) && changes.faculty_id != null) {
-        const targetFac = findFacultyById(changes.faculty_id);
-        const targetName = targetFac?.name || targetFac?.faculty || '';
-        const max = maxUnitsFor(targetFac);
-        const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); qs.set("instructor", targetName); if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
-        const same = normalizeName(targetName) === normalizeName(base.faculty || base.instructor || '');
-        const addU = same ? 0 : Number(base.unit || 0);
-        if (current + addU > max) {
-          toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(targetFac)==='part-time'?'Part-time max 12':'Full-time max 36'} units. Current ${current}, adding ${addU} ⇒ ${current+addU}. Only admin can exceed.`, status: 'warning' });
-          return;
-        }
-      }
-      await dispatch(updateScheduleThunk({ id, changes }));
-      // Refresh schedule list to reflect persisted data
-      await fetchFacultySchedules(selectedFaculty);
-      dispatch(loadAllSchedules());
-    } catch {}
   };
 
   const openFacultySuggestions = (id) => {
@@ -4826,6 +4846,7 @@ const prefill = hit ? {
                             const isEditable = canEditFacultyItem(c);
                             const canSave = isEditable && dirty && termFilled && timeFilled && !e._checking && !e._conflict;
                             const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock || c.is_locked);
+                            const saving = isFacSaving(c.id);
                             return (
                               <Box key={`${term}-${i}`} p={2} borderWidth="1px" rounded="md">
                                 <HStack spacing={3} align="center">
@@ -4916,7 +4937,7 @@ const prefill = hit ? {
                                       <Button size="sm" variant="outline" onClick={()=>addFacultyItemToSwap(facultySchedules.items.indexOf(c))} isDisabled={!isEditable || isLocked || String(c.id || '').startsWith('tmp:') || !!c._draft}>Add to Swap</Button>
                                       {/* Inline Assign action removed per request */}
                                       <Button size="sm" variant="outline" onClick={()=>updateFacEdit(c.id, { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), faculty: c.faculty || c.instructor || '', facultyId: c.facultyId || c.faculty_id || null, _conflict:false, _details:[] })} isDisabled={!isEditable || !dirty || isLocked}>Revert</Button>
-                                      <Button size="sm" colorScheme="blue" onClick={()=>saveFacultyEdit(c.id)} isDisabled={!canSave || isLocked}>Save</Button>
+                                      <Button size="sm" colorScheme="blue" onClick={()=>saveFacultyEdit(c.id)} isDisabled={!canSave || isLocked || saving} isLoading={saving}>Save</Button>
                                       {isLocked ? (
                                         <Tooltip label={isAdmin ? 'Locked. Click to unlock.' : 'Locked. Only admin can unlock.'}>
                                           <IconButton aria-label="Unlock" icon={<FiLock />} size="sm" colorScheme="red" variant="ghost" onClick={()=>toggleFacultyLock(c.id, false)} isDisabled={!isEditable || !isAdmin} />
