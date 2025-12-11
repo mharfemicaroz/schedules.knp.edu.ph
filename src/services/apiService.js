@@ -538,6 +538,16 @@ class ApiService {
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
+  async getInstructorStatsById(facultyId, { schoolyear, semester } = {}) {
+    const qs = new URLSearchParams();
+    if (schoolyear) qs.set('schoolyear', schoolyear);
+    if (semester) qs.set('semester', semester);
+    const query = qs.toString();
+    const url = `${this.baseURL}${this.schedulesPath}/instructor/${encodeURIComponent(facultyId)}/stats${query ? `?${query}` : ''}`;
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
 
   // GET /api/schedules/room/:room - Get schedules by room
   async getSchedulesByRoom(room) {

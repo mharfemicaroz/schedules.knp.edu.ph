@@ -1306,6 +1306,21 @@ export default function CourseLoading() {
   }, [existing, settingsLoad]);
   const facIndexesAllFull = React.useMemo(() => buildIndexes(existing || []), [existing]);
   const facStatsScoped = React.useMemo(() => buildFacultyStats(facOptions || [], scopedCourses || []), [facOptions, scopedCourses]);
+  const facLoadCache = React.useRef(new Map());
+  const [, forceFacLoad] = React.useState(0);
+  const calcUnitsForFaculty = React.useCallback((fac) => {
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const fid = fac?.id != null ? String(fac.id) : '';
+    const nameKey = norm(fac?.name || fac?.faculty || fac?.full_name || '');
+    return (scopedCourses || []).reduce((sum, c) => {
+      const cid = c.facultyId != null ? String(c.facultyId) : (c.faculty_id != null ? String(c.faculty_id) : '');
+      const cname = norm(c.facultyName || c.faculty || c.instructor || '');
+      if ((fid && cid && fid === cid) || (nameKey && cname === nameKey)) {
+        return sum + (Number(c.unit ?? c.units ?? c.hours ?? 0) || 0);
+      }
+      return sum;
+    }, 0);
+  }, [scopedCourses]);
 
   // Fetch attendance stats per faculty (all-time, regardless of SY/Sem)
   React.useEffect(() => {
@@ -1826,6 +1841,8 @@ const prefill = hit ? {
   const [facDeptFilter, setFacDeptFilter] = React.useState('');
   const [facEmpFilter, setFacEmpFilter] = React.useState('');
   const [facQ, setFacQ] = React.useState('');
+  const [facSort, setFacSort] = React.useState('name'); // name|dept|employment|units
+  const [facSortDir, setFacSortDir] = React.useState('asc'); // asc|desc
   const filteredFaculty = React.useMemo(() => {
     const norm = (s) => String(s || '').toLowerCase();
     const q = norm(facQ);
@@ -1871,10 +1888,78 @@ const prefill = hit ? {
       }
       if (facDeptFilter && dept !== norm(facDeptFilter)) return false;
       if (facEmpFilter && emp !== norm(facEmpFilter)) return false;
-      if (q && !(name.includes(q) || dept.includes(q))) return false;
-      return true;
-    });
+        if (q && !(name.includes(q) || dept.includes(q))) return false;
+        return true;
+      });
   }, [facultyAll, facDeptFilter, facEmpFilter, facQ, isAdmin, allowedDepts]);
+
+  const sortedFaculty = React.useMemo(() => {
+    const list = [...(filteredFaculty || [])];
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const getUnits = (f) => {
+      const cached = facLoadCache.current.get(String(f.id)) ?? null;
+      const stats = facStatsScoped.get(String(f.id)) || {};
+      const units = cached != null ? Number(cached) : Number(stats.load || 0);
+      if (Number.isFinite(units)) return units;
+      return calcUnitsForFaculty(f);
+    };
+    const cmp = {
+      name: (a, b) => norm(a.name || a.faculty).localeCompare(norm(b.name || b.faculty)),
+      dept: (a, b) => norm(a.dept || a.department).localeCompare(norm(b.dept || b.department)),
+      employment: (a, b) => norm(a.employment).localeCompare(norm(b.employment)),
+      units: (a, b) => getUnits(b) - getUnits(a),
+    }[facSort] || ((a, b) => norm(a.name || a.faculty).localeCompare(norm(b.name || b.faculty)));
+    list.sort(cmp);
+    if (facSortDir === 'desc') list.reverse();
+    return list;
+  }, [filteredFaculty, facSort, facSortDir, facStatsScoped, calcUnitsForFaculty]);
+
+  // Prefetch load stats for visible faculty using server stats (scoped by settingsLoad sy/sem)
+  React.useEffect(() => {
+    const sy = settingsLoad?.school_year || '';
+    const sem = settingsLoad?.semester || '';
+    const list = filteredFaculty || [];
+    list.forEach((f) => {
+      const key = String(f.id || '');
+      if (!key || facLoadCache.current.has(key)) return;
+      (async () => {
+        try {
+          const res = await api.getInstructorStatsById(key, { schoolyear: sy, semester: sem });
+          const units = Number(res?.loadUnits || res?.units || res?.totalUnits || 0);
+          facLoadCache.current.set(key, units);
+          forceFacLoad((v) => v + 1);
+        } catch {
+          // fallback to client-side calc if server call fails
+          const u = calcUnitsForFaculty(f);
+          facLoadCache.current.set(key, u);
+          forceFacLoad((v) => v + 1);
+        }
+      })();
+    });
+  }, [filteredFaculty, settingsLoad?.school_year, settingsLoad?.semester, calcUnitsForFaculty]);
+
+  // Prefetch load stats for broader faculty pool on initial load to avoid 0 badges
+  React.useEffect(() => {
+    const sy = settingsLoad?.school_year || '';
+    const sem = settingsLoad?.semester || '';
+    const list = facOptions || [];
+    list.forEach((f) => {
+      const key = String(f.id || '');
+      if (!key || facLoadCache.current.has(key)) return;
+      (async () => {
+        try {
+          const res = await api.getInstructorStatsById(key, { schoolyear: sy, semester: sem });
+          const units = Number(res?.loadUnits || res?.units || res?.totalUnits || 0);
+          facLoadCache.current.set(key, units);
+          forceFacLoad((v) => v + 1);
+        } catch {
+          const u = calcUnitsForFaculty(f);
+          facLoadCache.current.set(key, u);
+          forceFacLoad((v) => v + 1);
+        }
+      })();
+    });
+  }, [facOptions, settingsLoad?.school_year, settingsLoad?.semester, calcUnitsForFaculty]);
 
   const [facultySchedules, setFacultySchedules] = React.useState({ items: [], loading: false });
   const [facSelected, setFacSelected] = React.useState(new Set());
@@ -4204,6 +4289,16 @@ const prefill = hit ? {
                 <Select size="sm" placeholder="Employment" value={facEmpFilter} onChange={(e)=>setFacEmpFilter(e.target.value)} maxW="160px">
                   {(facultyOpts.employments || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </Select>
+                <Select size="sm" value={facSort} onChange={(e)=>setFacSort(e.target.value)} maxW="180px">
+                  <option value="name">Sort: Name</option>
+                  <option value="dept">Sort: Department</option>
+                  <option value="employment">Sort: Employment</option>
+                  <option value="units">Sort: Units</option>
+                </Select>
+                <Select size="sm" value={facSortDir} onChange={(e)=>setFacSortDir(e.target.value)} maxW="140px">
+                  <option value="asc">Asc</option>
+                  <option value="desc">Desc</option>
+                </Select>
               </HStack>
               <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
                 <Stack spacing={2}>
@@ -4246,9 +4341,19 @@ const prefill = hit ? {
 
               </Box>
               <VStack align="stretch" spacing={1} maxH="calc(100vh - 300px)" overflowY="auto">
-                {filteredFaculty.map(f => {
-                  const isSel = selectedFaculty && String(selectedFaculty.id) === String(f.id);
-                  const dept = f.department || f.dept || f.department_name || f.departmentName || '';
+                {sortedFaculty.map(f => {
+                    const isSel = selectedFaculty && String(selectedFaculty.id) === String(f.id);
+                    const dept = f.department || f.dept || f.department_name || f.departmentName || '';
+                    const stats = facStatsScoped.get(String(f.id)) || {};
+                    const cachedUnits = facLoadCache.current.get(String(f.id)) ?? null;
+                    let units = cachedUnits != null ? Number(cachedUnits) : Number(stats.load || 0);
+                    if (!Number.isFinite(units) || units <= 0) {
+                      const fallbackUnits = calcUnitsForFaculty(f);
+                      if (Number.isFinite(fallbackUnits)) {
+                        units = fallbackUnits;
+                        facLoadCache.current.set(String(f.id), units);
+                      }
+                    }
                   return (
                     <Box key={f.id}
                       p={2}
@@ -4258,16 +4363,23 @@ const prefill = hit ? {
                       bg={isSel ? 'blue.50' : undefined}
                       cursor="pointer"
                       onClick={()=>{ setSelectedFaculty(f); fetchFacultySchedules(f); }}
-                      _hover={{ borderColor: 'blue.400' }}
-                    >
-                      <Text fontWeight="600" noOfLines={1}>{f.name || f.faculty || '—'}</Text>
-                      <HStack spacing={2} mt={1} fontSize="xs" color={subtle}>
-                        {dept && <Badge>{dept}</Badge>}
-                        {f.employment && <Badge colorScheme="purple">{f.employment}</Badge>}
-                      </HStack>
-                    </Box>
-                  );
-                })}
+                        _hover={{ borderColor: 'blue.400' }}
+                      >
+                        <Text fontWeight="600" noOfLines={1}>{f.name || f.faculty || '–'}</Text>
+                        <HStack spacing={2} mt={1} fontSize="xs" color={subtle}>
+                          {dept && <Badge>{dept}</Badge>}
+                          {f.employment && <Badge colorScheme="purple">{f.employment}</Badge>}
+                          {Number.isFinite(units) && <Badge colorScheme="teal">{units} units</Badge>}
+                          {!Number.isFinite(units) ? (
+                            (() => {
+                              const u = calcUnitsForFaculty(f);
+                              return <Badge colorScheme="teal">{u} units</Badge>;
+                            })()
+                          ) : null}
+                        </HStack>
+                      </Box>
+                    );
+                  })}
                 {filteredFaculty.length === 0 && (
                   <Text fontSize="sm" color={subtle}>No faculty match current filters.</Text>
                 )}
