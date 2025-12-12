@@ -1308,6 +1308,7 @@ export default function CourseLoading() {
   const facStatsScoped = React.useMemo(() => buildFacultyStats(facOptions || [], scopedCourses || []), [facOptions, scopedCourses]);
   const facLoadCache = React.useRef(new Map());
   const [, forceFacLoad] = React.useState(0);
+  const [facBulkStats, setFacBulkStats] = React.useState(new Map());
   const calcUnitsForFaculty = React.useCallback((fac) => {
     const norm = (s) => String(s || '').trim().toLowerCase();
     const fid = fac?.id != null ? String(fac.id) : '';
@@ -1321,6 +1322,63 @@ export default function CourseLoading() {
       return sum;
     }, 0);
   }, [scopedCourses]);
+
+  // Bulk fetch instructor stats for unit badges (per SY/Sem)
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await api.getInstructorStatsBulk({
+          schoolyear: settingsLoad?.school_year,
+          semester: settingsLoad?.semester,
+        });
+        const map = new Map();
+        (Array.isArray(rows) ? rows : []).forEach((r) => {
+          const fidRaw = r.facultyId ?? r.faculty_id ?? r.facultyid;
+          if (fidRaw == null || fidRaw === '') return;
+          const fid = String(fidRaw);
+          const units = Number(r.totalUnits ?? r.total_units ?? r.units ?? r.loadUnits ?? r.load_units ?? 0) || 0;
+          const count = Number(r.countSchedules ?? r.countschedules ?? r.scheduleCount ?? r.count ?? 0) || 0;
+          map.set(fid, { units, count });
+        });
+        if (!alive) return;
+        setFacBulkStats(map);
+        let changed = false;
+        map.forEach((val, fid) => {
+          const cur = facLoadCache.current.get(fid);
+          if (cur !== val.units) {
+            facLoadCache.current.set(fid, val.units);
+            changed = true;
+          }
+        });
+        if (changed) forceFacLoad((v) => v + 1);
+      } catch (e) {
+        if (alive) setFacBulkStats(new Map());
+      }
+    })();
+    return () => { alive = false; };
+  }, [settingsLoad?.school_year, settingsLoad?.semester]);
+
+  const unitsForFaculty = React.useCallback((fac) => {
+    const key = String(fac?.id ?? '');
+    const bulk = key ? facBulkStats.get(key) : null;
+    const bulkUnits = bulk ? Number(bulk.units) : null;
+    const cached = key ? facLoadCache.current.get(key) : null;
+    const stats = key ? facStatsScoped.get(key) || {} : {};
+    const candidate =
+      (Number.isFinite(bulkUnits) ? bulkUnits : null) ??
+      (cached != null && Number.isFinite(Number(cached)) ? Number(cached) : null) ??
+      (Number.isFinite(Number(stats.load)) ? Number(stats.load) : null);
+    if (Number.isFinite(candidate)) {
+      if (key && (!facLoadCache.current.has(key) || facLoadCache.current.get(key) !== candidate)) {
+        facLoadCache.current.set(key, candidate);
+      }
+      return candidate;
+    }
+    const fallback = calcUnitsForFaculty(fac);
+    if (key && Number.isFinite(fallback)) facLoadCache.current.set(key, fallback);
+    return fallback;
+  }, [facBulkStats, facStatsScoped, calcUnitsForFaculty]);
 
   // Fetch attendance stats per faculty (all-time, regardless of SY/Sem)
   React.useEffect(() => {
@@ -1896,23 +1954,16 @@ const prefill = hit ? {
   const sortedFaculty = React.useMemo(() => {
     const list = [...(filteredFaculty || [])];
     const norm = (s) => String(s || '').trim().toLowerCase();
-    const getUnits = (f) => {
-      const cached = facLoadCache.current.get(String(f.id)) ?? null;
-      const stats = facStatsScoped.get(String(f.id)) || {};
-      const units = cached != null ? Number(cached) : Number(stats.load || 0);
-      if (Number.isFinite(units)) return units;
-      return calcUnitsForFaculty(f);
-    };
     const cmp = {
       name: (a, b) => norm(a.name || a.faculty).localeCompare(norm(b.name || b.faculty)),
       dept: (a, b) => norm(a.dept || a.department).localeCompare(norm(b.dept || b.department)),
       employment: (a, b) => norm(a.employment).localeCompare(norm(b.employment)),
-      units: (a, b) => getUnits(b) - getUnits(a),
+      units: (a, b) => unitsForFaculty(b) - unitsForFaculty(a),
     }[facSort] || ((a, b) => norm(a.name || a.faculty).localeCompare(norm(b.name || b.faculty)));
     list.sort(cmp);
     if (facSortDir === 'desc') list.reverse();
     return list;
-  }, [filteredFaculty, facSort, facSortDir, facStatsScoped, calcUnitsForFaculty]);
+  }, [filteredFaculty, facSort, facSortDir, unitsForFaculty]);
 
   // Prefetch load stats for visible faculty using local schedules (avoid per-faculty stats API)
   React.useEffect(() => {
@@ -4325,16 +4376,7 @@ const prefill = hit ? {
                 {sortedFaculty.map(f => {
                     const isSel = selectedFaculty && String(selectedFaculty.id) === String(f.id);
                     const dept = f.department || f.dept || f.department_name || f.departmentName || '';
-                    const stats = facStatsScoped.get(String(f.id)) || {};
-                    const cachedUnits = facLoadCache.current.get(String(f.id)) ?? null;
-                    let units = cachedUnits != null ? Number(cachedUnits) : Number(stats.load || 0);
-                    if (!Number.isFinite(units) || units <= 0) {
-                      const fallbackUnits = calcUnitsForFaculty(f);
-                      if (Number.isFinite(fallbackUnits)) {
-                        units = fallbackUnits;
-                        facLoadCache.current.set(String(f.id), units);
-                      }
-                    }
+                    const units = unitsForFaculty(f);
                   return (
                     <Box key={f.id}
                       p={2}

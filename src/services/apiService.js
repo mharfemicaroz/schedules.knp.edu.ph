@@ -549,6 +549,18 @@ class ApiService {
     return await res.json();
   }
 
+  // GET /api/schedules/instructor/stats - Bulk instructor stats (count + units)
+  async getInstructorStatsBulk({ schoolyear, semester } = {}) {
+    const qs = new URLSearchParams();
+    if (schoolyear) qs.set('schoolyear', schoolyear);
+    if (semester) qs.set('semester', semester);
+    const query = qs.toString();
+    const url = `${this.baseURL}${this.schedulesPath}/instructor/stats${query ? `?${query}` : ''}`;
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   // GET /api/schedules/room/:room - Get schedules by room
   async getSchedulesByRoom(room) {
     return this.request(`/room/${encodeURIComponent(room)}`);
