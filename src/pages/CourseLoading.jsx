@@ -1914,52 +1914,33 @@ const prefill = hit ? {
     return list;
   }, [filteredFaculty, facSort, facSortDir, facStatsScoped, calcUnitsForFaculty]);
 
-  // Prefetch load stats for visible faculty using server stats (scoped by settingsLoad sy/sem)
+  // Prefetch load stats for visible faculty using local schedules (avoid per-faculty stats API)
   React.useEffect(() => {
-    const sy = settingsLoad?.school_year || '';
-    const sem = settingsLoad?.semester || '';
     const list = filteredFaculty || [];
+    let updated = false;
     list.forEach((f) => {
       const key = String(f.id || '');
       if (!key || facLoadCache.current.has(key)) return;
-      (async () => {
-        try {
-          const res = await api.getInstructorStatsById(key, { schoolyear: sy, semester: sem });
-          const units = Number(res?.loadUnits || res?.units || res?.totalUnits || 0);
-          facLoadCache.current.set(key, units);
-          forceFacLoad((v) => v + 1);
-        } catch {
-          // fallback to client-side calc if server call fails
-          const u = calcUnitsForFaculty(f);
-          facLoadCache.current.set(key, u);
-          forceFacLoad((v) => v + 1);
-        }
-      })();
+      const u = calcUnitsForFaculty(f);
+      facLoadCache.current.set(key, u);
+      updated = true;
     });
-  }, [filteredFaculty, settingsLoad?.school_year, settingsLoad?.semester, calcUnitsForFaculty]);
+    if (updated) forceFacLoad((v) => v + 1);
+  }, [filteredFaculty, calcUnitsForFaculty]);
 
-  // Prefetch load stats for broader faculty pool on initial load to avoid 0 badges
+  // Prefetch load stats for broader faculty pool on initial load using local schedules
   React.useEffect(() => {
-    const sy = settingsLoad?.school_year || '';
-    const sem = settingsLoad?.semester || '';
     const list = facOptions || [];
+    let updated = false;
     list.forEach((f) => {
       const key = String(f.id || '');
       if (!key || facLoadCache.current.has(key)) return;
-      (async () => {
-        try {
-          const res = await api.getInstructorStatsById(key, { schoolyear: sy, semester: sem });
-          const units = Number(res?.loadUnits || res?.units || res?.totalUnits || 0);
-          facLoadCache.current.set(key, units);
-          forceFacLoad((v) => v + 1);
-        } catch {
-          const u = calcUnitsForFaculty(f);
-          facLoadCache.current.set(key, u);
-          forceFacLoad((v) => v + 1);
-        }
-      })();
+      const u = calcUnitsForFaculty(f);
+      facLoadCache.current.set(key, u);
+      updated = true;
     });
-  }, [facOptions, settingsLoad?.school_year, settingsLoad?.semester, calcUnitsForFaculty]);
+    if (updated) forceFacLoad((v) => v + 1);
+  }, [facOptions, calcUnitsForFaculty]);
 
   const [facultySchedules, setFacultySchedules] = React.useState({ items: [], loading: false });
   const [facSelected, setFacSelected] = React.useState(new Set());
