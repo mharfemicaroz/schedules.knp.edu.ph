@@ -12,6 +12,7 @@ export default function ProspectusFormModal({ isOpen, onClose, onSubmit, initial
       programcode: it.programcode || it.program || '',
       course_name: it.course_name || it.courseName || '',
       course_title: it.course_title || it.courseTitle || '',
+      coursetype: it.coursetype || it.courseType || '',
       unit: it.unit ?? '',
       yearlevel: it.yearlevel ?? '',
       semester: it.semester ?? '',
@@ -53,6 +54,10 @@ export default function ProspectusFormModal({ isOpen, onClose, onSubmit, initial
               <FormControl isRequired>
                 <FormLabel>Course Title</FormLabel>
                 <Input value={form.course_title || ''} onChange={set('course_title')} placeholder="Descriptive title" />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Course Type</FormLabel>
+                <Input value={form.coursetype || ''} onChange={set('coursetype')} placeholder="e.g., Major, Elective" />
               </FormControl>
             </HStack>
             <HStack spacing={3} align="start">

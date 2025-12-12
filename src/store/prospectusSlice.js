@@ -66,10 +66,11 @@ export const selectFilteredProspectus = createSelector([selectAllProspectus, sel
   const matches = (v, needle) => !needle || String(v || '').toLowerCase().includes(String(needle).toLowerCase());
   return items.filter(x => {
     const name = x.courseName || x.course_name || x.courseTitle || x.course_title || '';
+    const ctype = x.courseType || x.coursetype || '';
     const program = x.programcode || x.program || '';
     const sy = x.curriculumYear || x.curriculum_year || '';
     return (
-      (!q || [name, program, sy].some(v => matches(v, q))) &&
+      (!q || [name, ctype, program, sy].some(v => matches(v, q))) &&
       matches(program, f.programcode) &&
       (!f.yearlevel || String(x.yearlevel || '').includes(String(f.yearlevel))) &&
       (!f.semester || String(x.semester || '').includes(String(f.semester))) &&
@@ -87,6 +88,6 @@ export const selectProspectusFilterOptions = createSelector(selectAllProspectus,
     semesters: uniq(items.map(i => i.semester).map(String)),
     curriculumYears: uniq(items.map(i => i.curriculumYear || i.curriculum_year || '')),
     departments: uniq(items.map(i => i.dept || '')),
+    courseTypes: uniq(items.map(i => i.courseType || i.coursetype || '')),
   };
 });
-

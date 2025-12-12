@@ -44,6 +44,7 @@ export default function AdminProspectus() {
       case 'programcode': return String(row.programcode || row.program || '');
       case 'course_name': return String(row.course_name || row.courseName || '');
       case 'course_title': return String(row.course_title || row.courseTitle || '');
+      case 'coursetype': return String(row.coursetype || row.courseType || '');
       case 'unit': return String(row.unit ?? '');
       case 'yearlevel': return String(row.yearlevel ?? '');
       case 'semester': return String(row.semester ?? '');
@@ -119,6 +120,7 @@ export default function AdminProspectus() {
             const program = row.programcode || row.program || 'N/A';
             const name = row.course_name || row.courseName || 'N/A';
             const title = row.course_title || row.courseTitle || 'N/A';
+            const courseType = row.coursetype || row.courseType || '-';
             return (
               <Box key={row.id} borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} p={4}>
                 <VStack align="stretch" spacing={3}>
@@ -132,6 +134,10 @@ export default function AdminProspectus() {
                     <Box>
                       <Text fontSize="xs" color={muted}>Units</Text>
                       <Text>{row.unit ?? '-'}</Text>
+                    </Box>
+                    <Box>
+                      <Text fontSize="xs" color={muted}>Course Type</Text>
+                      <Text>{courseType || '-'}</Text>
                     </Box>
                     <Box>
                       <Text fontSize="xs" color={muted}>Year/Sem</Text>
@@ -175,6 +181,7 @@ export default function AdminProspectus() {
               <Th onClick={()=>toggleSort('programcode')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Program</Text>{sortKey==='programcode' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
               <Th onClick={()=>toggleSort('course_name')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Course Name</Text>{sortKey==='course_name' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
               <Th onClick={()=>toggleSort('course_title')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Course Title</Text>{sortKey==='course_title' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
+              <Th onClick={()=>toggleSort('coursetype')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Course Type</Text>{sortKey==='coursetype' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
               <Th onClick={()=>toggleSort('unit')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Unit</Text>{sortKey==='unit' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
               <Th onClick={()=>toggleSort('yearlevel')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Year</Text>{sortKey==='yearlevel' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
               <Th onClick={()=>toggleSort('semester')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Sem</Text>{sortKey==='semester' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
@@ -189,6 +196,7 @@ export default function AdminProspectus() {
                 <Td>{row.programcode || row.program || ''}</Td>
                 <Td>{row.course_name || row.courseName || ''}</Td>
                 <Td>{row.course_title || row.courseTitle || ''}</Td>
+                <Td>{row.coursetype || row.courseType || ''}</Td>
                 <Td>{row.unit ?? ''}</Td>
                 <Td>{row.yearlevel ?? ''}</Td>
                 <Td>{row.semester ?? ''}</Td>
