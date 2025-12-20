@@ -51,6 +51,15 @@ export default function useAttendance(params = {}) {
     const schedArr = Array.isArray(p?.schedules) ? p.schedules : [];
     const schedMap = new Map();
     for (const s of schedArr) { const id = Number(s?.id); if (Number.isFinite(id)) schedMap.set(id, s); }
+    const resolveSchedule = (row) => {
+      const sid = Number(row?.scheduleId || row?.schedule_id || row?.schedule?.id);
+      const fromStore = Number.isFinite(sid) ? schedMap.get(sid) : undefined;
+      const base = (row && typeof row.schedule === 'object') ? row.schedule : {};
+      if (fromStore || base) {
+        return { ...(fromStore || {}), ...(base || {}), id: sid || base?.id };
+      }
+      return fromStore || base || row;
+    };
     // Client-side filtering by faculty when backend doesn't support it
     const normalize = (s) => String(s || '').trim().toLowerCase();
     const facId = p && (p.facultyId || p.faculty_id);
@@ -69,16 +78,14 @@ export default function useAttendance(params = {}) {
         return s.includes(tf);
       };
       filtered = filtered.filter((r) => {
-        const sid = Number(r?.scheduleId || r?.schedule_id || r?.schedule?.id);
-        const schFull = schedMap.get(sid) || r?.schedule || r;
+        const schFull = resolveSchedule(r);
         return matchTerm(schFull?.term || schFull?.semester);
       });
     }
     if (facId) {
       const idStr = String(facId);
       filtered = filtered.filter((r) => {
-        const sid = Number(r?.scheduleId || r?.schedule_id || r?.schedule?.id);
-        const schFull = schedMap.get(sid) || r?.schedule || r;
+        const schFull = resolveSchedule(r);
         const a = schFull && (schFull.facultyId != null ? String(schFull.facultyId) : undefined);
         const b = schFull && (schFull.faculty_id != null ? String(schFull.faculty_id) : undefined);
         if ((a && a === idStr) || (b && b === idStr)) return true;
@@ -90,17 +97,15 @@ export default function useAttendance(params = {}) {
     } else if (facName) {
       const target = normalize(facName);
       filtered = filtered.filter((r) => {
-        const sid = Number(r?.scheduleId || r?.schedule_id || r?.schedule?.id);
-        const schFull = schedMap.get(sid) || r?.schedule || r;
+        const schFull = resolveSchedule(r);
         const a = normalize(schFull && (schFull.instructor || schFull.faculty || ''));
         return target ? a.includes(target) : true;
       });
     }
     // Attach schedule data for rendering when missing
     const enriched = filtered.map((r) => {
-      const sid = Number(r?.scheduleId || r?.schedule_id || r?.schedule?.id);
-      const sch = schedMap.get(sid);
-      if (sch) return { ...r, schedule: { ...sch, ...(r.schedule || {}) } };
+      const sch = resolveSchedule(r);
+      if (sch) return { ...r, schedule: sch };
       return r;
     });
     return enriched;

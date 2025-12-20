@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import useAttendance from '../hooks/useAttendance';
 import { buildTable } from '../utils/printDesign';
+import useFaculties from '../hooks/useFaculties';
 
 export default function AttendancePrint() {
   const [search] = useSearchParams();
@@ -16,6 +17,14 @@ export default function AttendancePrint() {
   const faculty = search.get('faculty') || '';
   const status = normalizeStatus(search.get('status') || '');
   const schedules = useSelector(selectAllCourses);
+  const { data: facultyOptions } = useFaculties();
+  const facultyById = React.useMemo(() => {
+    const map = new Map();
+    (facultyOptions || []).forEach((opt) => {
+      if (opt && opt.id != null) map.set(String(opt.id), opt.label);
+    });
+    return map;
+  }, [facultyOptions]);
 
   const isSummary = ['present', 'absent', 'excused'].includes(type);
   const summaryLabel = isSummary
@@ -40,7 +49,8 @@ export default function AttendancePrint() {
       arr.forEach(r => {
         if (normalizeStatus(r.status) !== type) return;
         const sch = r.schedule || {};
-        const fac = sch.faculty || sch.instructor || '';
+        const fid = sch.facultyId ?? sch.faculty_id ?? r.facultyId ?? r.faculty_id;
+        const fac = fid != null ? (facultyById.get(String(fid)) || sch.faculty || sch.instructor || '') : (sch.faculty || sch.instructor || '');
         const key = fac || '(Unknown Faculty)';
         const subj = [sch.programcode, sch.courseName, sch.courseTitle].filter(Boolean).join(' - ');
         const tm = [sch.day, sch.time].filter(Boolean).join(' ');
@@ -65,7 +75,7 @@ export default function AttendancePrint() {
       });
       return buildTable(['Date','Status','Course','Schedule','Remarks'], rows);
     }
-  }, [isSummary, type, data, loading, summaryLabel]);
+  }, [isSummary, type, data, loading, summaryLabel, facultyById]);
 
   const styles = `
     @page { size: A4 portrait; margin: 12mm; }

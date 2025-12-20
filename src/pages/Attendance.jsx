@@ -356,7 +356,7 @@ export default function Attendance() {
             <Text fontSize="xs" color="gray.500" mb={1}>Faculty</Text>
             <FacultySelect
               value={filters.faculty}
-              onChange={(name) => setFilters(f => ({ ...f, faculty: name || '', facultyId: '' }))}
+              onChange={(name) => setFilters(f => ({ ...f, faculty: name || '' }))}
               onChangeId={(id) => setFilters(f => ({ ...f, facultyId: id || '' }))}
               placeholder="All faculty"
               allowClear
