@@ -94,6 +94,7 @@ export default function CoursesView() {
   const settingsLoad = settings?.schedulesLoad || { school_year: '', semester: '' };
   const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
   const [allowedDepts, setAllowedDepts] = React.useState(null); // null=unknown, []=none
+  const [remoteVacantCounts, setRemoteVacantCounts] = React.useState(new Map());
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -183,6 +184,83 @@ export default function CoursesView() {
     if (semShort) out = out.filter(c => normalizeSem(c.semester || c.term || c.sem || '') === semShort);
     return out;
   }, [existing, settingsLoad?.school_year, settingsLoad?.semester]);
+
+  const blockMetaList = React.useMemo(() => {
+    if (!Array.isArray(blocks)) return [];
+    return blocks.map(b => {
+      const meta = parseBlockMeta(b.blockCode);
+      const normProg = normalizeProgramCode(meta.programcode || '');
+      const baseProg = normalizeProgramCode((meta.programcode || '').split('-')[0] || normProg);
+      const yearDigits = extractYearDigits(meta.yearlevel || meta.year || '');
+      return { block: b, blockCodeTrim: String(b.blockCode || '').trim(), normProg, baseProg, year: yearDigits };
+    });
+  }, [blocks]);
+
+  const courseUnassignedCounts = React.useMemo(() => {
+    const lookup = new Map();
+    if (!Array.isArray(courseOptions) || courseOptions.length === 0) return lookup;
+    const existingByBlock = new Map();
+    (scopedCourses || []).forEach(s => {
+      const b = String(s.blockCode || s.block || '').trim();
+      if (!b) return;
+      const entry = existingByBlock.get(b) || { codes: new Set(), titles: new Set() };
+      entry.codes.add(normCode(s.courseName || s.code));
+      entry.titles.add(norm(s.title || s.courseTitle));
+      existingByBlock.set(b, entry);
+    });
+    courseOptions.forEach(c => {
+      const codeKey = normCode(c.courseName || c.course_name || c.code);
+      const titleKey = norm(c.courseTitle || c.course_title || c.title);
+      const effectiveProgram = normalizeProgramCode(program || c.programcode || c.program || '');
+      const courseProgBase = normalizeProgramCode((effectiveProgram.split('-')[0] || effectiveProgram));
+      const courseYear = extractYearDigits(year || c.yearlevel);
+      if (!effectiveProgram && !courseYear) { lookup.set(`${codeKey}|${titleKey}`, 0); return; }
+      const count = blockMetaList.reduce((acc, bm) => {
+        const progMatch = (
+          !!effectiveProgram && (bm.normProg === effectiveProgram || bm.baseProg === effectiveProgram || bm.normProg === courseProgBase || bm.baseProg === courseProgBase)
+        );
+        if (!progMatch) return acc;
+        const yearMatch = courseYear ? (bm.year === courseYear) : true;
+        if (!yearMatch) return acc;
+        const entry = existingByBlock.get(bm.blockCodeTrim);
+        const hasSchedule = entry && (entry.codes.has(codeKey) || entry.titles.has(titleKey));
+        return hasSchedule ? acc : acc + 1;
+      }, 0);
+      lookup.set(`${codeKey}|${titleKey}`, count);
+    });
+    return lookup;
+  }, [blockMetaList, courseOptions, scopedCourses, program, year]);
+
+  // Prefer server-provided vacant counts when available to ensure parity; fallback to local memo
+  React.useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!Array.isArray(courseOptions) || courseOptions.length === 0) { if (!cancelled) setRemoteVacantCounts(new Map()); return; }
+      const sy = settingsLoad?.school_year || '';
+      const sem = settingsLoad?.semester || '';
+      const maxRequests = 40; // cap to keep it efficient
+      const slice = courseOptions.slice(0, maxRequests);
+      const entries = [];
+      for (const c of slice) {
+        try {
+          const key = `${normCode(c.courseName || c.course_name || c.code)}|${norm(c.courseTitle || c.course_title || c.title)}`;
+          const resp = await api.getVacantBlocksForCourse({
+            course: c.courseName || c.code,
+            programcode: program || c.programcode || c.program,
+            yearlevel: year || c.yearlevel,
+            schoolyear: sy,
+            semester: sem,
+          });
+          if (resp != null) entries.push([key, resp]);
+        } catch {
+          // ignore and rely on local fallback
+        }
+      }
+      if (!cancelled) setRemoteVacantCounts(new Map(entries));
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [courseOptions, program, year, settingsLoad?.school_year, settingsLoad?.semester]);
 
   React.useEffect(() => {
     let alive = true;
@@ -870,16 +948,29 @@ export default function CoursesView() {
             {!loading && courseOptions.map((c, idx) => (
               <Box key={`${c.programcode}-${c.yearlevel}-${idx}`} role="button" borderWidth="1px" borderColor={border} rounded="md" p={2}
                    onClick={()=> setSelectedCourse(c)} _hover={{ bg: hoverBg }}>
-                <HStack justify="space-between">
-                  <VStack align="start" spacing={0}>
-                    <Text fontWeight="600">{c.courseName || c.code}</Text>
-                    <Text fontSize="sm" color={subtle}>{c.courseTitle}</Text>
-                  </VStack>
-                  <HStack>
-                    <Badge colorScheme="blue">{c.programcode}</Badge>
-                    <Badge>{c.yearlevel}</Badge>
-                  </HStack>
-                </HStack>
+                {(() => {
+                  const key = `${normCode(c.courseName || c.course_name || c.code)}|${norm(c.courseTitle || c.course_title || c.title)}`;
+                  const remote = remoteVacantCounts.get(key);
+                  const openCount = remote != null ? remote : (courseUnassignedCounts.get(key) ?? 0);
+                  const scheme = openCount === 0 ? 'green' : (openCount >= 5 ? 'red' : 'orange');
+                  return (
+                    <HStack justify="space-between" align="flex-start" spacing={3}>
+                      <VStack align="start" spacing={0}>
+                        <Text fontWeight="600">{c.courseName || c.code}</Text>
+                        <Text fontSize="sm" color={subtle}>{c.courseTitle}</Text>
+                      </VStack>
+                      <VStack align="end" spacing={1} minW="fit-content">
+                        <HStack spacing={1}>
+                          <Badge colorScheme="blue">{c.programcode}</Badge>
+                          <Badge>{c.yearlevel}</Badge>
+                        </HStack>
+                        <Badge colorScheme={scheme} variant="subtle" alignSelf="flex-end">
+                          {openCount === 0 ? 'All set' : `${openCount} open`}
+                        </Badge>
+                      </VStack>
+                    </HStack>
+                  );
+                })()}
               </Box>
             ))}
             {!loading && courseOptions.length === 0 && (

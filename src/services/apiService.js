@@ -5,6 +5,7 @@ import API_CONFIG from "../config/apiConfig";
 class ApiService {
   constructor() {
     this.baseURL = API_CONFIG.BASE_URL;
+    this._baseURLAbsolute = null;
     this.schedulesPath = "/schedules";
     this.blocksPath = "/blocks";
     this.prospectusPath = "/prospectus";
@@ -16,6 +17,16 @@ class ApiService {
     this._didAutoLogout = false;
     this.onUnauthorized = null; // optional callback set from app bootstrap
     this._refreshing = null; // in-flight refresh promise
+    try {
+      if (typeof window !== 'undefined') {
+        const abs = new URL(this.baseURL, window.location.origin).toString().replace(/\/$/, '');
+        this._baseURLAbsolute = abs;
+      } else {
+        this._baseURLAbsolute = (this.baseURL || '').replace(/\/$/, '');
+      }
+    } catch {
+      this._baseURLAbsolute = (this.baseURL || '').replace(/\/$/, '');
+    }
 
     // One-time global fetch interceptor to auto-logout on invalid/expired tokens
     try {
@@ -25,9 +36,13 @@ class ApiService {
         window.fetch = async (...args) => {
           const res = await origFetch(...args);
           try {
-            const url = String(args && args[0] || '');
-            const isAuthUrl = url.indexOf(this.baseURL + this.authPath) === 0;
-            if ((res.status === 401) && !isAuthUrl && !this._didAutoLogout) {
+            const rawUrl = String(args && args[0] || '');
+            const absoluteUrl = rawUrl.startsWith('http')
+              ? rawUrl
+              : new URL(rawUrl, window.location.origin).toString();
+            const isApiUrl = this._baseURLAbsolute && absoluteUrl.startsWith(this._baseURLAbsolute);
+            const isAuthUrl = isApiUrl && absoluteUrl.startsWith(`${this._baseURLAbsolute}${this.authPath}`);
+            if ((res.status === 401) && isApiUrl && !isAuthUrl && !this._didAutoLogout) {
               this._didAutoLogout = true;
               this.token = null;
               if (typeof this.onUnauthorized === 'function') {
@@ -158,6 +173,37 @@ class ApiService {
     if (res.status === 404) return null; // endpoint not implemented
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
+  }
+
+  // New: server-side vacant block counter for a course (optional; falls back client-side if 404)
+  async getVacantBlocksForCourse(params = {}) {
+    const search = new URLSearchParams();
+    const { course, programcode, yearlevel, schoolyear, semester } = params || {};
+    if (course) search.set('course', course);
+    if (programcode) search.set('programcode', programcode);
+    if (yearlevel) search.set('yearlevel', yearlevel);
+    if (schoolyear) search.set('schoolyear', schoolyear);
+    if (semester) search.set('semester', semester);
+    const qs = search.toString();
+    const url = `${this.baseURL}${this.blocksPath}/vacant-count${qs ? `?${qs}` : ''}`;
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (res.status === 404) return null; // not implemented on server
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    const body = await res.json();
+    const getNum = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : null;
+    if (body == null) return null;
+    if (getNum(body) != null) return getNum(body);
+    if (getNum(body.count) != null) return getNum(body.count);
+    if (getNum(body.vacant) != null) return getNum(body.vacant);
+    if (getNum(body.vacantCount) != null) return getNum(body.vacantCount);
+    if (getNum(body.totalVacant) != null) return getNum(body.totalVacant);
+    if (Array.isArray(body.items) && body.items.length > 0) {
+      const first = body.items[0];
+      if (getNum(first?.vacant) != null) return getNum(first.vacant);
+      if (getNum(first?.count) != null) return getNum(first.count);
+      if (getNum(first?.vacantCount) != null) return getNum(first.vacantCount);
+    }
+    return null;
   }
   async checkScheduleConflict(id, payload) {
     const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/check`;

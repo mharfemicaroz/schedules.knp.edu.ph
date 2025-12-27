@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, VStack, Text, useColorModeValue, HStack, Icon, Image, Badge } from '@chakra-ui/react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar, FiUserX, FiFileText, FiBook, FiUser, FiActivity, FiSettings, FiCheckSquare, FiBarChart2 } from 'react-icons/fi';
+import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar, FiUserX, FiFileText, FiBook, FiUser, FiActivity, FiSettings, FiCheckSquare, FiBarChart2, FiCpu } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { FiAlertTriangle } from 'react-icons/fi';
 import { selectAllCourses } from '../store/dataSlice';
@@ -222,6 +222,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
                 <NavItem to="/admin/academic-calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>
                 <NavItem to="/admin/blocks" icon={FiSettings} onClick={onNavigate}>Block Settings</NavItem>
                 <NavItem to="/admin/settings" icon={FiSettings} onClick={onNavigate}>System Settings</NavItem>
+                <NavItem to="/admin/ai-labs" icon={FiCpu} onClick={onNavigate}>AI Labs</NavItem>
                 <NavItem to="/admin/users" icon={FiUser} onClick={onNavigate}>User Management</NavItem>
                 <NavItem to="/admin/guest-logs" icon={FiActivity} onClick={onNavigate}>Guest Logs</NavItem>
                 <NavItem to="/admin/conflicts" icon={FiAlertTriangle} onClick={onNavigate} badgeCount={conflictCount} chipLabel={chip}>Conflict Schedules</NavItem>

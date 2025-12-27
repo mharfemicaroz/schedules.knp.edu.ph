@@ -32,6 +32,60 @@ import ScheduleHistoryModal from '../components/ScheduleHistoryModal';
 import AssignmentRow from '../components/AssignmentRow';
 import CoursesView from '../components/CoursesView';
 import CourseSummaryView from '../components/CourseSummaryView';
+import CourseLoadingSupport from '../components/CourseLoadingSupport';
+
+
+function pickSchedules(rows = [], limit = 40) {
+  return rows.slice(0, limit).map((r) => ({
+    id: r.id ?? r.schedule_id ?? null,
+    course: r.courseName ?? r.code ?? r.course ?? null,
+    title: r.courseTitle ?? r.title ?? null,
+    faculty: r.faculty ?? r.instructor ?? r.facultyName ?? null,
+    dept: r.dept ?? r.department ?? null,
+    room: r.room ?? null,
+    day: r.day ?? r.session ?? null,
+    time: r.time ?? r.schedule ?? null,
+    term: r.term ?? r.sem ?? r.semester ?? null,
+    sy: r.sy ?? r.schoolyear ?? r.school_year ?? null,
+    block: r.block ?? r.blockCode ?? r.section ?? null,
+    program: r.programcode ?? r.program ?? null,
+    units: r.unit ?? null,
+  }));
+}
+
+function pickBlocks(rows = [], limit = 20) {
+  return rows.slice(0, limit).map((r) => ({
+    id: r.id ?? null,
+    block: r.block ?? r.blockCode ?? r.code ?? null,
+    programcode: r.programcode ?? r.program ?? null,
+    yearlevel: r.yearlevel ?? r.year ?? null,
+    section: r.section ?? null,
+    size: r.size ?? r.capacity ?? null,
+  }));
+}
+
+function pickProspectus(items = [], limit = 30) {
+  return items.slice(0, limit).map((r) => ({
+    id: r.id ?? null,
+    courseName: r.courseName ?? r.code ?? null,
+    courseTitle: r.courseTitle ?? r.title ?? null,
+    programcode: r.programcode ?? r.program ?? null,
+    semester: r.semester ?? r.sem ?? r.term ?? null,
+    yearlevel: r.yearlevel ?? r.year ?? null,
+    unit: r.unit ?? null,
+  }));
+}
+
+function pickFaculty(items = [], limit = 25) {
+  return items.slice(0, limit).map((f) => ({
+    id: f.id ?? null,
+    faculty: f.faculty ?? f.name ?? null,
+    dept: f.dept ?? f.department ?? null,
+    designation: f.designation ?? null,
+    employment: f.employment ?? null,
+    loadReleaseUnits: f.loadReleaseUnits ?? f.load_release_units ?? null,
+  }));
+}
 
 // --- helpers (same as previous) ---
 function VirtualBlockList({ items, renderRow, estimatedRowHeight = 76, overscan = 6, maxHeight = '50vh', border, dividerBorder }) {
@@ -796,6 +850,7 @@ export default function CourseLoading() {
   const prospectus = useSelector(selectAllProspectus);
   const existing = useSelector(selectAllCourses);
   const dataFaculties = useSelector(s => s.data.faculties);
+  const accessToken = useSelector(s => s.auth.accessToken);
   const authUser = useSelector(s => s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
   const isAdmin = (role === 'admin' || role === 'manager');
@@ -857,6 +912,11 @@ export default function CourseLoading() {
   // Faculty-view suggestions
   const [facSuggOpen, setFacSuggOpen] = React.useState(false);
   const [schedAssignOpen, setSchedAssignOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (accessToken) {
+      try { api.setAuthToken(accessToken); } catch {}
+    }
+  }, [accessToken]);
   const handleCreateFromAssignModal = React.useCallback(async (payload) => {
     try {
       const blk = String(payload?.blockCode || '').trim();
@@ -2494,6 +2554,7 @@ const prefill = hit ? {
     }, { savedUnits: 0, draftUnits: 0, savedCount: 0, draftCount: 0 });
     return { ...totals, totalUnits: totals.savedUnits + totals.draftUnits };
   }, [facultySchedules]);
+
 
   const toggleFacSelect = (id, checked) => {
     const item = (facultySchedules.items || []).find((x) => String(x.id) === String(id));
@@ -5131,6 +5192,22 @@ const prefill = hit ? {
           )}
         </Box>
       </SimpleGrid>
+
+      <CourseLoadingSupport
+        viewMode={viewMode}
+        role={role}
+        selectedBlock={selectedBlock}
+        selectedFaculty={selectedFaculty}
+        rows={rows}
+        facultySchedules={facultySchedules}
+        blocksAll={blocksAll}
+        facultyAll={facultyAll}
+        prospectus={prospectus}
+        existing={existing}
+        settingsLoad={settingsLoad}
+        facultyUnitStats={facultyUnitStats}
+        accessToken={accessToken}
+      />
 
       {/* Assign Faculty Modal for Blocks view */}
       <ScheduleHistoryModal scheduleId={histScheduleId} isOpen={histOpen} onClose={()=>{ setHistOpen(false); setHistScheduleId(null); }} />
