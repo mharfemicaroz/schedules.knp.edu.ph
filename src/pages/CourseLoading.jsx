@@ -2706,7 +2706,15 @@ const prefill = hit ? {
 
   // Bulk save selected faculty schedules (inline edits)
   const saveSelectedFacultyRows = async () => {
+    if (!readyToLoad) {
+      toast({ title: 'Loading disabled', description: 'Set Schedules Load in Settings and ensure you have permission.', status: 'warning' });
+      return;
+    }
     if (facSelectedIds.length === 0) return;
+    if (!facCanSaveSelected) {
+      toast({ title: 'Nothing to save', description: 'Select editable rows with term and time filled, and resolve conflicts first.', status: 'info' });
+      return;
+    }
     const okLimit = await ensureFacultyLoadLimitForFacultyView(facSelectedItems);
     if (!okLimit) return;
     const semFallback = resolveSemesterLabel(settingsLoad?.semester);
@@ -5010,6 +5018,16 @@ const prefill = hit ? {
                       </HStack>
                     );
                   })()}
+                  <Button
+                    size="sm"
+                    colorScheme="blue"
+                    leftIcon={<FiUpload />}
+                    onClick={saveSelectedFacultyRows}
+                    isDisabled={!canLoad || saving || !facCanSaveSelected}
+                    isLoading={saving}
+                  >
+                    Save Selected
+                  </Button>
                   <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(true)} isDisabled={!canLoad || facSelectedIds.length === 0 || allSelectedLocked}>Lock Selected</Button>
                   <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(false)} isDisabled={!isAdmin || facSelectedIds.length === 0 || allSelectedUnlocked}>Unlock Selected</Button>
                 </HStack>
