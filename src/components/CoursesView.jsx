@@ -95,6 +95,7 @@ export default function CoursesView() {
   const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
   const [allowedDepts, setAllowedDepts] = React.useState(null); // null=unknown, []=none
   const [remoteVacantCounts, setRemoteVacantCounts] = React.useState(new Map());
+  const [vacantLoading, setVacantLoading] = React.useState(false);
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -196,9 +197,9 @@ export default function CoursesView() {
     });
   }, [blocks]);
 
-  const courseUnassignedCounts = React.useMemo(() => {
-    const lookup = new Map();
-    if (!Array.isArray(courseOptions) || courseOptions.length === 0) return lookup;
+  const courseVacancyStats = React.useMemo(() => {
+    const map = new Map();
+    if (!Array.isArray(courseOptions) || courseOptions.length === 0) return map;
     const existingByBlock = new Map();
     (scopedCourses || []).forEach(s => {
       const b = String(s.blockCode || s.block || '').trim();
@@ -214,53 +215,97 @@ export default function CoursesView() {
       const effectiveProgram = normalizeProgramCode(program || c.programcode || c.program || '');
       const courseProgBase = normalizeProgramCode((effectiveProgram.split('-')[0] || effectiveProgram));
       const courseYear = extractYearDigits(year || c.yearlevel);
-      if (!effectiveProgram && !courseYear) { lookup.set(`${codeKey}|${titleKey}`, 0); return; }
-      const count = blockMetaList.reduce((acc, bm) => {
+      if (!effectiveProgram && !courseYear) { map.set(`${codeKey}|${titleKey}`, { open: 0, total: 0, assigned: 0 }); return; }
+      let totalBlocks = 0;
+      let unassigned = 0;
+      blockMetaList.forEach((bm) => {
         const progMatch = (
           !!effectiveProgram && (bm.normProg === effectiveProgram || bm.baseProg === effectiveProgram || bm.normProg === courseProgBase || bm.baseProg === courseProgBase)
         );
-        if (!progMatch) return acc;
+        if (!progMatch) return;
         const yearMatch = courseYear ? (bm.year === courseYear) : true;
-        if (!yearMatch) return acc;
+        if (!yearMatch) return;
+        totalBlocks += 1;
         const entry = existingByBlock.get(bm.blockCodeTrim);
         const hasSchedule = entry && (entry.codes.has(codeKey) || entry.titles.has(titleKey));
-        return hasSchedule ? acc : acc + 1;
-      }, 0);
-      lookup.set(`${codeKey}|${titleKey}`, count);
+        if (!hasSchedule) unassigned += 1;
+      });
+      const assigned = Math.max(0, totalBlocks - unassigned);
+      map.set(`${codeKey}|${titleKey}`, { open: unassigned, total: totalBlocks, assigned });
     });
-    return lookup;
+    return map;
   }, [blockMetaList, courseOptions, scopedCourses, program, year]);
 
   // Prefer server-provided vacant counts when available to ensure parity; fallback to local memo
   React.useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!Array.isArray(courseOptions) || courseOptions.length === 0) { if (!cancelled) setRemoteVacantCounts(new Map()); return; }
+      if (!Array.isArray(courseOptions) || courseOptions.length === 0) {
+        if (!cancelled) {
+          setRemoteVacantCounts(new Map());
+          setVacantLoading(false);
+        }
+        return;
+      }
+      setVacantLoading(true);
       const sy = settingsLoad?.school_year || '';
       const sem = settingsLoad?.semester || '';
       const maxRequests = 40; // cap to keep it efficient
       const slice = courseOptions.slice(0, maxRequests);
-      const entries = [];
-      for (const c of slice) {
-        try {
-          const key = `${normCode(c.courseName || c.course_name || c.code)}|${norm(c.courseTitle || c.course_title || c.title)}`;
-          const resp = await api.getVacantBlocksForCourse({
-            course: c.courseName || c.code,
-            programcode: program || c.programcode || c.program,
-            yearlevel: year || c.yearlevel,
-            schoolyear: sy,
-            semester: sem,
-          });
-          if (resp != null) entries.push([key, resp]);
-        } catch {
-          // ignore and rely on local fallback
-        }
+      try {
+        const entries = await Promise.all(slice.map(async (c) => {
+          try {
+            const key = `${normCode(c.courseName || c.course_name || c.code)}|${norm(c.courseTitle || c.course_title || c.title)}`;
+            const resp = await api.getVacantBlocksForCourse({
+              course: c.courseName || c.code,
+              programcode: program || c.programcode || c.program,
+              yearlevel: year || c.yearlevel,
+              schoolyear: sy,
+              semester: sem,
+            });
+            if (resp != null) return [key, resp];
+          } catch {
+            // ignore and rely on local fallback
+          }
+          return null;
+        }));
+        const filtered = entries.filter(Boolean);
+        if (!cancelled) setRemoteVacantCounts(new Map(filtered));
+      } finally {
+        if (!cancelled) setVacantLoading(false);
       }
-      if (!cancelled) setRemoteVacantCounts(new Map(entries));
     };
     load();
     return () => { cancelled = true; };
   }, [courseOptions, program, year, settingsLoad?.school_year, settingsLoad?.semester]);
+
+  const getVacancyMeta = React.useCallback((course) => {
+    const key = `${normCode(course?.courseName || course?.course_name || course?.code)}|${norm(course?.courseTitle || course?.course_title || course?.title)}`;
+    const stats = courseVacancyStats.get(key) || { open: 0, total: 0, assigned: 0 };
+    const hasRemote = remoteVacantCounts.has(key);
+    const openCount = hasRemote ? (remoteVacantCounts.get(key) ?? stats.open ?? 0) : (stats.open ?? 0);
+    const totalBlocks = stats.total ?? 0;
+    const assignedFromTotal = totalBlocks ? Math.max(0, totalBlocks - openCount) : (stats.assigned ?? 0);
+    const assignedCount = hasRemote ? assignedFromTotal : (stats.assigned ?? assignedFromTotal);
+    let status = 'all-set';
+    if (openCount > 0) {
+      status = assignedCount > 0 ? 'open-partial' : 'open-none';
+    }
+    const colorScheme = status === 'all-set' ? 'green' : (status === 'open-partial' ? 'orange' : 'red');
+    return { key, openCount, assignedCount, totalBlocks, status, colorScheme };
+  }, [courseVacancyStats, remoteVacantCounts]);
+
+  const sortedCourseOptions = React.useMemo(() => {
+    const rank = { 'open-none': 0, 'open-partial': 1, 'all-set': 2 };
+    return (courseOptions || []).slice().sort((a, b) => {
+      const aMeta = getVacancyMeta(a);
+      const bMeta = getVacancyMeta(b);
+      const rankDiff = (rank[aMeta.status] ?? 3) - (rank[bMeta.status] ?? 3);
+      if (rankDiff !== 0) return rankDiff;
+      if (aMeta.openCount !== bMeta.openCount) return bMeta.openCount - aMeta.openCount;
+      return String(a.courseName || a.code || '').localeCompare(String(b.courseName || b.code || ''));
+    });
+  }, [courseOptions, getVacancyMeta]);
 
   React.useEffect(() => {
     let alive = true;
@@ -944,15 +989,29 @@ export default function CoursesView() {
           </HStack>
           <Divider />
           <VStack align="stretch" spacing={2} maxH="45vh" overflowY="auto">
-            {loading && Array.from({length:6}).map((_,i)=> <Skeleton key={i} height="18px" />)}
-            {!loading && courseOptions.map((c, idx) => (
+            {(loading || vacantLoading) && Array.from({length: Math.min(10, Math.max(6, sortedCourseOptions.length || 8))}).map((_,i)=> (
+              <Box key={`sk-course-${i}`} borderWidth="1px" borderColor={border} rounded="md" p={2}>
+                <Skeleton height="12px" width="38%" mb={2} startColor={skStart} endColor={skEnd} />
+                <Skeleton height="10px" width="72%" mb={3} startColor={skStart} endColor={skEnd} />
+                <HStack justify="space-between">
+                  <HStack spacing={1}>
+                    <Skeleton height="18px" width="56px" startColor={skStart} endColor={skEnd} rounded="md" />
+                    <Skeleton height="18px" width="48px" startColor={skStart} endColor={skEnd} rounded="md" />
+                  </HStack>
+                  <Skeleton height="18px" width="96px" startColor={skStart} endColor={skEnd} rounded="md" />
+                </HStack>
+              </Box>
+            ))}
+            {!(loading || vacantLoading) && sortedCourseOptions.map((c, idx) => (
               <Box key={`${c.programcode}-${c.yearlevel}-${idx}`} role="button" borderWidth="1px" borderColor={border} rounded="md" p={2}
                    onClick={()=> setSelectedCourse(c)} _hover={{ bg: hoverBg }}>
                 {(() => {
-                  const key = `${normCode(c.courseName || c.course_name || c.code)}|${norm(c.courseTitle || c.course_title || c.title)}`;
-                  const remote = remoteVacantCounts.get(key);
-                  const openCount = remote != null ? remote : (courseUnassignedCounts.get(key) ?? 0);
-                  const scheme = openCount === 0 ? 'green' : (openCount >= 5 ? 'red' : 'orange');
+                  const meta = getVacancyMeta(c);
+                  const badgeLabel = meta.status === 'all-set'
+                    ? 'All set'
+                    : meta.status === 'open-partial'
+                      ? `${meta.openCount} open (some filled)`
+                      : `${meta.openCount} open (none filled)`;
                   return (
                     <HStack justify="space-between" align="flex-start" spacing={3}>
                       <VStack align="start" spacing={0}>
@@ -964,8 +1023,8 @@ export default function CoursesView() {
                           <Badge colorScheme="blue">{c.programcode}</Badge>
                           <Badge>{c.yearlevel}</Badge>
                         </HStack>
-                        <Badge colorScheme={scheme} variant="subtle" alignSelf="flex-end">
-                          {openCount === 0 ? 'All set' : `${openCount} open`}
+                        <Badge colorScheme={meta.colorScheme} variant="subtle" alignSelf="flex-end">
+                          {badgeLabel}
                         </Badge>
                       </VStack>
                     </HStack>
@@ -973,7 +1032,7 @@ export default function CoursesView() {
                 })()}
               </Box>
             ))}
-            {!loading && courseOptions.length === 0 && (
+            {!(loading || vacantLoading) && sortedCourseOptions.length === 0 && (
               <Text fontSize="sm" color={subtle}>No courses match filters.</Text>
             )}
           </VStack>

@@ -226,13 +226,17 @@ function AssignmentRow({
     return '';
   }, []);
 
+  const sessionKey = React.useMemo(
+    () => normalizeSessionKey(blockSession || row?.session),
+    [blockSession, normalizeSessionKey, row?.session]
+  );
+
   const sessionRange = React.useMemo(() => {
-    const key = normalizeSessionKey(blockSession || row?.session);
-    if (key === 'morning') return { start: 8 * 60, end: 12 * 60 };
-    if (key === 'afternoon') return { start: 13 * 60, end: 17 * 60 };
-    if (key === 'evening') return { start: 17 * 60, end: 21 * 60 };
+    if (sessionKey === 'morning') return { start: 8 * 60, end: 12 * 60 };
+    if (sessionKey === 'afternoon') return { start: 13 * 60, end: 17 * 60 };
+    if (sessionKey === 'evening') return { start: 17 * 60, end: 21 * 60 };
     return null;
-  }, [blockSession, normalizeSessionKey, row?.session]);
+  }, [sessionKey]);
 
   const timeOptions = React.useMemo(() => {
     if (!sessionRange) return TIME_OPTS;
@@ -245,6 +249,18 @@ function AssignmentRow({
       return start >= sessionRange.start && end <= sessionRange.end;
     });
   }, [sessionRange]);
+
+  const sessionLabel = sessionKey
+    ? `${sessionKey.charAt(0).toUpperCase()}${sessionKey.slice(1)}`
+    : '';
+  const sessionTone =
+    sessionKey === 'morning'
+      ? 'green'
+      : sessionKey === 'afternoon'
+        ? 'orange'
+        : sessionKey === 'evening'
+          ? 'purple'
+          : 'gray';
 
   const showAssigned = !!(row._faculty || row.faculty || row.instructor || row._facultyId);
 
@@ -284,6 +300,19 @@ function AssignmentRow({
         {variant === 'courses' ? (
           <HStack spacing={3} fontSize="sm" color={mutedText} mt={1} flexWrap="wrap">
             <Text>Block: {blockCode || row.blockCode || '-'}</Text>
+            {sessionLabel && (
+              <Badge
+                colorScheme={sessionTone}
+                variant="subtle"
+                borderRadius="full"
+                px={3}
+                py={1}
+                textTransform="none"
+                boxShadow="sm"
+              >
+                {sessionLabel} Session
+              </Badge>
+            )}
           </HStack>
         ) : (
           <HStack spacing={3} fontSize="sm" color={mutedText} mt={1} flexWrap="wrap">
