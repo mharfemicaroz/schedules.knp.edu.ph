@@ -15,9 +15,9 @@ import {
 import { FiRefreshCw, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus } from 'react-icons/fi';
 import FacultySelect from './FacultySelect'; // kept for legacy compiled references
 import { getTimeOptions } from '../utils/timeOptions';
-import { normalizeTimeBlock } from '../utils/timeNormalize';
 import { normalizeSem } from '../utils/facultyScoring';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
+import { allowedSessionsForCourse, isPEorNSTP, normalizeSessionKey } from '../utils/courseRules';
 
 const TIME_OPTS = getTimeOptions();
 const DAY_OPTS = ['MON-FRI', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'MWF', 'TTH', 'TBA'];
@@ -217,50 +217,57 @@ function AssignmentRow({
     [onChange]
   );
 
-  const normalizeSessionKey = React.useCallback((v) => {
-    const txt = String(v || '').trim().toLowerCase();
-    if (!txt) return '';
-    if (txt.includes('morning') || txt.startsWith('m')) return 'morning';
-    if (txt.includes('afternoon') || txt.startsWith('a')) return 'afternoon';
-    if (txt.includes('evening') || txt.startsWith('e')) return 'evening';
-    return '';
-  }, []);
-
-  const sessionKey = React.useMemo(
+  const baseSessionKey = React.useMemo(
     () => normalizeSessionKey(blockSession || row?.session),
-    [blockSession, normalizeSessionKey, row?.session]
+    [blockSession, row?.session]
   );
 
-  const sessionRange = React.useMemo(() => {
-    if (sessionKey === 'morning') return { start: 8 * 60, end: 12 * 60 };
-    if (sessionKey === 'afternoon') return { start: 13 * 60, end: 17 * 60 };
-    if (sessionKey === 'evening') return { start: 17 * 60, end: 21 * 60 };
-    return null;
-  }, [sessionKey]);
+  const allowedSessionKeys = React.useMemo(
+    () => allowedSessionsForCourse(row, baseSessionKey),
+    [row, baseSessionKey]
+  );
+
+  const sessionRanges = React.useMemo(() => {
+    if (!baseSessionKey) return [];
+    return allowedSessionKeys
+      .map(key => {
+        if (key === 'morning') return { start: 8 * 60, end: 12 * 60 };
+        if (key === 'afternoon') return { start: 13 * 60, end: 17 * 60 };
+        if (key === 'evening') return { start: 17 * 60, end: 21 * 60 };
+        return null;
+      })
+      .filter(Boolean);
+  }, [allowedSessionKeys, baseSessionKey]);
 
   const timeOptions = React.useMemo(() => {
-    if (!sessionRange) return TIME_OPTS;
+    if (!sessionRanges.length) return TIME_OPTS;
     return TIME_OPTS.filter(t => {
       if (!t) return true; // placeholder
       const val = String(t).trim().toUpperCase();
       if (val === 'TBA') return true;
       const { start, end } = parseTimeBlockToMinutes(val);
       if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
-      return start >= sessionRange.start && end <= sessionRange.end;
+      if (isPEorNSTP(row) && end - start <= 60) return false;
+      return sessionRanges.some(range => start >= range.start && end <= range.end);
     });
-  }, [sessionRange]);
+  }, [sessionRanges]);
 
-  const sessionLabel = sessionKey
-    ? `${sessionKey.charAt(0).toUpperCase()}${sessionKey.slice(1)}`
-    : '';
-  const sessionTone =
-    sessionKey === 'morning'
-      ? 'green'
-      : sessionKey === 'afternoon'
-        ? 'orange'
-        : sessionKey === 'evening'
-          ? 'purple'
-          : 'gray';
+  const sessionLabel = React.useMemo(() => {
+    if (!baseSessionKey || !allowedSessionKeys.length) return '';
+    return allowedSessionKeys
+      .map(key => `${key.charAt(0).toUpperCase()}${key.slice(1)}`)
+      .join(' / ');
+  }, [allowedSessionKeys, baseSessionKey]);
+
+  const sessionTone = React.useMemo(() => {
+    if (!baseSessionKey || !allowedSessionKeys.length) return 'gray';
+    if (allowedSessionKeys.length > 1) return 'blue';
+    const key = allowedSessionKeys[0];
+    if (key === 'morning') return 'green';
+    if (key === 'afternoon') return 'orange';
+    if (key === 'evening') return 'purple';
+    return 'gray';
+  }, [allowedSessionKeys, baseSessionKey]);
 
   const showAssigned = !!(row._faculty || row.faculty || row.instructor || row._facultyId);
 
