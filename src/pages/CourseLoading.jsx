@@ -2732,7 +2732,7 @@ const prefill = hit ? {
         const time = String(e.time || '').trim();
         if (!term || !time) continue;
         const termLabel = resolveSemesterLabel(term, settingsLoad?.semester);
-        const semLabel = termLabel || semFallback;
+        const semLabel = semFallback;
         const day = e.day || it.day || 'MON-FRI';
         const isDraft = String(it.id || '').startsWith('tmp:') || !!it._draft;
         if (isDraft) {
