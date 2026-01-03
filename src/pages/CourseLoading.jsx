@@ -27,6 +27,7 @@ import { getTimeOptions } from '../utils/timeOptions';
 import { normalizeTimeBlock } from '../utils/timeNormalize';
 import { parseTimeBlockToMinutes, parseF2FDays } from '../utils/conflicts';
 import { buildIndexes, buildFacultyStats, buildFacultyScoreMap, normalizeSem } from '../utils/facultyScoring';
+import { allowedSessionsForCourse, isPEorNSTP } from '../utils/courseRules';
 import { buildTable, printContent } from '../utils/printDesign';
 import ScheduleHistoryModal from '../components/ScheduleHistoryModal';
 import AssignmentRow from '../components/AssignmentRow';
@@ -3600,13 +3601,31 @@ const prefill = hit ? {
       all: base,
     };
   }, []);
-  const timeOptionsForSession = React.useCallback((sessionKey, currentValue) => {
+  const timeOptionsForSession = React.useCallback((sessionKey, currentValue, course) => {
     const key = normalizeSessionKey(sessionKey);
-    const base = (key && timeOptionsBySession[key]) ? timeOptionsBySession[key] : timeOptionsBySession.all;
-    if (currentValue && !base.includes(currentValue)) {
-      return [...base, currentValue];
+    const allowed = allowedSessionsForCourse(course || {}, key);
+    const sessions = allowed && allowed.length ? allowed : (key ? [key] : []);
+    const srcKeys = sessions.length ? sessions : ['morning', 'afternoon', 'evening'];
+    const seen = new Set();
+    let opts = [];
+    srcKeys.forEach(k => {
+      const base = (k && timeOptionsBySession[k]) ? timeOptionsBySession[k] : timeOptionsBySession.all;
+      base.forEach(opt => { if (!seen.has(opt)) { seen.add(opt); opts.push(opt); } });
+    });
+    if (isPEorNSTP(course)) {
+      opts = opts.filter(opt => {
+        if (!opt) return true;
+        const val = String(opt).trim().toUpperCase();
+        if (val === 'TBA') return true;
+        const { start, end } = parseTimeBlockToMinutes(val);
+        if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+        return end - start > 60;
+      });
     }
-    return base;
+    if (currentValue && !opts.includes(currentValue)) {
+      opts = [...opts, currentValue];
+    }
+    return opts;
   }, [normalizeSessionKey, timeOptionsBySession]);
   const sessionMenuLabels = React.useMemo(() => ({
     morning: 'Morning (8-12NN)',
@@ -5070,7 +5089,7 @@ const prefill = hit ? {
                               const e = facEdits[c.id] || { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), day: c.day || 'MON-FRI' };
                             const blkKey = normalizeBlockCode(c.blockCode || c.section || '');
                             const sessionKey = normalizeSessionKey(blockSessionMap.get(blkKey) || c.session || '');
-                            const timeOpts = timeOptionsForSession(sessionKey, e.time);
+                            const timeOpts = timeOptionsForSession(sessionKey, e.time, c);
                             const dirty =
                               canonicalTerm(c.term || '') !== e.term ||
                               String(c.schedule || c.time || '').trim() !== e.time ||
