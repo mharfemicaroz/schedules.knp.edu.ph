@@ -1330,6 +1330,7 @@ export default function CourseLoading() {
     const termSummaryHtmlF = `<table class=\"prt-table\"><tbody>${summaryRowsHtmlF.join('')}</tbody></table>`;
 
     const metaHtml = `<table class="prt-table"><tbody>
+      <tr><th>Faculty</th><td colspan="3"><span style="font-size:15px;font-weight:700;">${esc(f.name || f.faculty || '')}</span></td></tr>
       <tr><th>Department</th><td>${esc(f.department || f.dept || '')}</td><th>Employment</th><td>${esc(f.employment || '')}</td></tr>
       <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
       <tr><th>Load Release Units</th><td>${esc(String(f.loadReleaseUnits ?? f.load_release_units ?? 0))}</td><th>Schedules</th><td>${esc(String(list.length))}</td></tr>
