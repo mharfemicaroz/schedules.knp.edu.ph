@@ -292,7 +292,7 @@ function AssignmentRow({
         size={isTile ? 'md' : 'sm'}
         isChecked={!!row._selected}
         onChange={handleToggle}
-        isDisabled={disabled || isLocked}
+        isDisabled={disabled}
         mt={1}
       />
 

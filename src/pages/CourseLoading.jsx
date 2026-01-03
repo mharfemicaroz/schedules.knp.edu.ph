@@ -529,7 +529,7 @@ const eligibleOptions = React.useMemo(() => {
     <HStack spacing={2} py={2} borderBottomWidth="1px" borderColor={rowBorder}>
       <Checkbox
         isChecked={!!row._selected}
-        onChange={(e) => onToggle(e.target.checked)}aasdfghkk
+        onChange={(e) => onToggle(e.target.checked)}
         isDisabled={disabled}
       />
       <Box flex="1 1 auto">
@@ -2518,7 +2518,7 @@ const prefill = hit ? {
     const idx = facDelIndex;
     const item = facultySchedules.items[idx];
     if (idx == null || !item) { setFacDelOpen(false); setFacDelIndex(null); return; }
-    const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(item.lock || item.is_locked);
+    const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(item?._locked ?? item?.lock ?? item?.is_locked ?? item?.locked);
     if (isLocked) { toast({ title: 'Locked schedule', description: 'Unlock the schedule before deleting.', status: 'warning' }); setFacDelOpen(false); setFacDelIndex(null); return; }
     setFacDelBusy(true);
     try {
@@ -2540,7 +2540,7 @@ const prefill = hit ? {
   // Faculty bulk lock/unlock selection helpers
   const facSelectedIds = React.useMemo(() => Array.from(facSelected || new Set()), [facSelected]);
   const facSelectedItems = React.useMemo(() => (facultySchedules.items || []).filter(it => facSelectedIds.includes(it.id)), [facSelectedIds, facultySchedules.items]);
-  const isItemLocked = (it) => (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(it?.lock || it?.is_locked);
+  const isItemLocked = (it) => (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(it?._locked ?? it?.lock ?? it?.is_locked ?? it?.locked);
   const allSelectedLocked = facSelectedItems.length > 0 && facSelectedItems.every(isItemLocked);
   const allSelectedUnlocked = facSelectedItems.length > 0 && facSelectedItems.every(it => !isItemLocked(it));
   const facCanSaveSelected = React.useMemo(() => {
@@ -3884,7 +3884,7 @@ const prefill = hit ? {
     const c = facultySchedules.items[idx]; if (!c) return;
     if (!canEditFacultyItem(c)) { toast({ title: 'View only', description: 'You do not have permission to modify this schedule.', status: 'info' }); return; }
     const e = facEdits[c.id] || {};
-    const locked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||c.lock||c.is_locked||'').toLowerCase(); return s==='yes'||s==='true'||s==='1';})();
+    const locked = (function(v){ if (typeof v==='boolean') return v; const s=String((v ?? c.lock ?? c.is_locked ?? c.locked ?? '')).toLowerCase(); return s==='yes'||s==='true'||s==='1';})();
     if (!c.id) { toast({ title: 'Only existing schedules', description: 'Save a schedule before adding to swap.', status: 'info' }); return; }
     if (locked) { toast({ title: 'Locked schedule', description: 'Unlock before swapping.', status: 'warning' }); return; }
     const proxy = {
@@ -3931,7 +3931,7 @@ const prefill = hit ? {
     if (!confId) { toast({ title: 'Cannot resolve', description: 'No conflicting schedule found to replace.', status: 'warning' }); return; }
     try {
       const s = await api.getScheduleById(confId);
-      const locked = (function(v){ if (typeof v==='boolean') return v; const st=String(v||'').toLowerCase(); return st==='yes'||st==='true'||st==='1'; })(s?.lock || s?.is_locked);
+      const locked = (function(v){ if (typeof v==='boolean') return v; const st=String(v||'').toLowerCase(); return st==='yes'||st==='true'||st==='1'; })(s?._locked ?? s?.lock ?? s?.is_locked ?? s?.locked);
       if (locked) { toast({ title: 'Cannot resolve', description: 'Conflicting schedule is locked. Unlock it first.', status: 'warning' }); return; }
       const label = `${s?.code || s?.courseName || ''} ${s?.section ? '('+s.section+')' : ''}`.trim() || 'schedule';
       setFacResolveIndex(idx);
@@ -4040,10 +4040,10 @@ const prefill = hit ? {
     const confId = target?.item?.id;
     if (!confId) { toast({ title: 'Cannot resolve', description: 'No conflicting schedule found to replace.', status: 'warning' }); return; }
     const lockedFlag = (v) => { if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; };
-    if (lockedFlag(target?.item?.lock)) { toast({ title: 'Cannot resolve', description: 'Conflicting schedule is locked. Unlock it first.', status: 'warning' }); return; }
+    if (lockedFlag(target?.item?._locked ?? target?.item?.lock ?? target?.item?.is_locked ?? target?.item?.locked)) { toast({ title: 'Cannot resolve', description: 'Conflicting schedule is locked. Unlock it first.', status: 'warning' }); return; }
     try {
       const s = await api.getScheduleById(confId);
-      const locked = (function(v){ if (typeof v==='boolean') return v; const st=String(v||'').toLowerCase(); return st==='yes'||st==='true'||st==='1'; })(s?.lock || s?.is_locked);
+      const locked = (function(v){ if (typeof v==='boolean') return v; const st=String(v||'').toLowerCase(); return st==='yes'||st==='true'||st==='1'; })(s?._locked ?? s?.lock ?? s?.is_locked ?? s?.locked);
       if (locked) { toast({ title: 'Cannot resolve', description: 'Conflicting schedule is locked. Unlock it first.', status: 'warning' }); return; }
       const label = `${s?.code || s?.courseName || ''} ${s?.section ? '('+s.section+')' : ''}`.trim() || 'schedule';
       setResolveRowIndex(idx);
@@ -4540,30 +4540,30 @@ const prefill = hit ? {
                   {!loading && (
                     <Box borderWidth="1px" borderColor={border} rounded="md" p={2} bg={panelBg}>
                       <HStack spacing={3} flexWrap="wrap" align="center">
-                        {(() => {
-                          const total = rows.length;
-                          const selectedCount = rows.filter(r => r._selected).length;
-                          const allChecked = total > 0 && selectedCount === total;
-                          const indeterminate = selectedCount > 0 && selectedCount < total;
-                          return (
-                            <HStack>
-                              <Checkbox
-                                isChecked={allChecked}
-                                isIndeterminate={indeterminate}
-                                onChange={(e)=> setRows(prev => prev.map(r => ({ ...r, _selected: !!e.target.checked })))}
-                              >
-                                Select all
-                              </Checkbox>
-                              <Badge colorScheme={selectedCount ? 'blue' : 'gray'}>{selectedCount} selected</Badge>
-                              <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: true })))}>
-                                Select All
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: false })))}>
-                                Deselect All
-                              </Button>
-                            </HStack>
-                          );
-                        })()}
+                      {(() => {
+                        const total = rows.length;
+                        const selectedCount = rows.filter(r => r._selected).length;
+                        const allChecked = total > 0 && selectedCount === total;
+                        const indeterminate = selectedCount > 0 && selectedCount < total;
+                        return (
+                          <HStack>
+                            <Checkbox
+                              isChecked={allChecked}
+                              isIndeterminate={indeterminate}
+                              onChange={(e)=> setRows(prev => prev.map(r => ({ ...r, _selected: !!e.target.checked })))}
+                            >
+                              Select all
+                            </Checkbox>
+                            <Badge colorScheme={selectedCount ? 'blue' : 'gray'}>{selectedCount} selected</Badge>
+                            <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: true })))}>
+                              Select All
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: false })))}>
+                              Deselect All
+                            </Button>
+                          </HStack>
+                        );
+                      })()}
                         <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
                         <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
                         <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
@@ -5011,7 +5011,7 @@ const prefill = hit ? {
               <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
                 <HStack spacing={3} mb={2} align="center" flexWrap="wrap">
                   {(() => {
-                    const eligible = (facultySchedules.items || []).filter(it => !isItemLocked(it) && canEditFacultyItem(it));
+                    const eligible = (facultySchedules.items || []).filter(it => canEditFacultyItem(it));
                     const eligibleCount = eligible.length;
                     const allChecked = eligibleCount > 0 && facSelectedIds.length === eligibleCount;
                     const indeterminate = facSelectedIds.length > 0 && facSelectedIds.length < eligibleCount;
@@ -5079,12 +5079,12 @@ const prefill = hit ? {
                             const timeFilled = String(e.time || '').trim().length > 0;
                             const isEditable = canEditFacultyItem(c);
                             const canSave = isEditable && dirty && termFilled && timeFilled && !e._checking && !e._conflict;
-                            const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c.lock || c.is_locked);
+                            const isLocked = (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(c?._locked ?? c?.lock ?? c?.is_locked ?? c?.locked);
                             const saving = isFacSaving(c.id);
                             return (
                               <Box key={`${term}-${i}`} p={2} borderWidth="1px" rounded="md">
                                 <HStack spacing={3} align="center">
-                                  <Checkbox isChecked={facSelected.has(c.id)} onChange={(e)=>toggleFacSelect(c.id, e.target.checked)} isDisabled={!isEditable || isLocked} />
+                                  <Checkbox isChecked={facSelected.has(c.id)} onChange={(e)=>toggleFacSelect(c.id, e.target.checked)} isDisabled={!isEditable} />
                                     <Badge>{c.code || c.courseName}</Badge>
                                     {String(c.id || '').startsWith('tmp:') && <Badge colorScheme="pink">Draft</Badge>}
                                     <HStack space="2" flex="1" alignItems="center">
