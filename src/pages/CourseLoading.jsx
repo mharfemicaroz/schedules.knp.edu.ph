@@ -1181,72 +1181,91 @@ export default function CourseLoading() {
     const subtitle = [`School Year: ${settingsLoad?.school_year || ''}`, `Semester: ${settingsLoad?.semester || ''}`]
       .filter(Boolean)
       .join('  |  ');
-    // Match DepartmentSchedule layout (regular)
-    const headers = ['Year Level', 'Block', 'Term', 'Time', 'Code', 'Title', 'Units', 'Room', 'Faculty'];
+    const headers = ['Code', 'Title', 'Units', 'Term', 'Time', 'Day', 'Room', 'Faculty'];
     const list = Array.isArray(rows) ? rows.slice() : [];
-    // Group by year level then block
+    // Focus only on the currently viewed program
+    const normProgram = (p) => String(p || '').trim().toLowerCase();
+    const currentProgramNorm = normProgram(selectedProgram);
+    const listForPrint = list.filter((r) => normProgram(r.program || r.programcode) === currentProgramNorm);
+    if (listForPrint.length === 0) {
+      toast({ title: 'Nothing to print', description: 'No schedules for the selected program.', status: 'info' });
+      return;
+    }
+    // Hierarchy: Year Level -> Block/Section -> Courses
     const groups = new Map();
     const yearLabelOf = (r) => String(r.yearlevel || '').trim() || `Year ${extractYearDigits(r.yearlevel) || ''}`;
-    list.forEach((r) => {
+    listForPrint.forEach((r) => {
       const yl = yearLabelOf(r) || 'N/A';
-      const sec = String(r.blockCode || r.section || 'N/A');
-      const key = `${yl}|${sec}`;
-      const arr = groups.get(key) || [];
+      const sec = String(r.blockCode || r.section || 'N/A').toUpperCase();
+      if (!groups.has(yl)) groups.set(yl, new Map());
+      const byBlock = groups.get(yl);
+      const arr = byBlock.get(sec) || [];
       arr.push(r);
-      groups.set(key, arr);
+      byBlock.set(sec, arr);
     });
-    // Sort within block like Dept page: term then time
-    const termOrder = (t) => {
-      const v = String(t || '').trim().toLowerCase();
-      if (v.startsWith('1')) return 1; if (v.startsWith('2')) return 2; if (v.startsWith('s')) return 3; return 9;
-    };
-    const timeStart = (tStr) => {
-      const tr = parseTimeBlockToMinutes(String(tStr || '').trim());
-      return Number.isFinite(tr.start) ? tr.start : 99999;
-    };
-    const rowsOut = [];
-    Array.from(groups.entries())
+    const sectionHtml = Array.from(groups.entries())
       .sort((a, b) => {
-        const [ylA] = a[0].split('|');
-        const [ylB] = b[0].split('|');
+        const [ylA] = a;
+        const [ylB] = b;
         const oA = Number(extractYearDigits(ylA) || 99);
         const oB = Number(extractYearDigits(ylB) || 99);
         if (oA !== oB) return oA - oB;
-        return a[0].localeCompare(b[0], undefined, { numeric: true });
+        return ylA.localeCompare(ylB, undefined, { numeric: true });
       })
-      .forEach(([key, arr]) => {
-        const [yl, sec] = key.split('|');
-        const sorted = arr.slice().sort((a, b) => {
-          const ta = termOrder(a._term || a.term);
-          const tb = termOrder(b._term || b.term);
-          if (ta !== tb) return ta - tb;
-          const sa = timeStart(a._time || a.time || a.schedule);
-          const sb = timeStart(b._time || b.time || b.schedule);
-          if (sa !== sb) return sa - sb;
-          return String(a.course_name || a.courseName || a.code || '').localeCompare(String(b.course_name || b.courseName || b.code || ''));
-        });
-        sorted.forEach((r) => {
-          // Room: prefer row.room; fallback to Block dataset room by section
-          const sec = String(r.blockCode || r.section || '');
-          const blkRoom = (() => {
-            try {
-              const byCode = (blocks || []).find(b => String(b.blockCode) === sec);
-              return byCode?.room || '';
-            } catch { return ''; }
-          })();
-          rowsOut.push([
-            yl,
-            sec,
-            String(r._term || r.term || ''),
-            String(r._time || r.time || r.schedule || ''),
-            String(r.course_name || r.courseName || r.code || ''),
-            String(r.course_title || r.courseTitle || r.title || ''),
-            String(r.unit ?? ''),
-            String(r.room || blkRoom || ''),
-            String(r._faculty || r.faculty || r.instructor || ''),
-          ]);
-        });
-      });
+      .map(([yl, byBlock]) => {
+        const blocksHtml = Array.from(byBlock.entries())
+          .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+          .map(([sec, arr]) => {
+            const sorted = arr.slice().sort((a, b) => {
+              const ta = termOrder(a._term || a.term);
+              const tb = termOrder(b._term || b.term);
+              if (ta !== tb) return ta - tb;
+              const sa = timeStart(a._time || a.time || a.schedule);
+              const sb = timeStart(b._time || b.time || b.schedule);
+              if (sa !== sb) return sa - sb;
+              return String(a.course_name || a.courseName || a.code || '').localeCompare(String(b.course_name || b.courseName || b.code || ''));
+            });
+            const blkMeta = (() => {
+              try {
+                return (blocks || []).find(b => String(b.blockCode || '').trim().toUpperCase() === sec);
+              } catch { return null; }
+            })();
+            const blkRoom = blkMeta?.room || sorted.find(r => r.room)?.room || '';
+            const blkSession = blkMeta?.session || sorted.find(r => r.session || r._session)?.session || '';
+            const tableRows = sorted.map((r) => [
+              String(r.course_name || r.courseName || r.code || ''),
+              String(r.course_title || r.courseTitle || r.title || ''),
+              String(r.unit ?? ''),
+              String(r._term || r.term || ''),
+              String(r._time || r.time || r.schedule || ''),
+              String(r._day || r.day || ''),
+              String(r.room || blkRoom || ''),
+              String(r._faculty || r.faculty || r.instructor || ''),
+            ]);
+            const metaLine = [
+              `<span style="font-weight:800;font-size:13px;">${esc(sec)}</span>`,
+              blkSession ? `<span style="color:#2563eb;font-size:11px;text-transform:uppercase;">${esc(blkSession)}</span>` : '',
+              blkRoom ? `<span style="color:#4a5568;font-size:11px;">Room: ${esc(String(blkRoom))}</span>` : '',
+              `<span style="color:#4a5568;font-size:11px;">${sorted.length} course(s)</span>`,
+            ].filter(Boolean).join(' | ');
+            return `
+              <div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;margin-top:8px;">
+                <div style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  <div>${metaLine}</div>
+                </div>
+                ${buildTable(headers, tableRows)}
+              </div>
+            `;
+          })
+          .join('');
+        return `
+          <div style="margin:12px 0 16px 0;">
+            <div style="font-weight:900;font-size:15px;letter-spacing:0.3px;color:#1f2937;margin-bottom:6px;">Year Level: ${esc(yl)}</div>
+            ${blocksHtml}
+          </div>
+        `;
+      })
+      .join('');
     const noteHtml = `
       <div style="margin-top:12px;padding:10px;border:1px dashed #CBD5E0;border-radius:10px;background:#F7FAFC;">
         <div style="font-weight:700;color:#2D3748;">Tentative Load</div>
@@ -1255,7 +1274,7 @@ export default function CourseLoading() {
         </div>
       </div>
     `;
-    const bodyHtml = buildTable(headers, rowsOut) + noteHtml;
+    const bodyHtml = sectionHtml + noteHtml;
     const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
     const preparedRole = (() => {
       try {
