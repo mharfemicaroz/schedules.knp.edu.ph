@@ -14,6 +14,7 @@ import { loadAllSchedules } from '../store/dataThunks';
 import { selectBlocks } from '../store/blockSlice';
 import { selectAllCourses } from '../store/dataSlice';
 import { selectSettings } from '../store/settingsSlice';
+import { allowedSessionsForCourse, normalizeSessionKey } from '../utils/courseRules';
 import FacultySelect from './FacultySelect';
 import AssignFacultyModal from './AssignFacultyModal';
 import ScheduleHistoryModal from './ScheduleHistoryModal';
@@ -21,6 +22,7 @@ import AssignmentRow from './AssignmentRow';
 import useFaculties from '../hooks/useFaculties';
 import api from '../services/apiService';
 import { buildTable, printContent } from '../utils/printDesign';
+import { parseTimeBlockToMinutes } from '../utils/conflicts';
 
 function parseBlockMeta(blockCode) {
   const s = String(blockCode || '').trim();
@@ -524,6 +526,14 @@ export default function CoursesView() {
     }
     return true;
   };
+  const deriveSessionFromTime = React.useCallback((timeStr) => {
+    const { start } = parseTimeBlockToMinutes(timeStr);
+    if (!Number.isFinite(start)) return '';
+    if (start < 12 * 60) return 'morning';
+    if (start >= 17 * 60) return 'evening';
+    return 'afternoon';
+  }, []);
+
   const checkRowConflict = async (i, candRow) => {
     const row = candRow || rows[i];
     if (!row) return;
@@ -534,6 +544,13 @@ export default function CoursesView() {
       setRows(prev => prev.map((r,idx) => idx===i ? { ...r, _checking: false } : r));
       return;
     }
+    const allowedSessions = allowedSessionsForCourse(row, row.session, row._day || row.day);
+    const sessionKey = normalizeSessionKey(row.session) || deriveSessionFromTime(timeStr);
+    const inAllowedSession = (() => {
+      if (!Array.isArray(allowedSessions) || allowedSessions.length === 0) return true;
+      if (!sessionKey) return true;
+      return allowedSessions.includes(sessionKey);
+    })();
     setRows(prev => prev.map((r,idx) => idx===i ? { ...r, _checking: true } : r));
     try {
       const payload = {
@@ -549,8 +566,11 @@ export default function CoursesView() {
       };
       const idForCheck = row._existingId || 0;
       const res = await api.checkScheduleConflict(idForCheck, payload);
-      const conflict = !!res?.conflict;
+      const conflict = !!res?.conflict || !inAllowedSession;
       const details = Array.isArray(res?.details) ? res.details.slice() : [];
+      if (!inAllowedSession) {
+        details.push({ reason: 'Session constraint: PE/NSTP must use allowed session for this day', item: { id: idForCheck, code: row.courseName, section: row.blockCode, time: row._time, day: row._day, session: row.session } });
+      }
       setRows(prev => prev.map((r,idx) => idx===i ? { ...r, _checking: false, _conflict: conflict, _conflictDetails: details, _status: conflict ? 'Conflict' : (r._existingId ? 'Assigned' : 'Unassigned') } : r));
     } catch (e) {
       setRows(prev => prev.map((r,idx) => idx===i ? { ...r, _checking: false } : r));

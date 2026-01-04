@@ -223,7 +223,7 @@ function AssignmentRow({
   );
 
   const allowedSessionKeys = React.useMemo(
-    () => allowedSessionsForCourse(row, baseSessionKey),
+    () => allowedSessionsForCourse(row, baseSessionKey, row?._day || row?.day),
     [row, baseSessionKey]
   );
 

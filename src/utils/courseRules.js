@@ -30,11 +30,20 @@ export function normalizeSessionKey(value) {
   return '';
 }
 
-export function allowedSessionsForCourse(course, blockSessionKey) {
+import { parseF2FDays } from './conflicts';
+
+export function allowedSessionsForCourse(course, blockSessionKey, day) {
   const base = normalizeSessionKey(blockSessionKey);
+  const parsedDays = (() => {
+    if (Array.isArray(day)) return parseF2FDays(day);
+    const days = parseF2FDays(day);
+    return days.length ? days : [];
+  })();
+  const hasWeekend = parsedDays.some((d) => d === 'Sat' || d === 'Sun');
   if (!isPEorNSTP(course)) {
     return base ? [base] : ['morning', 'afternoon', 'evening'];
   }
+  if (hasWeekend) return ['morning', 'afternoon'];
   if (base === 'morning') return ['afternoon'];
   if (base === 'afternoon') return ['morning'];
   if (base === 'evening') return ['morning', 'afternoon'];

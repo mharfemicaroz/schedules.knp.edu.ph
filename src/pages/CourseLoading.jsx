@@ -3611,9 +3611,9 @@ const prefill = hit ? {
       all: base,
     };
   }, []);
-  const timeOptionsForSession = React.useCallback((sessionKey, currentValue, course) => {
+  const timeOptionsForSession = React.useCallback((sessionKey, currentValue, course, day) => {
     const key = normalizeSessionKey(sessionKey);
-    const allowed = allowedSessionsForCourse(course || {}, key);
+    const allowed = allowedSessionsForCourse(course || {}, key, day);
     const sessions = allowed && allowed.length ? allowed : (key ? [key] : []);
     const srcKeys = sessions.length ? sessions : ['morning', 'afternoon', 'evening'];
     const seen = new Set();
@@ -5099,7 +5099,7 @@ const prefill = hit ? {
                               const e = facEdits[c.id] || { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), day: c.day || 'MON-FRI' };
                             const blkKey = normalizeBlockCode(c.blockCode || c.section || '');
                             const sessionKey = normalizeSessionKey(blockSessionMap.get(blkKey) || c.session || '');
-                            const timeOpts = timeOptionsForSession(sessionKey, e.time, c);
+    const timeOpts = timeOptionsForSession(sessionKey, e.time, c, e.day || c.day);
                             const dirty =
                               canonicalTerm(c.term || '') !== e.term ||
                               String(c.schedule || c.time || '').trim() !== e.time ||
