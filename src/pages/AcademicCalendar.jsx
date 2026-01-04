@@ -44,14 +44,12 @@ function formatDate(d) {
 }
 
 function sanitize(str) {
-  // Remove stray backslashes and non-printable characters
   return String(str ?? '')
     .replace(/\\/g, '')
     .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
     .trim();
 }
 
-/** Make this global so all components can use it */
 function expandDateRangeToken(token) {
   const m = String(token || '').match(/^(\w+)\s+(\d+)-(\d+),\s*(\d{4})$/);
   if (!m) return [];
@@ -67,6 +65,82 @@ function expandDateRangeToken(token) {
     if (!isNaN(dt.getTime())) out.push(dt);
   }
   return out;
+}
+
+function earliestLatestFromActivities(list = []) {
+  const dates = [];
+  list.forEach((a) => {
+    if (a.date_range) {
+      const arr = expandDateRangeToken(sanitize(a.date_range));
+      if (arr.length) {
+        dates.push(arr[0]);
+        dates.push(arr[arr.length - 1]);
+      }
+      return;
+    }
+    if (Array.isArray(a.date)) {
+      a.date.map(parseDate).filter(Boolean).forEach((d) => dates.push(d));
+    } else if (a.date) {
+      const d = parseDate(a.date);
+      if (d) dates.push(d);
+    }
+  });
+  if (!dates.length) return { start: null, end: null };
+  dates.sort((a, b) => a - b);
+  return { start: dates[0], end: dates[dates.length - 1] };
+}
+
+function buildTermsFromCalendar(calRaw) {
+  const cal = calRaw || {};
+  const terms = [];
+
+  const pushTerm = (semester, term, node = {}, extras = {}) => {
+    if (!node) return;
+    const activities = Array.isArray(node.activities) ? node.activities : [];
+    if (!node.start && !extras.start && activities.length === 0) return;
+    terms.push({
+      id: `${semester}-${term}`,
+      semester,
+      term,
+      start: node.start || extras.start || null,
+      end: node.end || extras.end || null,
+      activities,
+    });
+  };
+
+  if (cal.first_semester) {
+    pushTerm('1st Semester', 'First Term', cal.first_semester.first_term);
+    pushTerm('1st Semester', 'Second Term', cal.first_semester.second_term);
+  }
+
+  if (cal.second_semester) {
+    const sem = cal.second_semester;
+    pushTerm('2nd Semester', 'First Term', sem.first_term);
+    pushTerm('2nd Semester', 'Second Term', sem.second_term);
+
+    if (Array.isArray(sem.pre_semester_activities) && sem.pre_semester_activities.length) {
+      const { start, end } = earliestLatestFromActivities(sem.pre_semester_activities);
+      pushTerm('2nd Semester', 'Pre-Semester', { activities: sem.pre_semester_activities, start, end });
+    }
+
+    if (Array.isArray(sem.enrollment_period) && sem.enrollment_period.length) {
+      const { start, end } = earliestLatestFromActivities(sem.enrollment_period);
+      pushTerm('2nd Semester', 'Enrollment', { activities: sem.enrollment_period, start, end });
+    }
+  }
+
+  if (cal.summer?.term) {
+    const term = cal.summer.term;
+    const derived = { ...term };
+    if (!derived.start || !derived.end) {
+      const { start, end } = earliestLatestFromActivities(term.activities || []);
+      derived.start = derived.start || start;
+      derived.end = derived.end || end;
+    }
+    pushTerm('Summer', 'Summer Term', derived);
+  }
+
+  return terms;
 }
 
 function EventRow({ event }) {
@@ -126,80 +200,7 @@ function TermCard({ title, start, end, activities }) {
     const elapsed = Math.min(Math.max(now - ds, 0), total);
     return total > 0 ? Math.round((elapsed / total) * 100) : 0;
   }, [ds, de, now]);
-
-  const timeline = useMemo(() => {
-    const out = [];
-    const dayMs = 24 * 60 * 60 * 1000;
-    function enumerateWeeks(rangeStart, rangeEnd, startIndex) {
-      const items = [];
-      if (!(rangeStart && rangeEnd) || rangeEnd < rangeStart) return items;
-      let idx = startIndex;
-      let cur = new Date(rangeStart);
-      cur.setHours(0, 0, 0, 0);
-      const endLim = new Date(rangeEnd);
-      endLim.setHours(0, 0, 0, 0);
-      while (cur <= endLim) {
-        const wd = cur.getDay();
-        const daysToSun = (7 - wd) % 7;
-        let wkEnd = new Date(cur.getTime() + daysToSun * dayMs);
-        if (wkEnd > endLim) wkEnd = endLim;
-        items.push({ event: `Week ${idx}`, date_range: `${formatDate(cur)} - ${formatDate(wkEnd)}`, start: new Date(cur), end: new Date(wkEnd) });
-        idx += 1;
-        cur = new Date(wkEnd.getTime() + dayMs);
-      }
-      return { items, nextIndex: idx };
-    }
-    let lastPointer = ds || null;
-    let weekIndex = 1;
-    (activities || []).forEach((a) => {
-      const name = sanitize(a.event || '');
-      // derive start/end for activity
-      let aStart = null;
-      let aEnd = null;
-      if (a.date_range) {
-        const arr = expandDateRangeToken(sanitize(a.date_range));
-        if (arr.length) {
-          aStart = arr[0];
-          aEnd = arr[arr.length - 1];
-        }
-      } else if (Array.isArray(a.date)) {
-        const arr = a.date.map(parseDate).filter(Boolean).sort((x, y) => x - y);
-        if (arr.length) {
-          aStart = arr[0];
-          aEnd = arr[arr.length - 1];
-        }
-      } else if (a.date) {
-        const d = parseDate(a.date);
-        if (d) aStart = aEnd = d;
-      }
-      const isExam = /exam/i.test(name);
-      if (isExam) {
-        const parsed = parseDate(a.date);
-        const firstExam = Array.isArray(parsed) ? parsed[0] : parsed;
-        if (firstExam && lastPointer) {
-          const until = new Date(firstExam.getTime() - dayMs);
-          const { items, nextIndex } = enumerateWeeks(lastPointer, until, weekIndex);
-          out.push(...items);
-          weekIndex = nextIndex;
-        }
-        out.push({ ...a, start: aStart || firstExam, end: aEnd || firstExam });
-        const lastExam = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed;
-        if (lastExam) lastPointer = new Date(lastExam.getTime() + dayMs);
-        return;
-      }
-      out.push({ ...a, start: aStart, end: aEnd });
-      if (/start of classes/i.test(name)) {
-        const d = parseDate(a.date);
-        const first = Array.isArray(d) ? d[0] : d;
-        if (first) lastPointer = first;
-      }
-    });
-    if (lastPointer && de && lastPointer <= de) {
-      const { items } = enumerateWeeks(lastPointer, de, weekIndex);
-      out.push(...items);
-    }
-    return out;
-  }, [activities, ds, de]);
+  const activityList = Array.isArray(activities) ? activities : [];
 
   return (
     <Box borderWidth="1px" borderColor={border} bg={bg} rounded="xl" p={4}>
@@ -217,11 +218,15 @@ function TermCard({ title, start, end, activities }) {
       </Text>
       <Progress value={progress} size="sm" colorScheme="brand" rounded="md" mb={3} />
       <Divider my={3} />
-      <VStack align="stretch" spacing={1}>
-        {timeline.map((a, idx) => (
-          <EventRow key={idx} event={a} />
-        ))}
-      </VStack>
+      {activityList.length === 0 ? (
+        <Text fontSize="sm" color={subtle}>No activities listed for this term yet.</Text>
+      ) : (
+        <VStack align="stretch" spacing={1}>
+          {activityList.map((a, idx) => (
+            <EventRow key={idx} event={a} />
+          ))}
+        </VStack>
+      )}
     </Box>
   );
 }
@@ -232,22 +237,19 @@ export default function AcademicCalendar() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState(0);
+  const [semesterFilter, setSemesterFilter] = useState('all');
   const calendarRef = useRef(null);
   const [calendarKey, setCalendarKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
-
-    // Load both academic calendar and holidays data from API
     const loadData = async () => {
       try {
         const [acadJson, holidaysArr] = await Promise.all([
           apiService.getAcademicCalendar(),
           apiService.getHolidays(2025)
         ]);
-
         if (!mounted) return;
-
         setData(acadJson.data || acadJson);
         setHolidays(Array.isArray(holidaysArr) ? holidaysArr : []);
         setLoading(false);
@@ -257,91 +259,56 @@ export default function AcademicCalendar() {
         setLoading(false);
       }
     };
-
     loadData();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
-  // Force calendar to re-render and update size when tab changes
   const handleTabChange = useCallback((index) => {
     setActiveTab(index);
-    if (index === 1) {
-      // Force calendar to re-render with new key
-      setCalendarKey(prev => prev + 1);
-    }
+    if (index === 1) setCalendarKey(prev => prev + 1);
   }, []);
 
-  // Update calendar size when tab becomes active
   useEffect(() => {
     if (activeTab === 1) {
-      const updateSize = () => {
-        if (calendarRef.current) {
-          const calendarApi = calendarRef.current.getApi();
-          calendarApi.updateSize();
-        }
-      };
-
-      // Use requestAnimationFrame for better timing
       const timer = setTimeout(() => {
-        requestAnimationFrame(updateSize);
+        if (calendarRef.current) {
+          calendarRef.current.getApi().updateSize();
+        }
       }, 50);
-
       return () => clearTimeout(timer);
     }
   }, [activeTab, calendarKey]);
 
-  // Also listen for window resize to update calendar size
   useEffect(() => {
-    const handleResize = () => {
+    const onResize = () => {
       if (calendarRef.current && activeTab === 1) {
-        const calendarApi = calendarRef.current.getApi();
-        calendarApi.updateSize();
+        calendarRef.current.getApi().updateSize();
       }
     };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, [activeTab]);
 
   const subtle = useColorModeValue('gray.600', 'gray.400');
   const cal = (data && Array.isArray(data) ? data[0]?.academic_calendar : null) || {};
   const sy = sanitize(cal.school_year);
-  const first = cal.first_semester || {};
-  const firstTerm = first.first_term || {};
-  const secondTerm = first.second_term || {};
-
-  function collectEvents() {
-    const events = [];
-    const buckets = [
-      { term: 'First Term', obj: firstTerm },
-      { term: 'Second Term', obj: secondTerm },
-    ];
-    buckets.forEach(({ term, obj }) => {
-      const list = obj.activities || [];
-      list.forEach((a) => {
-        const title = sanitize(a.event || '');
-        let dates = [];
-        if (a.date_range) {
-          dates = expandDateRangeToken(sanitize(a.date_range));
-        } else if (Array.isArray(a.date)) {
-          dates = a.date.map((d) => parseDate(d)).filter(Boolean);
-        } else if (a.date) {
-          const d = parseDate(a.date);
-          if (d) dates = [d];
-        }
-        if (dates.length === 0) return;
-        dates.forEach((d) => {
-          events.push({ date: new Date(d.getFullYear(), d.getMonth(), d.getDate()), title, term });
-        });
-      });
+  const terms = useMemo(() => buildTermsFromCalendar(cal), [cal]);
+  const filteredTerms = useMemo(
+    () => terms.filter(t => semesterFilter === 'all' ? true : t.semester === semesterFilter),
+    [terms, semesterFilter]
+  );
+  const groupedBySemester = useMemo(() => {
+    const map = new Map();
+    filteredTerms.forEach((t) => {
+      if (!map.has(t.semester)) map.set(t.semester, []);
+      map.get(t.semester).push(t);
     });
-    return events;
-  }
+    const order = ['1st Semester', '2nd Semester', 'Summer'];
+    return order
+      .filter((s) => map.has(s))
+      .map((s) => ({ semester: s, items: map.get(s) }));
+  }, [filteredTerms]);
 
-  const allEvents = useMemo(() => collectEvents(), [data]); // (kept for possible future use)
   const cardBorder = useColorModeValue('gray.200', 'gray.700');
   const cardBg = useColorModeValue('white', 'gray.800');
   const eventText = useColorModeValue('#1A202C', '#E2E8F0');
@@ -355,76 +322,9 @@ export default function AcademicCalendar() {
     return 'brand.400';
   }
 
-  // Generate itemized weeks for calendar view
-  const generateItemizedWeeks = useMemo(() => {
-    const weeks = [];
-    const dayMs = 24 * 60 * 60 * 1000;
-
-    function enumerateWeeks(rangeStart, rangeEnd, startIndex, term) {
-      const items = [];
-      if (!(rangeStart && rangeEnd) || rangeEnd < rangeStart) return items;
-      let idx = startIndex;
-      let cur = new Date(rangeStart);
-      cur.setHours(0, 0, 0, 0);
-      const endLim = new Date(rangeEnd);
-      endLim.setHours(0, 0, 0, 0);
-      while (cur <= endLim) {
-        const wd = cur.getDay();
-        const daysToSun = (7 - wd) % 7;
-        let wkEnd = new Date(cur.getTime() + daysToSun * dayMs);
-        if (wkEnd > endLim) wkEnd = endLim;
-        items.push({
-          title: `📅 ${term} - Week ${idx}`,
-          start: new Date(cur),
-          end: new Date(wkEnd.getTime() + dayMs),
-          allDay: true,
-          display: 'block',
-          backgroundColor: 'var(--chakra-colors-teal-400)',
-          borderColor: 'var(--chakra-colors-teal-400)',
-          classNames: ['fc-event--week'],
-          extendedProps: {
-            isWeek: true,
-            weekNumber: idx,
-            term: term
-          }
-        });
-        idx += 1;
-        cur = new Date(wkEnd.getTime() + dayMs);
-      }
-      return { items, nextIndex: idx };
-    }
-
-    const firstStart = parseDate(firstTerm.start);
-    const firstEnd = parseDate(firstTerm.end);
-    const secondStart = parseDate(secondTerm.start);
-    const secondEnd = parseDate(secondTerm.end);
-
-    let weekIndex = 1;
-
-    // Generate weeks for First Term
-    if (firstStart && firstEnd) {
-      const { items, nextIndex } = enumerateWeeks(firstStart, firstEnd, weekIndex, 'First Term');
-      weeks.push(...items);
-      weekIndex = nextIndex;
-    }
-
-    // Generate weeks for Second Term
-    if (secondStart && secondEnd) {
-      const { items } = enumerateWeeks(secondStart, secondEnd, weekIndex, 'Second Term');
-      weeks.push(...items);
-    }
-
-    return weeks;
-  }, [firstTerm, secondTerm]);
-
   const fcEvents = useMemo(() => {
     const events = [];
-    const buckets = [
-      { term: 'First Term', obj: firstTerm },
-      { term: 'Second Term', obj: secondTerm },
-    ];
     const dayMs = 24 * 60 * 60 * 1000;
-
     function pushSpan(title, term, startDate, endDateInclusive) {
       const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
       const end = new Date(
@@ -449,14 +349,14 @@ export default function AcademicCalendar() {
         classNames: classes,
       });
     }
-
-    buckets.forEach(({ term, obj }) => {
-      const list = obj.activities || [];
+    terms.forEach((t) => {
+      const list = t.activities || [];
+      const termLabel = `${t.semester} - ${t.term}`;
       list.forEach((a) => {
         const title = sanitize(a.event || '');
         if (a.date_range) {
           const range = expandDateRangeToken(sanitize(a.date_range));
-          if (range.length) pushSpan(`${title} (${term})`, term, range[0], range[range.length - 1]);
+          if (range.length) pushSpan(`${title} (${termLabel})`, termLabel, range[0], range[range.length - 1]);
           return;
         }
         let dates = [];
@@ -471,16 +371,11 @@ export default function AcademicCalendar() {
         while (i < dates.length) {
           let j = i;
           while (j + 1 < dates.length && dates[j + 1] - dates[j] === dayMs) j++;
-          pushSpan(`${title} (${term})`, term, dates[i], dates[j]);
+          pushSpan(`${title} (${termLabel})`, termLabel, dates[i], dates[j]);
           i = j + 1;
         }
       });
     });
-
-    // Add itemized weeks to calendar events
-    events.push(...generateItemizedWeeks);
-
-    // Add holidays to calendar events
     if (holidays && Array.isArray(holidays)) {
       holidays.forEach((holiday) => {
         const holidayDate = parseDate(holiday.date);
@@ -491,11 +386,10 @@ export default function AcademicCalendar() {
           const isRegularHoliday = holiday.type && holiday.type.toLowerCase().includes('regular');
           const bgColor = status === 'past' ? 'gray.400' :
                          isRegularHoliday ? 'red.400' : 'orange.400';
-
           events.push({
-            title: `🏖️ ${holiday.name}`,
+            title: `${holiday.name}`,
             start: holidayDate,
-            end: new Date(holidayDate.getTime() + dayMs), // Make it span the day
+            end: new Date(holidayDate.getTime() + dayMs),
             allDay: true,
             display: 'block',
             backgroundColor: `var(--chakra-colors-${bgColor.replace('.', '-')})`,
@@ -509,9 +403,13 @@ export default function AcademicCalendar() {
         }
       });
     }
-
     return events;
-  }, [firstTerm, secondTerm, holidays, generateItemizedWeeks]);
+  }, [terms, holidays]);
+
+  const filteredEvents = useMemo(
+    () => fcEvents.filter(e => semesterFilter === 'all' ? true : (e.title || '').includes(semesterFilter)),
+    [fcEvents, semesterFilter]
+  );
 
   if (loading)
     return (
@@ -547,6 +445,9 @@ export default function AcademicCalendar() {
           )}
         </HStack>
       </HStack>
+      <Text fontSize="sm" color={subtle} mb={4}>
+        Pick a semester filter to see a friendly list of term timelines or browse events on the calendar. Holidays are also shown on the calendar.
+      </Text>
 
       <Tabs variant="enclosed-colored" colorScheme="brand" index={activeTab} onChange={handleTabChange}>
         <TabList>
@@ -555,24 +456,48 @@ export default function AcademicCalendar() {
         </TabList>
         <TabPanels>
           <TabPanel px={0}>
-            <Tabs variant="enclosed" colorScheme="brand">
-              <TabList>
-                <Tab>First Term</Tab>
-                <Tab>Second Term</Tab>
-              </TabList>
-              <TabPanels>
-                <TabPanel px={0}>
-                  <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={4}>
-                    <TermCard title="First Term" start={firstTerm.start} end={firstTerm.end} activities={firstTerm.activities || []} />
-                  </SimpleGrid>
-                </TabPanel>
-                <TabPanel px={0}>
-                  <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={4}>
-                    <TermCard title="Second Term" start={secondTerm.start} end={secondTerm.end} activities={secondTerm.activities || []} />
-                  </SimpleGrid>
-                </TabPanel>
-              </TabPanels>
-            </Tabs>
+            <HStack spacing={2} mb={3} flexWrap="wrap">
+              {[
+                { key: 'all', label: 'All' },
+                { key: '1st Semester', label: '1st Semester' },
+                { key: '2nd Semester', label: '2nd Semester' },
+                { key: 'Summer', label: 'Summer' },
+              ].map((opt) => (
+                <Tag
+                  key={opt.key}
+                  cursor="pointer"
+                  colorScheme={semesterFilter === opt.key ? 'brand' : 'gray'}
+                  variant={semesterFilter === opt.key ? 'solid' : 'subtle'}
+                  onClick={() => setSemesterFilter(opt.key)}
+                >
+                  <TagLabel>{opt.label}</TagLabel>
+                </Tag>
+              ))}
+            </HStack>
+            {groupedBySemester.map(section => (
+              <Box key={section.semester} mb={6}>
+                <HStack mb={2} spacing={3}>
+                  <Heading size="sm">{section.semester}</Heading>
+                  <Badge colorScheme="brand" variant="subtle">{section.items.length} term(s)</Badge>
+                </HStack>
+                <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={4}>
+                  {section.items.map((t) => (
+                    <TermCard
+                      key={t.id}
+                      title={t.term}
+                      start={t.start}
+                      end={t.end}
+                      activities={t.activities || []}
+                    />
+                  ))}
+                </SimpleGrid>
+              </Box>
+            ))}
+            {groupedBySemester.length === 0 && (
+              <Box borderWidth="1px" borderColor={cardBorder} bg={cardBg} rounded="md" p={4}>
+                <Text color={subtle}>No academic calendar entries found for this semester.</Text>
+              </Box>
+            )}
           </TabPanel>
 
           <TabPanel px={0}>
@@ -596,16 +521,17 @@ export default function AcademicCalendar() {
                 weekNumbers={false}
                 dayMaxEvents={4}
                 fixedWeekCount={false}
-                events={fcEvents}
+                events={filteredEvents}
                 eventTextColor={eventText}
                 contentHeight="auto"
                 eventDisplay="block"
                 displayEventTime={false}
+                eventOrder="start"
                 eventMouseEnter={(info) => {
                   if (info.event.extendedProps.isHoliday) {
-                    info.el.title = `${info.event.title.replace('🏖️ ', '')} - ${info.event.extendedProps.holidayType}`;
+                    info.el.title = `${info.event.title} - ${info.event.extendedProps.holidayType}`;
                   } else if (info.event.extendedProps.isWeek) {
-                    info.el.title = `${info.event.title.replace('📅 ', '')} - Week ${info.event.extendedProps.weekNumber}`;
+                    info.el.title = `${info.event.title} - Week ${info.event.extendedProps.weekNumber}`;
                   }
                 }}
               />
