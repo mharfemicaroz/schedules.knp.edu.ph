@@ -7,6 +7,7 @@ export default function RequireCourseLoadingAccess({ children }) {
   const authUser = useSelector(s => s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
   const isAdmin = role === 'admin' || role === 'manager';
+  const isRegistrar = role === 'registrar';
   const dispatch = useDispatch();
   const items = useSelector(s => s.userdept.items || []);
   const [loaded, setLoaded] = React.useState(false);
@@ -17,17 +18,17 @@ export default function RequireCourseLoadingAccess({ children }) {
     (async () => {
       try {
         if (!authUser?.id) { if (alive) setLoaded(true); return; }
-        if (!isAdmin) {
+        if (!isAdmin && !isRegistrar) {
           await dispatch(getUserDepartmentsByUserThunk(authUser.id));
         }
       } catch {}
       finally { if (alive) setLoaded(true); }
     })();
     return () => { alive = false; };
-  }, [dispatch, authUser?.id, isAdmin]);
+  }, [dispatch, authUser?.id, isAdmin, isRegistrar]);
 
   if (!authUser) return <Navigate to="/unauthorized" state={{ from: location }} replace />;
-  if (isAdmin) return children;
+  if (isAdmin || isRegistrar) return children;
 
   // Non-admin: must have at least one mapping
   if (!loaded) return null;
@@ -36,4 +37,3 @@ export default function RequireCourseLoadingAccess({ children }) {
 
   return children;
 }
-

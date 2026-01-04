@@ -195,7 +195,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             {(isAdmin || isRegistrar || hasDeptMapping) && (
               <NavItem to="/admin/grades-submission" icon={FiFileText} onClick={onNavigate} chipLabel={chip}>Grades Submission</NavItem>
             )}
-            {(isAdmin || (!isAdmin && hasDeptMapping)) && (
+            {(isAdmin || isRegistrar || (!isAdmin && hasDeptMapping)) && (
               <NavItem
                 to="/admin/course-loading"
                 icon={FiLayers}

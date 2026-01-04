@@ -247,7 +247,7 @@ function isSemestralCourseLike(row) {
 }
 
 // --- UI subcomponents (unchanged structure) ---
-function BlockList({ items, selectedId, onSelect, loading, onProgramChange }) {
+function BlockList({ items, selectedId, onSelect, loading, onProgramChange, hideFilters = false }) {
   const border = useColorModeValue('gray.200','gray.700');
   const bg = useColorModeValue('white','gray.800');
   const muted = useColorModeValue('gray.600','gray.300');
@@ -294,16 +294,18 @@ function BlockList({ items, selectedId, onSelect, loading, onProgramChange }) {
   return (
     
     <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={bg} minH="calc(100vh - 210px)">
-      <HStack spacing={2} flexWrap="wrap">
-        <Select size="sm" placeholder="Program" value={prog} onChange={(e)=>{ const v=e.target.value; setProg(v); setYr(''); try { onProgramChange && onProgramChange(v); } catch {} }} maxW="180px">
-          {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
-        </Select>
-        <Select size="sm" placeholder="Year" value={yr} onChange={(e)=>setYr(e.target.value)} maxW="120px">
-          {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-        </Select>
-        <Input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Search blocks" size="sm" maxW="220px" />
-        <IconButton aria-label="Search" icon={<FiSearch />} size="sm" variant="outline" />
-      </HStack>
+      {!hideFilters && (
+        <HStack spacing={2} flexWrap="wrap">
+          <Select size="sm" placeholder="Program" value={prog} onChange={(e)=>{ const v=e.target.value; setProg(v); setYr(''); try { onProgramChange && onProgramChange(v); } catch {} }} maxW="180px">
+            {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
+          </Select>
+          <Select size="sm" placeholder="Year" value={yr} onChange={(e)=>setYr(e.target.value)} maxW="120px">
+            {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+          </Select>
+          <Input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Search blocks" size="sm" maxW="220px" />
+          <IconButton aria-label="Search" icon={<FiSearch />} size="sm" variant="outline" />
+        </HStack>
+      )}
       <VStack align="stretch" spacing={2} overflowY="auto">
         {loading && (
           <VStack align="stretch" spacing={2}>
@@ -904,12 +906,14 @@ export default function CourseLoading() {
   const authUser = useSelector(s => s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
   const isAdmin = (role === 'admin' || role === 'manager');
+  const isRegistrar = role === 'registrar';
+  const registrarViewOnly = isRegistrar && !isAdmin;
   const [allowedDepts, setAllowedDepts] = React.useState(null);
   const [userDeptRows, setUserDeptRows] = React.useState(null);
   React.useEffect(() => {
     let alive = true;
     (async () => {
-      if (!authUser?.id || isAdmin) { if (alive) { setAllowedDepts(null); setUserDeptRows(null); } return; }
+      if (!authUser?.id || isAdmin || isRegistrar) { if (alive) { setAllowedDepts(null); setUserDeptRows(null); } return; }
       try {
         const rows = await api.getUserDepartmentsByUser(authUser.id);
         const list = Array.isArray(rows) ? rows : [];
@@ -918,17 +922,27 @@ export default function CourseLoading() {
       } catch { if (alive) { setAllowedDepts([]); setUserDeptRows([]); } }
     })();
     return () => { alive = false; };
-  }, [authUser?.id, isAdmin]);
-  const canLoad = (isAdmin || role === 'registrar' || (Array.isArray(allowedDepts) && allowedDepts.length > 0));
+  }, [authUser?.id, isAdmin, isRegistrar]);
+  const canLoad = (!registrarViewOnly) && (isAdmin || (Array.isArray(allowedDepts) && allowedDepts.length > 0));
   const allowedDeptSet = React.useMemo(() => new Set((Array.isArray(allowedDepts) ? allowedDepts : []).map((s) => normalizeProgramCode(s))), [allowedDepts]);
   const canEditFacultyItem = React.useCallback((it) => {
+    if (registrarViewOnly) return false;
     if (isAdmin) return true;
     if (!Array.isArray(allowedDepts) || allowedDepts.length === 0) return false;
     const code = normalizeProgramCode(it?.programcode || it?.program || '');
     return code && allowedDeptSet.has(code);
-  }, [isAdmin, allowedDepts, allowedDeptSet]);
+  }, [registrarViewOnly, isAdmin, allowedDepts, allowedDeptSet]);
 
+  const allowedViews = React.useMemo(
+    () => (registrarViewOnly ? ['blocks', 'summary'] : ['blocks', 'faculty', 'courses', 'summary']),
+    [registrarViewOnly]
+  );
   const [viewMode, setViewMode] = React.useState('blocks'); // 'blocks' | 'faculty' | 'courses' | 'summary'
+  React.useEffect(() => {
+    if (registrarViewOnly && !allowedViews.includes(viewMode)) {
+      setViewMode('blocks');
+    }
+  }, [registrarViewOnly, allowedViews, viewMode]);
   const [selectedBlock, setSelectedBlock] = React.useState(null);
   const [selectedProgram, setSelectedProgram] = React.useState('');
   const [progBlocksLimit, setProgBlocksLimit] = React.useState(6);
@@ -3448,10 +3462,17 @@ const prefill = hit ? {
   }, []);
 
   const switchViewMode = React.useCallback((next) => {
+    if (registrarViewOnly && !allowedViews.includes(next)) return;
     try { clearTransientState(); } catch {}
     setAutoArrange(false);
     setViewMode(next);
-  }, [clearTransientState]);
+  }, [registrarViewOnly, allowedViews, clearTransientState]);
+  const viewOnlyGridTemplate = '3fr 1fr 1fr 1.2fr 1fr 1.5fr 1fr';
+  React.useEffect(() => {
+    if (registrarViewOnly && termViewMode !== 'regular') {
+      setTermViewMode('regular');
+    }
+  }, [registrarViewOnly, termViewMode]);
 
   // compute a stable identity for a row within a block
   const rowIdentity = React.useCallback((r) => {
@@ -4400,10 +4421,14 @@ const prefill = hit ? {
         <HStack>
           <Heading size="md">Course Loading</Heading>
           <HStack spacing={1} ml={3}>
-            <Button size="sm" variant={viewMode==='blocks'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('blocks')}>Blocks</Button>
-            <Button size="sm" variant={viewMode==='faculty'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('faculty')}>Faculty</Button>
-            <Button size="sm" variant={viewMode==='courses'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('courses')}>Courses</Button>
-            <Button size="sm" variant={viewMode==='summary'?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode('summary')}>Summary</Button>
+            {allowedViews.map((view) => {
+              const label = view === 'blocks' ? 'Blocks' : view === 'faculty' ? 'Faculty' : view === 'courses' ? 'Courses' : 'Summary';
+              return (
+                <Button key={view} size="sm" variant={viewMode===view?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode(view)}>
+                  {label}
+                </Button>
+              );
+            })}
           </HStack>
         </HStack>
         <HStack spacing={3}>
@@ -4436,6 +4461,7 @@ const prefill = hit ? {
                   onSelect={onSelectBlock}
                   loading={blocksLoading}
                   onProgramChange={(v)=>{ setSelectedProgram(v || ''); setSelectedBlock(null); setRows([]); setFreshCache([]); }}
+                  hideFilters={registrarViewOnly}
                 />
               </Box>
             </VStack>
@@ -4581,7 +4607,7 @@ const prefill = hit ? {
             <CoursesView />
           )}
           {viewMode === 'summary' && (
-            <CourseSummaryView />
+            <CourseSummaryView viewOnly={registrarViewOnly} />
           )}
           {viewMode === 'blocks' && !selectedBlock && !!selectedProgram && (
             <VStack align="stretch" spacing={3}>
@@ -4596,7 +4622,7 @@ const prefill = hit ? {
                       <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintProgram} isDisabled={loading || !rows.length}>Print</Button>
                     </HStack>
                   </HStack>
-                  {!loading && (
+                  {!loading && !registrarViewOnly && (
                     <Box borderWidth="1px" borderColor={border} rounded="md" p={2} bg={panelBg}>
                       <HStack spacing={3} flexWrap="wrap" align="center">
                       {(() => {
@@ -4676,6 +4702,28 @@ const prefill = hit ? {
                               <Badge colorScheme={sec === 'Unassigned' ? 'gray' : 'purple'}>{sec}</Badge>
                               <Text fontSize="sm" color={subtle}>{byBlock.get(sec).length} course(s)</Text>
                             </HStack>
+                            {registrarViewOnly && (
+                              <Box
+                                display="grid"
+                                gridTemplateColumns={viewOnlyGridTemplate}
+                                columnGap={3}
+                                px={1}
+                                py={1}
+                                borderBottomWidth="1px"
+                                borderColor={dividerBorder}
+                                fontSize="sm"
+                                fontWeight="700"
+                                color={subtle}
+                              >
+                                <Text noOfLines={1}>Course</Text>
+                                <Text noOfLines={1}>Term</Text>
+                                <Text noOfLines={1}>Day</Text>
+                                <Text noOfLines={1}>Time</Text>
+                                <Text noOfLines={1}>Room</Text>
+                                <Text noOfLines={1}>Faculty</Text>
+                                <Text noOfLines={1} textAlign="right">Status</Text>
+                              </Box>
+                            )}
                             <VirtualBlockList
                               items={byBlock.get(sec)}
                               estimatedRowHeight={80}
@@ -4711,6 +4759,7 @@ const prefill = hit ? {
                                       onRequestResolve={()=>requestResolve(idx)}
                                       onRequestHistory={openHistoryForRow}
                                       isAdmin={role==='admin' || role==='manager'}
+                                      viewOnly={registrarViewOnly}
                                     />
                                   </Box>
                                 );
@@ -4784,81 +4833,93 @@ const prefill = hit ? {
                     </HStack>
                   </HStack>
                   {/* Quick swap tray kept compact within sticky */}
-                  <Box borderWidth="1px" borderColor={border} rounded="md" p={2} bg={panelBg}>
-                    <HStack spacing={2} align="center" flexWrap="wrap">
-                      <Badge colorScheme={swapA ? 'blue' : 'gray'}>A</Badge>
-                      <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapA ? swapA.label : 'Add a schedule to slot A'}</Text>
-                      {swapA && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('A')}>Clear</Button>}
-                      <Divider orientation="vertical" />
-                      <Badge colorScheme={swapB ? 'purple' : 'gray'}>B</Badge>
-                      <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapB ? swapB.label : 'Add a schedule to slot B'}</Text>
-                      {swapB && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('B')}>Clear</Button>}
-                      <Button size="sm" colorScheme="blue" onClick={swapNow} isDisabled={!canLoad || !swapA || !swapB || swapBusy} isLoading={swapBusy}>Swap Now</Button>
-                    </HStack>
-                  </Box>
+                  {!registrarViewOnly && (
+                    <Box borderWidth="1px" borderColor={border} rounded="md" p={2} bg={panelBg}>
+                      <HStack spacing={2} align="center" flexWrap="wrap">
+                        <Badge colorScheme={swapA ? 'blue' : 'gray'}>A</Badge>
+                        <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapA ? swapA.label : 'Add a schedule to slot A'}</Text>
+                        {swapA && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('A')}>Clear</Button>}
+                        <Divider orientation="vertical" />
+                        <Badge colorScheme={swapB ? 'purple' : 'gray'}>B</Badge>
+                        <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapB ? swapB.label : 'Add a schedule to slot B'}</Text>
+                        {swapB && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('B')}>Clear</Button>}
+                        <Button size="sm" colorScheme="blue" onClick={swapNow} isDisabled={!canLoad || !swapA || !swapB || swapBusy} isLoading={swapBusy}>Swap Now</Button>
+                      </HStack>
+                    </Box>
+                  )}
 
-                  <Box borderWidth="1px" borderColor={border} rounded="md" p={2} bg={panelBg}>
-                    <HStack spacing={3} flexWrap="wrap" align="center">
-                      {(() => {
-                        const total = rows.length;
-                        const selectedCount = rows.filter(r => r._selected).length;
-                        const allChecked = total > 0 && selectedCount === total;
-                        const indeterminate = selectedCount > 0 && selectedCount < total;
-                        return (
-                          <HStack>
-                            <Checkbox
-                              isChecked={allChecked}
-                              isIndeterminate={indeterminate}
-                              onChange={(e)=> setRows(prev => prev.map(r => ({ ...r, _selected: !!e.target.checked })))}
-                            >
-                              Select all
-                            </Checkbox>
-                            <Badge colorScheme={selectedCount ? 'blue' : 'gray'}>{selectedCount} selected</Badge>
-                            <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: true })))}>
-                              Select All
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: false })))}>
-                              Deselect All
-                            </Button>
+                  {!registrarViewOnly && (
+                    <Box borderWidth="1px" borderColor={border} rounded="md" p={2} bg={panelBg}>
+                      <HStack spacing={3} flexWrap="wrap" align="center">
+                        {(() => {
+                          const total = rows.length;
+                          const selectedCount = rows.filter(r => r._selected).length;
+                          const allChecked = total > 0 && selectedCount === total;
+                          const indeterminate = selectedCount > 0 && selectedCount < total;
+                          return (
+                            <HStack>
+                              <Checkbox
+                                isChecked={allChecked}
+                                isIndeterminate={indeterminate}
+                                onChange={(e)=> setRows(prev => prev.map(r => ({ ...r, _selected: !!e.target.checked })))}
+                              >
+                                Select all
+                              </Checkbox>
+                              <Badge colorScheme={selectedCount ? 'blue' : 'gray'}>{selectedCount} selected</Badge>
+                              <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: true })))}>
+                                Select All
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={()=>setRows(prev => prev.map(r => ({ ...r, _selected: false })))}>
+                                Deselect All
+                              </Button>
+                            </HStack>
+                          );
+                        })()}
+                        <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
+                        <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
+                        <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
+                          Lock Selected
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
+                          Unlock Selected
+                        </Button>
+                        <Button size="sm" variant="outline" leftIcon={<FiShuffle />} onClick={shuffleBlockRows}>Shuffle Order</Button>
+                        <Tooltip label="Evenly distribute terms" hasArrow>
+                          <HStack pl={2} spacing={2}>
+                            <Switch size="sm" isChecked={autoArrange} onChange={(e)=>setAutoArrange(e.target.checked)} />
+                            <Text fontSize="sm">Auto Arrange Term</Text>
                           </HStack>
-                        );
-                      })()}
-                      <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
-                      <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
-                      <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
-                        Lock Selected
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(false)} isDisabled={!isAdmin || rows.every(r => !r._selected || !r._existingId || !r._locked)}>
-                        Unlock Selected
-                      </Button>
-                      <Button size="sm" variant="outline" leftIcon={<FiShuffle />} onClick={shuffleBlockRows}>Shuffle Order</Button>
-                      <Tooltip label="Evenly distribute terms" hasArrow>
-                        <HStack pl={2} spacing={2}>
-                          <Switch size="sm" isChecked={autoArrange} onChange={(e)=>setAutoArrange(e.target.checked)} />
-                          <Text fontSize="sm">Auto Arrange Term</Text>
-                        </HStack>
-                      </Tooltip>
-                      <Menu>
-                        <MenuButton as={Button} size="sm" variant="outline" leftIcon={<FiClock />} rightIcon={<FiChevronDown />} isDisabled={autoAssignTimeDisabled}>
-                          Auto Assign Time
-                        </MenuButton>
-                        <MenuList>
-                          {allowedAutoAssignSessions.map((ses) => (
-                            <MenuItem key={ses} onClick={()=>autoAssignTimeForSession(ses)} isDisabled={autoAssignTimeDisabled}>
-                              {sessionMenuLabels[ses] || sessionLabels[ses] || ses}
-                            </MenuItem>
-                          ))}
-                          <MenuItem onClick={clearAutoAssignedTimes}>Clear Auto Times (unsaved rows)</MenuItem>
-                        </MenuList>
-                      </Menu>
+                        </Tooltip>
+                        <Menu>
+                          <MenuButton as={Button} size="sm" variant="outline" leftIcon={<FiClock />} rightIcon={<FiChevronDown />} isDisabled={autoAssignTimeDisabled}>
+                            Auto Assign Time
+                          </MenuButton>
+                          <MenuList>
+                            {allowedAutoAssignSessions.map((ses) => (
+                              <MenuItem key={ses} onClick={()=>autoAssignTimeForSession(ses)} isDisabled={autoAssignTimeDisabled}>
+                                {sessionMenuLabels[ses] || sessionLabels[ses] || ses}
+                              </MenuItem>
+                            ))}
+                            <MenuItem onClick={clearAutoAssignedTimes}>Clear Auto Times (unsaved rows)</MenuItem>
+                          </MenuList>
+                        </Menu>
                       <Tooltip label="Toggle tiled term cards" hasArrow>
                         <HStack pl={2} spacing={2}>
-                          <Switch size="sm" isChecked={termViewMode === 'tiles'} onChange={(e)=>setTermViewMode(e.target.checked ? 'tiles' : 'regular')} />
+                          <Switch
+                            size="sm"
+                            isChecked={termViewMode === 'tiles'}
+                            isDisabled={registrarViewOnly}
+                            onChange={(e)=> {
+                              if (registrarViewOnly) return;
+                              setTermViewMode(e.target.checked ? 'tiles' : 'regular');
+                            }}
+                          />
                           <Text fontSize="sm">Tiles View</Text>
                         </HStack>
                       </Tooltip>
                     </HStack>
                   </Box>
+                  )}
                 </VStack>
               </Box>
 
@@ -4872,6 +4933,28 @@ const prefill = hit ? {
                     </HStack>
                     <Text fontSize="sm" color={subtle}>{group.items.length} course(s)</Text>
                   </HStack>
+                  {registrarViewOnly && (
+                    <Box
+                      display="grid"
+                      gridTemplateColumns={viewOnlyGridTemplate}
+                      columnGap={3}
+                      px={1}
+                      py={1}
+                      borderBottomWidth="1px"
+                      borderColor={dividerBorder}
+                      fontSize="sm"
+                      fontWeight="700"
+                      color={subtle}
+                    >
+                      <Text noOfLines={1}>Course</Text>
+                      <Text noOfLines={1}>Term</Text>
+                      <Text noOfLines={1}>Day</Text>
+                      <Text noOfLines={1}>Time</Text>
+                      <Text noOfLines={1}>Room</Text>
+                      <Text noOfLines={1}>Faculty</Text>
+                      <Text noOfLines={1} textAlign="right">Status</Text>
+                    </Box>
+                  )}
                   {termViewMode === 'regular' ? (
                     <VStack align="stretch" spacing={0} divider={<Divider borderColor={dividerBorder} />}>
                       {group.items.map((r) => {
@@ -4902,6 +4985,7 @@ const prefill = hit ? {
                               onRequestResolve={()=>requestResolve(idx)}
                               onRequestHistory={openHistoryForRow}
                               isAdmin={role==='admin' || role==='manager'}
+                              viewOnly={registrarViewOnly}
                             />
                           </Box>
                         );
@@ -4985,6 +5069,7 @@ const prefill = hit ? {
                                           onRequestHistory={openHistoryForRow}
                                           isAdmin={role==='admin' || role==='manager'}
                                           variant="tile"
+                                          viewOnly={registrarViewOnly}
                                         />
                                       </Box>
                                     );
@@ -5290,21 +5375,23 @@ const prefill = hit ? {
         </Box>
       </SimpleGrid>
 
-      <CourseLoadingSupport
-        viewMode={viewMode}
-        role={role}
-        selectedBlock={selectedBlock}
-        selectedFaculty={selectedFaculty}
-        rows={rows}
-        facultySchedules={facultySchedules}
-        blocksAll={blocksAll}
-        facultyAll={facultyAll}
-        prospectus={prospectus}
-        existing={existing}
-        settingsLoad={settingsLoad}
-        facultyUnitStats={facultyUnitStats}
-        accessToken={accessToken}
-      />
+      {!registrarViewOnly && (
+        <CourseLoadingSupport
+          viewMode={viewMode}
+          role={role}
+          selectedBlock={selectedBlock}
+          selectedFaculty={selectedFaculty}
+          rows={rows}
+          facultySchedules={facultySchedules}
+          blocksAll={blocksAll}
+          facultyAll={facultyAll}
+          prospectus={prospectus}
+          existing={existing}
+          settingsLoad={settingsLoad}
+          facultyUnitStats={facultyUnitStats}
+          accessToken={accessToken}
+        />
+      )}
 
       {/* Assign Faculty Modal for Blocks view */}
       <ScheduleHistoryModal scheduleId={histScheduleId} isOpen={histOpen} onClose={()=>{ setHistOpen(false); setHistScheduleId(null); }} />

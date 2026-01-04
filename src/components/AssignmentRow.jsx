@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Box,
+  VStack,
   HStack,
   Text,
   Select,
@@ -11,6 +12,7 @@ import {
   Spinner,
   useColorModeValue,
   Button,
+  SimpleGrid,
 } from '@chakra-ui/react';
 import { FiRefreshCw, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus } from 'react-icons/fi';
 import FacultySelect from './FacultySelect'; // kept for legacy compiled references
@@ -45,6 +47,7 @@ function AssignmentRow({
   isAdmin,
   blockSession,
   variant = 'default',
+  viewOnly = false,
 }) {
   const rowBorder = useColorModeValue('gray.100', 'gray.700');
   const mutedText = useColorModeValue('gray.600', 'gray.300');
@@ -270,6 +273,77 @@ function AssignmentRow({
   }, [allowedSessionKeys, baseSessionKey]);
 
   const showAssigned = !!(row._faculty || row.faculty || row.instructor || row._facultyId);
+
+  const statusBadges = React.useMemo(() => {
+    const list = [];
+    if (isLocked) list.push({ label: 'Locked', color: 'red' });
+    if (row?._status === 'Conflict' || row?._conflict) list.push({ label: 'Conflict', color: 'red' });
+    if (row?._status === 'Assigned' || row?._existingId) list.push({ label: 'Assigned', color: 'green' });
+    if (isDirty) list.push({ label: 'Unsaved', color: 'yellow' });
+    return list;
+  }, [isLocked, row?._status, row?._conflict, row?._existingId, isDirty]);
+
+  if (viewOnly) {
+    const displayTerm = currTerm || '-';
+    const displayDay = currDay || 'MON-FRI';
+    const displayTime = currTime || '-';
+    const displayFaculty = currFacName || 'Unassigned';
+    const displayBlock = blockCode || row?.blockCode || row?.section || '-';
+    const displayRoom = row?.room || '-';
+    const gridTemplate = '3fr 1fr 1fr 1.2fr 1fr 1.5fr 1fr';
+    return (
+      <Box
+        py={isTile ? 3 : 2}
+        px={isTile ? 3 : 2}
+        borderBottomWidth={isTile ? '0px' : '1px'}
+        borderWidth={isTile ? '1px' : undefined}
+        borderColor={isTile ? tileBorder : rowBorder}
+        bg={isTile ? tileBg : undefined}
+        rounded={isTile ? 'lg' : undefined}
+        boxShadow={isTile ? 'sm' : undefined}
+        w="full"
+      >
+        <Box
+          display="grid"
+          gridTemplateColumns={gridTemplate}
+          alignItems="center"
+          columnGap={3}
+          rowGap={1}
+          w="full"
+        >
+          <Box minW={0}>
+            <VStack align="start" spacing={1} minW={0}>
+              <HStack spacing={2} flexWrap="wrap" minW={0}>
+                <Text fontWeight="700" noOfLines={1}>
+                  {row.course_name || row.courseName}
+                </Text>
+                <Badge colorScheme="teal">{row.unit ?? 0} unit(s)</Badge>
+              </HStack>
+              <Text fontSize="sm" color={mutedText} noOfLines={1}>
+                {row.course_title || row.courseTitle}
+              </Text>
+            </VStack>
+          </Box>
+          <Text fontWeight="600" noOfLines={1}>{displayTerm}</Text>
+          <Text fontWeight="600" noOfLines={1}>{displayDay}</Text>
+          <Text fontWeight="600" noOfLines={1}>{displayTime}</Text>
+          <Text fontWeight="600" noOfLines={1}>{displayRoom}</Text>
+          <Box minW={0}>
+            <Text fontWeight="600" whiteSpace="normal" wordBreak="break-word">
+              {displayFaculty}
+            </Text>
+          </Box>
+          <HStack spacing={1} justify="flex-end" flexWrap="wrap">
+            {statusBadges.map(st => (
+              <Badge key={st.label} colorScheme={st.color} variant="solid">
+                {st.label}
+              </Badge>
+            ))}
+          </HStack>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <HStack

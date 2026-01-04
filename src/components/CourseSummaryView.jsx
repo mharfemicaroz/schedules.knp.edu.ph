@@ -240,7 +240,7 @@ function ProgramStatCard({ programcode, assigned, total }) {
   );
 }
 
-export default function CourseSummaryView() {
+export default function CourseSummaryView({ viewOnly = false }) {
   const settings = useSelector(selectSettings);
   const blocks = useSelector(selectBlocks);
   const faculties = useSelector((s) => s.data?.faculties || []);
@@ -431,33 +431,47 @@ export default function CourseSummaryView() {
       <Box borderWidth="1px" borderColor={border} bg={surface} rounded="xl" p={4} boxShadow="sm">
         <HStack justify="space-between" align="center" flexWrap="wrap" spacing={3}>
           <Heading size="md">Summary View</Heading>
-          <HStack spacing={2}>
-            <Button
-              size="sm"
-              leftIcon={<FiRefreshCw />}
-              onClick={() => {
-                const params = { sy: schoolYear, sem: semester, prog: program, threshold: facultyThreshold };
-                lastFacultyParamsRef.current = JSON.stringify(params);
-                fetchStats(params);
-              }}
-              isLoading={loadingStats}
-            >
-              Refresh data
-            </Button>
+          {!viewOnly && (
+            <HStack spacing={2}>
+              <Button
+                size="sm"
+                leftIcon={<FiRefreshCw />}
+                onClick={() => {
+                  const params = { sy: schoolYear, sem: semester, prog: program, threshold: facultyThreshold };
+                  lastFacultyParamsRef.current = JSON.stringify(params);
+                  fetchStats(params);
+                }}
+                isLoading={loadingStats}
+              >
+                Refresh data
+              </Button>
+              <Badge colorScheme={loadingStats ? 'orange' : 'green'}>{loadingStats ? 'Syncing' : 'Server'}</Badge>
+            </HStack>
+          )}
+          {viewOnly && (
             <Badge colorScheme={loadingStats ? 'orange' : 'green'}>{loadingStats ? 'Syncing' : 'Server'}</Badge>
+          )}
+        </HStack>
+        {!viewOnly ? (
+          <HStack spacing={3} mt={3} flexWrap="wrap">
+            <Select size="sm" placeholder="School Year" value={schoolYear} onChange={(e) => setSchoolYear(e.target.value)} maxW="180px">
+              {schoolYearOptions.map((y) => <option key={y || 'all-sy'} value={y}>{y || 'All Years'}</option>)}
+            </Select>
+            <Select size="sm" placeholder="Semester" value={semester} onChange={(e) => setSemester(e.target.value)} maxW="180px">
+              {semesterOptions.map((s) => <option key={s || 'all-sem'} value={s}>{s || 'All Semesters'}</option>)}
+            </Select>
+            <Select size="sm" placeholder="Program" value={program} onChange={(e) => setProgram(e.target.value)} maxW="200px">
+              {programOptions.map((p) => <option key={p || 'all-prog'} value={p}>{p || 'All Programs'}</option>)}
+            </Select>
           </HStack>
-        </HStack>
-        <HStack spacing={3} mt={3} flexWrap="wrap">
-          <Select size="sm" placeholder="School Year" value={schoolYear} onChange={(e) => setSchoolYear(e.target.value)} maxW="180px">
-            {schoolYearOptions.map((y) => <option key={y || 'all-sy'} value={y}>{y || 'All Years'}</option>)}
-          </Select>
-          <Select size="sm" placeholder="Semester" value={semester} onChange={(e) => setSemester(e.target.value)} maxW="180px">
-            {semesterOptions.map((s) => <option key={s || 'all-sem'} value={s}>{s || 'All Semesters'}</option>)}
-          </Select>
-          <Select size="sm" placeholder="Program" value={program} onChange={(e) => setProgram(e.target.value)} maxW="200px">
-            {programOptions.map((p) => <option key={p || 'all-prog'} value={p}>{p || 'All Programs'}</option>)}
-          </Select>
-        </HStack>
+        ) : (
+          <HStack spacing={2} mt={3} flexWrap="wrap">
+            <Tag colorScheme="blue" variant="subtle">SY: {schoolYear || 'All'}</Tag>
+            <Tag colorScheme="purple" variant="subtle">Sem: {semester || 'All'}</Tag>
+            <Tag colorScheme="teal" variant="subtle">Program: {program || 'All'}</Tag>
+            <Tag colorScheme="orange" variant="subtle">Threshold: {facultyThreshold}+ units</Tag>
+          </HStack>
+        )}
       </Box>
 
       <SimpleGrid columns={{ base: 1, md: 4 }} gap={4}>
@@ -519,24 +533,30 @@ export default function CourseSummaryView() {
               {facultyLoadStats.heavyTotal}/{facultyLoadStats.totalFaculty || 0} hitting {facultyLoadStats.heavyThreshold}+
             </Tag>
           </HStack>
-          <HStack spacing={2} align="center">
-            <Text fontSize="xs" color="gray.600">Units threshold</Text>
-            <NumberInput
-              size="sm"
-              maxW="110px"
-              min={1}
-              max={60}
-              value={facultyThreshold}
-              onChange={handleThresholdChange}
-              allowMouseWheel
-            >
-              <NumberInputField />
-              <NumberInputStepper>
-                <NumberIncrementStepper />
-                <NumberDecrementStepper />
-              </NumberInputStepper>
-            </NumberInput>
-          </HStack>
+          {!viewOnly ? (
+            <HStack spacing={2} align="center">
+              <Text fontSize="xs" color="gray.600">Units threshold</Text>
+              <NumberInput
+                size="sm"
+                maxW="110px"
+                min={1}
+                max={60}
+                value={facultyThreshold}
+                onChange={handleThresholdChange}
+                allowMouseWheel
+              >
+                <NumberInputField />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
+            </HStack>
+          ) : (
+            <Tag colorScheme="orange" variant="subtle" size="sm">
+              Threshold: {facultyThreshold}+ units
+            </Tag>
+          )}
         </HStack>
         <Text fontSize="sm" color="gray.600" mb={3}>
           Counts faculty whose combined scheduled units reach at least {facultyLoadStats.heavyThreshold}. Sourced from server stats for the selected school year/semester.
