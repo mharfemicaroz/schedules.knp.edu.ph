@@ -3105,6 +3105,10 @@ const prefill = hit ? {
       if (!Array.isArray(list) || list.length === 0) return { conflict: false, details: [] };
       const candRange = getTimeRange(timeStr) || {};
       const termN = normalizeTermForCompare(term).toLowerCase();
+      const candDays = (() => {
+        const parsed = parseF2FDays(day);
+        return parsed.length ? parsed : ['ANY'];
+      })();
       const details = [];
       let conflict = false;
       for (const s of list) {
@@ -3112,6 +3116,12 @@ const prefill = hit ? {
         if (excludeId != null && String(sid) === String(excludeId)) continue;
         const sTerm = normalizeTermForCompare(s.term || s.sem || s.semester).toLowerCase();
         if (sTerm !== termN) continue;
+        const schedDays = (() => {
+          const parsed = parseF2FDays(s.day || s.f2fSched || s.f2fsched);
+          return parsed.length ? parsed : ['ANY'];
+        })();
+        const hasDayOverlap = candDays.includes('ANY') || schedDays.includes('ANY') || candDays.some(d => schedDays.includes(d));
+        if (!hasDayOverlap) continue;
         const sRange = getTimeRange(String(s.schedule || s.time || s.scheduleKey || ''));
         if (!sRange) continue;
         if (timeRangesOverlap(candRange, sRange)) {
