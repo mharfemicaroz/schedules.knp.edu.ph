@@ -1228,6 +1228,7 @@ export default function CourseLoading() {
     ].join('');
     const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
     const preparedRole = (() => {
+      if (registrarViewOnly) return 'College Registrar';
       try {
         const list = Array.isArray(userDeptRows) ? userDeptRows : [];
         const primary = list.find(r => r && r.isPrimary && String(r.position || '').trim());
