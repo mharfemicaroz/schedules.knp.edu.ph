@@ -181,6 +181,55 @@ function resolveSemesterLabel(term, fallback) {
   if (secondary) return secondary;
   return term || fallback || '';
 }
+// Keep faculty schedules sorted by block (then time/code) for consistent listing and print order
+function sortFacultyScheduleItems(list = []) {
+  const collatorOpts = { numeric: true, sensitivity: 'base' };
+  const cmpText = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, collatorOpts);
+  const termRank = (t) => {
+    const v = String(t || '').trim().toLowerCase();
+    if (v.startsWith('1')) return 1;
+    if (v.startsWith('2')) return 2;
+    if (v.startsWith('s')) return 3;
+    return 9;
+  };
+  const blockMeta = (row) => {
+    const raw = String(row.blockCode || row.section || '').trim();
+    const meta = parseBlockMeta(raw);
+    const yr = parseInt(meta.yearlevel, 10);
+    return {
+      program: meta.programcode || '',
+      year: Number.isFinite(yr) ? yr : Number.POSITIVE_INFINITY,
+      section: meta.section || '',
+      raw,
+    };
+  };
+  const startMinutes = (row) => {
+    const parsed = parseTimeBlockToMinutes(String(row.scheduleKey || row.schedule || row.time || '').trim());
+    const val = Number.isFinite(row.timeStartMinutes) ? row.timeStartMinutes : parsed.start;
+    return Number.isFinite(val) ? val : 99999;
+  };
+  return (Array.isArray(list) ? list : []).slice().sort((a, b) => {
+    const ta = termRank(a.term);
+    const tb = termRank(b.term);
+    if (ta !== tb) return ta - tb;
+
+    const ba = blockMeta(a);
+    const bb = blockMeta(b);
+    const blockCmp = cmpText(ba.raw || '\uffff', bb.raw || '\uffff');
+    if (blockCmp !== 0) return blockCmp;
+
+    const progCmp = cmpText(ba.program, bb.program);
+    if (progCmp !== 0) return progCmp;
+    if (ba.year !== bb.year) return ba.year - bb.year;
+    const secCmp = cmpText(ba.section, bb.section);
+    if (secCmp !== 0) return secCmp;
+
+    const startCmp = startMinutes(a) - startMinutes(b);
+    if (startCmp !== 0) return startCmp;
+
+    return cmpText(a.courseName || a.code, b.courseName || b.code);
+  });
+}
 
 // Identify courses that should be Semestral by rule (NSTP/PE/Defense Tactics)
 function isSemestralCourseLike(row) {
@@ -958,7 +1007,7 @@ export default function CourseLoading() {
       }));
       setFacultySchedules((prev) => ({
         ...prev,
-        items: [...(prev?.items || []), ...newRows],
+        items: sortFacultyScheduleItems([...(prev?.items || []), ...newRows]),
         loading: false,
       }));
     } finally {
@@ -1294,15 +1343,7 @@ export default function CourseLoading() {
     const title = `Faculty: ${f.name || f.faculty || ''}`;
     const headers = ['#','Code','Title','Units','Term','Time','Day','Room','Section'];
     const list = Array.isArray(facultySchedules?.items) ? facultySchedules.items : [];
-    const sorted = list.slice().sort((a,b) => {
-      const ta = termOrder(a.term);
-      const tb = termOrder(b.term);
-      if (ta !== tb) return ta - tb;
-      const sa = timeStart(a.schedule || a.time || a.scheduleKey);
-      const sb = timeStart(b.schedule || b.time || b.scheduleKey);
-      if (sa !== sb) return sa - sb;
-      return String(a.courseName || a.code || '').localeCompare(String(b.courseName || b.code || ''));
-    });
+    const sorted = sortFacultyScheduleItems(list);
     const bodyRows = sorted.map((r,i) => [
       String(i+1),
       String(r.code || r.courseName || ''),
@@ -2099,20 +2140,6 @@ const prefill = hit ? {
       const sy = settingsLoad.school_year || '';
       const sem = settingsLoad.semester || '';
 
-      const termOrder = (t) => {
-        const v = String(t || '').trim().toLowerCase();
-        if (v.startsWith('1')) return 1;
-        if (v.startsWith('2')) return 2;
-        if (v.startsWith('s')) return 3;
-        return 9;
-      };
-      const parseKey = (r) => {
-        const t = termOrder(r.term);
-        const m = parseTimeBlockToMinutes(String(r.scheduleKey || r.schedule || r.time || '').trim());
-        const start = Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : (Number.isFinite(m.start) ? m.start : 99999);
-        return [t, start, String(r.courseName || r.code || '').toLowerCase()];
-      };
-
       let list = [];
       // Fresh API fetch by facultyId if available
       if (fac.id != null) {
@@ -2175,11 +2202,7 @@ const prefill = hit ? {
         });
       }
 
-      const sorted = (list || []).slice().sort((a, b) => {
-        const ka = parseKey(a), kb = parseKey(b);
-        for (let i = 0; i < ka.length; i++) { if (ka[i] !== kb[i]) return ka[i] - kb[i]; }
-        return 0;
-      });
+      const sorted = sortFacultyScheduleItems(list);
 
       setFacultySchedules({ items: sorted, loading: false });
       setFacSelected(new Set());
