@@ -181,7 +181,7 @@ function resolveSemesterLabel(term, fallback) {
   if (secondary) return secondary;
   return term || fallback || '';
 }
-// Keep faculty schedules sorted by block (then time/code) for consistent listing and print order
+// Keep faculty schedules sorted by term then time (block/code as tiebreakers) for consistent listing and print order
 function sortFacultyScheduleItems(list = []) {
   const collatorOpts = { numeric: true, sensitivity: 'base' };
   const cmpText = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, collatorOpts);
@@ -213,6 +213,9 @@ function sortFacultyScheduleItems(list = []) {
     const tb = termRank(b.term);
     if (ta !== tb) return ta - tb;
 
+    const startCmp = startMinutes(a) - startMinutes(b);
+    if (startCmp !== 0) return startCmp;
+
     const ba = blockMeta(a);
     const bb = blockMeta(b);
     const blockCmp = cmpText(ba.raw || '\uffff', bb.raw || '\uffff');
@@ -223,9 +226,6 @@ function sortFacultyScheduleItems(list = []) {
     if (ba.year !== bb.year) return ba.year - bb.year;
     const secCmp = cmpText(ba.section, bb.section);
     if (secCmp !== 0) return secCmp;
-
-    const startCmp = startMinutes(a) - startMinutes(b);
-    if (startCmp !== 0) return startCmp;
 
     return cmpText(a.courseName || a.code, b.courseName || b.code);
   });
