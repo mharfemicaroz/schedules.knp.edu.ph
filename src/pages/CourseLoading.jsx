@@ -2752,8 +2752,13 @@ const prefill = hit ? {
         const term = String(e.term || '').trim();
         const time = String(e.time || '').trim();
         if (!term || !time) continue;
-        const termLabel = term
-        const semLabel = semFallback;
+        const termLabel = canonicalTerm(term) || term || '';
+        const nextTerm = termLabel || term;
+        const baseTermNorm = normalizeTermForCompare(it.term || it.semester || it.sem || '');
+        const nextTermNorm = normalizeTermForCompare(nextTerm);
+        const termChanged = !!nextTerm && baseTermNorm !== nextTermNorm;
+        const existingSemLabel = resolveSemesterLabel(it.semester || it.sem || it.term || '');
+        const semLabel = resolveSemesterLabel(settingsLoad?.semester) || existingSemLabel || semFallback;
         const day = e.day || it.day || 'MON-FRI';
         const isDraft = String(it.id || '').startsWith('tmp:') || !!it._draft;
         if (isDraft) {
@@ -2780,7 +2785,7 @@ const prefill = hit ? {
               unit: it.unit,
               day: day,
               time: time,
-              term: termLabel || term,
+              term: nextTerm,
               schoolyear: settingsLoad?.school_year || '',
               sem: semLabel,
               semester: semLabel,
@@ -2799,13 +2804,15 @@ const prefill = hit ? {
           continue;
         }
         const changes = {};
-        if ((termLabel || term) && String(it.term || '').trim() !== String(termLabel || term).trim()) changes.term = termLabel || term;
+        if (termChanged) changes.term = nextTerm;
         const baseTime = String(it.schedule || it.time || '').trim();
         if (baseTime !== time) changes.time = time;
         if (String(it.day || '').trim() !== String(day || '').trim()) changes.day = day || '';
-        if (semLabel) { changes.semester = semLabel; changes.sem = semLabel; }
+        const semChanged = termChanged && semLabel && normalizeTermForCompare(existingSemLabel) !== normalizeTermForCompare(semLabel);
+        if (semChanged) { changes.semester = semLabel; changes.sem = semLabel; }
         if (Object.keys(changes).length === 0) continue;
         try {
+          const semesterForCheck = changes.semester ?? existingSemLabel ?? semLabel ?? settingsLoad?.semester;
           const payloadForCheck = {
             term: changes.term ?? it.term,
             time: changes.time ?? it.time ?? it.schedule,
@@ -2813,7 +2820,7 @@ const prefill = hit ? {
             faculty: it.faculty || it.instructor || '',
             facultyId: it.facultyId || it.faculty_id || e.facultyId || null,
             schoolyear: settingsLoad?.school_year || undefined,
-            semester: semLabel || settingsLoad?.semester || undefined,
+            semester: semesterForCheck || undefined,
             blockCode: it.blockCode || it.section || '',
             courseName: it.courseName || it.code || '',
             courseTitle: it.courseTitle || it.title || '',
