@@ -29,6 +29,7 @@ import { parseTimeBlockToMinutes, parseF2FDays } from '../utils/conflicts';
 import { buildIndexes, buildFacultyStats, buildFacultyScoreMap, normalizeSem } from '../utils/facultyScoring';
 import { allowedSessionsForCourse, isPEorNSTP } from '../utils/courseRules';
 import { buildTable, printContent } from '../utils/printDesign';
+import { encodeShareFacultyName } from '../utils/share';
 import ScheduleHistoryModal from '../components/ScheduleHistoryModal';
 import AssignmentRow from '../components/AssignmentRow';
 import CoursesView from '../components/CoursesView';
@@ -1405,19 +1406,52 @@ export default function CourseLoading() {
     }
     const termSummaryHtmlF = `<table class=\"prt-table\"><tbody>${summaryRowsHtmlF.join('')}</tbody></table>`;
 
+    const releaseUnits = Number(f.loadReleaseUnits ?? f.load_release_units ?? 0) || 0;
+    const baselineUnits = Math.max(0, 24 - releaseUnits);
+    const overloadUnits = Math.max(0, totalUnits - baselineUnits);
+    const scheduleType = 'Regular Schedule';
+    const headingHtml = `
+      <p class='prt-fac-name'>${esc(f.name || f.faculty || '')}</p>
+      ${f.department || f.dept ? `<p class='prt-fac-sub'>${esc(f.department || f.dept || '')}</p>` : ''}`;
     const metaHtml = `<table class="prt-table"><tbody>
-      <tr><th>Faculty</th><td colspan="3"><span style="font-size:15px;font-weight:700;">${esc(f.name || f.faculty || '')}</span></td></tr>
       <tr><th>Department</th><td>${esc(f.department || f.dept || '')}</td><th>Employment</th><td>${esc(f.employment || '')}</td></tr>
       <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
-      <tr><th>Load Release Units</th><td>${esc(String(f.loadReleaseUnits ?? f.load_release_units ?? 0))}</td><th>Schedules</th><td>${esc(String(list.length))}</td></tr>
-      <tr><th>Total Units</th><td>${esc(String(totalUnits))}</td><th></th><td></td></tr>
+      <tr><th>Load Release Units</th><td>${esc(String(releaseUnits))}</td><th>Total Load Units</th><td>${esc(String(totalUnits))}</td></tr>
+      <tr><th>Overload Units</th><td>${esc(String(overloadUnits))}</td><th>Courses</th><td>${esc(String(list.length))}</td></tr>
+      <tr><th>Schedule Type</th><td colspan="3">${esc(scheduleType)}</td></tr>
     </tbody></table>`;
     const tentativeNoteHtml = `
       <div class="prt-banner">
         <div class="prt-banner-title">Tentative Load</div>
         <p class="prt-banner-text">This is a tentative teaching load and not final. Assignments may change after validations and approvals.</p>
       </div>`;
-    const bodyHtml = [metaHtml, tentativeNoteHtml, buildTable(headers, bodyRows), termSummaryHtmlF].join('');
+    const introHtml = (() => {
+      try {
+        const token = encodeShareFacultyName(f.name || f.faculty || '');
+        const origin = (typeof window !== 'undefined' && window.location)
+          ? `${window.location.origin}${window.location.pathname}`
+          : '';
+        const shareUrl = `${origin}#/share/faculty/${encodeURIComponent(token)}`;
+        const qrData = encodeURIComponent(shareUrl);
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${qrData}`;
+        return `
+          <div class='prt-two'>
+            <div class='prt-col-left'>
+              ${headingHtml}
+              ${metaHtml}
+            </div>
+            <div class='prt-col-right'>
+              <div class='prt-qr-card'>
+                <img class='prt-qr-img' src='${qrUrl}' alt='QR: ${esc(shareUrl)}' />
+                <div class='prt-qr-cap'>Scan me to verify or see updates</div>
+              </div>
+            </div>
+          </div>`;
+      } catch {
+        return `${headingHtml}${metaHtml}`;
+      }
+    })();
+    const bodyHtml = [introHtml, tentativeNoteHtml, buildTable(headers, bodyRows), termSummaryHtmlF].join('');
     // FacultyDetail-style layout triggers conforme signature block (based on title prefix)
     const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
     const preparedRole = (() => {
