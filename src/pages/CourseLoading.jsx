@@ -3140,6 +3140,18 @@ const prefill = hit ? {
       const txt = [courseName, courseTitle].filter(Boolean).map(String).join(' ').toUpperCase();
       return /\b(PE|NSTP|DEF\s*TACT)\b/.test(txt);
     };
+    // If context is incomplete (missing term/time/day) or explicitly TBA, avoid client-side guessing; trust server result.
+    const candRange = getTimeRange(timeStr || '') || {};
+    const hasTime =
+      (Number.isFinite(candRange.start) && Number.isFinite(candRange.end)) ||
+      Boolean(String(candRange.key || '').trim());
+    const candDaysParsed = parseF2FDays(day);
+    const hasDay = candDaysParsed.length > 0 && !candDaysParsed.includes('ANY');
+    const termN = normalizeTermForCompare(term).toLowerCase();
+    const termKnown = !!termN;
+    if (!hasTime || !hasDay || !termKnown) {
+      return { conflict: false, details: [] };
+    }
     if (isPELike() && (isTBA(timeStr) || isTBA(term) || isTBA(day))) {
       return { conflict: false, details: [] };
     }
@@ -3148,12 +3160,7 @@ const prefill = hit ? {
       const sem = settingsLoad.semester || '';
       const list = await fetchInstructorSchedulesTry([facultyName], { sy, sem });
       if (!Array.isArray(list) || list.length === 0) return { conflict: false, details: [] };
-      const candRange = getTimeRange(timeStr) || {};
-      const termN = normalizeTermForCompare(term).toLowerCase();
-      const candDays = (() => {
-        const parsed = parseF2FDays(day);
-        return parsed.length ? parsed : ['ANY'];
-      })();
+      const candDays = candDaysParsed;
       const details = [];
       let conflict = false;
       for (const s of list) {
