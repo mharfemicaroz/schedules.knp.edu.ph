@@ -152,6 +152,44 @@ function parseBlockMeta(blockCode) {
 }
 function normalizeProgramCode(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 function extractYearDigits(val) { const m = String(val ?? '').match(/(\d+)/); return m ? m[1] : ''; }
+function programBase(s) {
+  const txt = String(s || '').trim().toUpperCase();
+  if (!txt) return '';
+  const m = txt.match(/^([A-Z0-9]+)/);
+  return m ? m[1] : '';
+}
+function rankAcademicPosition(pos) {
+  const p = String(pos || '').trim().toLowerCase();
+  if (p === 'dean') return 3;
+  if (p === 'program head' || p === 'programhead' || p === 'head') return 2;
+  if (p === 'program coordinator' || p === 'coordinator') return 1;
+  return 0;
+}
+function pickBestAssignment(arr = []) {
+  return arr
+    .slice()
+    .sort((a, b) => {
+      const rdiff = rankAcademicPosition(b?.position) - rankAcademicPosition(a?.position);
+      if (rdiff !== 0) return rdiff;
+      if (!!b?.isPrimary !== !!a?.isPrimary) return (b?.isPrimary ? 1 : 0) - (a?.isPrimary ? 1 : 0);
+      return 0;
+    })[0] || null;
+}
+function extractUserName(row = {}) {
+  const cand = [
+    `${row?.first_name || ''} ${row?.last_name || ''}`,
+    `${row?.firstName || ''} ${row?.lastName || ''}`,
+    row?.fullName,
+    row?.fullname,
+    row?.name,
+    row?.userName,
+    row?.username,
+    row?.user,
+  ]
+    .map((s) => String(s || '').trim())
+    .find(Boolean);
+  return cand || '';
+}
 // function normalizeSem(s) { const v = String(s || '').trim().toLowerCase(); if (!v) return ''; if (v.startsWith('1')) return '1st'; if (v.startsWith('2')) return '2nd'; if (v.startsWith('s')) return 'Sem'; return s; }
 function canonicalTerm(s) {
   const norm = normalizeSem(s);
@@ -911,6 +949,7 @@ export default function CourseLoading() {
   const registrarViewOnly = isRegistrar && !isAdmin;
   const [allowedDepts, setAllowedDepts] = React.useState(null);
   const [userDeptRows, setUserDeptRows] = React.useState(null);
+  const deptHeadCacheRef = React.useRef(new Map());
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -933,6 +972,71 @@ export default function CourseLoading() {
     const code = normalizeProgramCode(it?.programcode || it?.program || '');
     return code && allowedDeptSet.has(code);
   }, [registrarViewOnly, isAdmin, allowedDepts, allowedDeptSet]);
+  const getDeptHeadForDept = React.useCallback(async (rawDept) => {
+    const norm = normalizeProgramCode(rawDept);
+    const normBase = programBase(rawDept);
+    if (!norm) return null;
+    if (deptHeadCacheRef.current.has(norm)) return deptHeadCacheRef.current.get(norm);
+    if (normBase && deptHeadCacheRef.current.has(normBase)) return deptHeadCacheRef.current.get(normBase);
+    const queries = [];
+    if (rawDept) queries.push(rawDept);
+    if (norm && norm !== rawDept) queries.push(norm);
+    if (normBase && normBase !== norm) queries.push(normBase);
+    let rows = Array.isArray(userDeptRows) ? userDeptRows.slice() : [];
+    for (const q of queries) {
+      try {
+        const res = await api.listUserDepartments({ department: q });
+        const arr = Array.isArray(res?.rows) ? res.rows : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+        if (arr.length > 0) { rows = rows.concat(arr); break; }
+      } catch {
+        // ignore and try next query
+      }
+    }
+    if (!rows || rows.length === 0) {
+      try {
+        const resAll = await api.listUserDepartments({});
+        const arrAll = Array.isArray(resAll?.rows) ? resAll.rows : (Array.isArray(resAll?.data) ? resAll.data : (Array.isArray(resAll) ? resAll : []));
+        if (arrAll.length > 0) rows = rows.concat(arrAll);
+      } catch {
+        // ignore full fetch failure
+      }
+    }
+    const filtered = (rows || []).filter((r) => {
+      const codeRaw = r?.department || '';
+      const codeNorm = normalizeProgramCode(codeRaw);
+      const codeBase = programBase(codeRaw);
+      if (!codeNorm && !codeBase) return false;
+      if (codeNorm && codeNorm === norm) return true;
+      if (codeBase && norm && codeBase === norm) return true;
+      if (codeBase && normBase && codeBase === normBase) return true;
+      if (codeNorm && normBase && codeNorm === normBase) return true;
+      return false;
+    });
+    if (!filtered || filtered.length === 0) {
+      deptHeadCacheRef.current.set(norm, null);
+      if (normBase) deptHeadCacheRef.current.set(normBase, null);
+      return null;
+    }
+    const best = pickBestAssignment(filtered);
+    if (!best) {
+      deptHeadCacheRef.current.set(norm, null);
+      if (normBase) deptHeadCacheRef.current.set(normBase, null);
+      return null;
+    }
+    let name = extractUserName(best);
+    if (!name && best.userId != null) {
+      try {
+        const u = await api.getUser(best.userId);
+        name = [u?.first_name, u?.last_name].filter(Boolean).join(' ').trim() || u?.username || name;
+      } catch {
+        // ignore user lookup failure
+      }
+    }
+    const head = { name: name || '', position: best.position || '', department: best.department || rawDept || '', userId: best.userId };
+    deptHeadCacheRef.current.set(norm, head);
+    if (normBase) deptHeadCacheRef.current.set(normBase, head);
+    return head;
+  }, [userDeptRows]);
 
   const allowedViews = React.useMemo(
     () => (registrarViewOnly ? ['blocks', 'summary'] : ['blocks', 'faculty', 'courses', 'summary']),
@@ -1353,7 +1457,7 @@ export default function CourseLoading() {
     printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
   };
 
-  const onPrintFaculty = () => {
+  const onPrintFaculty = async () => {
     if (!selectedFaculty) return;
     const f = selectedFaculty;
     const title = `Faculty: ${f.name || f.faculty || ''}`;
@@ -1405,10 +1509,48 @@ export default function CourseLoading() {
       summaryRowsHtmlF.push(`<tr><th>${esc(l1)}</th><td>${esc(String(v1))}</td><th>${esc(l2)}</th><td>${v2 === '' ? '' : esc(String(v2))}</td></tr>`);
     }
     const termSummaryHtmlF = `<table class=\"prt-table\"><tbody>${summaryRowsHtmlF.join('')}</tbody></table>`;
-
+    // Overload breakdown by term (auto-split, prioritize 1st term if odd)
     const releaseUnits = Number(f.loadReleaseUnits ?? f.load_release_units ?? 0) || 0;
     const baselineUnits = Math.max(0, 24 - releaseUnits);
     const overloadUnits = Math.max(0, totalUnits - baselineUnits);
+    const isFullTime = /full\s*-?\s*time/i.test(String(f.employment || ''));
+    const isPartTime = !isFullTime && /part\s*-?\s*time/i.test(String(f.employment || ''));
+    const splitOverload = (total) => {
+      if (!Number.isFinite(total) || total <= 0) return { first: 0, second: 0 };
+      const candidates = [];
+      for (let a = 0; a <= total; a += 1) {
+        if (a % 3 !== 0) continue; // first term must be divisible by 3
+        const b = total - a;
+        const bothDiv3 = b % 3 === 0;
+        const gap = Math.abs(a - b);
+        candidates.push({ a, b, bothDiv3, gap });
+      }
+      if (!candidates.length) return { first: total, second: 0 };
+      candidates.sort((x, y) => {
+        if (x.bothDiv3 !== y.bothDiv3) return y.bothDiv3 - x.bothDiv3; // prefer both divisible by 3
+        if (x.gap !== y.gap) return x.gap - y.gap; // minimal gap
+        if (x.a !== y.a) return y.a - x.a; // favor larger 1st term
+        return 0;
+      });
+      return { first: candidates[0].a, second: candidates[0].b };
+    };
+    const baseUnitsForSplit = overloadUnits > 0 ? overloadUnits : (isPartTime ? totalUnits : 0);
+    const { first: overloadFirstUnits, second: overloadSecondUnits } = splitOverload(baseUnitsForSplit);
+    const fmtHours = (u) => {
+      const hrs = u / 3;
+      if (!Number.isFinite(hrs)) return '0';
+      const rounded = Math.round(hrs * 100) / 100;
+      return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+    };
+    const labelFirst = overloadUnits > 0 ? 'Overload 1st Term' : 'Load 1st Term';
+    const labelSecond = overloadUnits > 0 ? 'Overload 2nd Term' : 'Load 2nd Term';
+    const overloadHtml = baseUnitsForSplit > 0
+      ? `<table class="prt-table"><tbody>
+          <tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(fmtHours(overloadFirstUnits))} hrs)</td>
+          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(fmtHours(overloadSecondUnits))} hrs)</td></tr>
+        </tbody></table>`
+      : '';
+
     const scheduleType = 'Regular Schedule';
     const headingHtml = `
       <p class='prt-fac-name'>${esc(f.name || f.faculty || '')}</p>
@@ -1451,18 +1593,52 @@ export default function CourseLoading() {
         return `${headingHtml}${metaHtml}`;
       }
     })();
-    const bodyHtml = [introHtml, tentativeNoteHtml, buildTable(headers, bodyRows), termSummaryHtmlF].join('');
+    const bodyHtml = [introHtml, tentativeNoteHtml, buildTable(headers, bodyRows), termSummaryHtmlF, overloadHtml].join('');
     // FacultyDetail-style layout triggers conforme signature block (based on title prefix)
-    const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
-    const preparedRole = (() => {
-      try {
-        const list = Array.isArray(userDeptRows) ? userDeptRows : [];
-        const primary = list.find(r => r && r.isPrimary && String(r.position || '').trim());
-        const any = list.find(r => String(r?.position || '').trim());
-        return String(primary?.position || any?.position || 'Academic Head');
-      } catch { return 'Academic Head'; }
+    const rawDept = f.department || f.dept || f.programcode || f.program || '';
+    const deptNorm = normalizeProgramCode(rawDept);
+    const isSpecialDept = ['GENED', 'PARTTIME', 'PE'].includes(deptNorm);
+    const deptHead = await getDeptHeadForDept(rawDept);
+    const allAssignments = Array.isArray(userDeptRows) ? userDeptRows : [];
+    const bestForDept = (() => {
+      if (!deptNorm) return null;
+      const matches = allAssignments.filter((r) => {
+        const code = normalizeProgramCode(r?.department || '');
+        if (!code) return false;
+        return code === deptNorm || deptNorm.startsWith(code) || code.startsWith(deptNorm);
+      });
+      return matches.length > 0 ? pickBestAssignment(matches) : null;
     })();
-    printContent({ title, subtitle: '', bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
+    const bestOverall = pickBestAssignment(allAssignments) || null;
+    const basePreparedBy = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim()
+      || authUser?.username
+      || authUser?.email
+      || '';
+    let preparedBy = basePreparedBy;
+    let preparedRole = registrarViewOnly
+      ? 'College Registrar'
+      : (deptHead?.position || bestOverall?.position || 'Academic Head');
+    let hideVerified = false;
+    if (isSpecialDept) {
+      preparedBy = 'Dr. Mharfe M. Micaroz';
+      preparedRole = 'Vice President of Academic Affairs';
+      hideVerified = true;
+    } else if (deptHead && (deptHead.name || deptHead.position)) {
+      preparedBy = deptHead.name || preparedBy || 'Academic Head';
+      preparedRole = deptHead.position || preparedRole || 'Academic Head';
+    } else if (!registrarViewOnly) {
+      const pick = bestForDept || bestOverall;
+      if (pick) {
+        preparedBy = extractUserName(pick) || preparedBy || 'Academic Head';
+        preparedRole = String(pick.position || preparedRole || 'Academic Head');
+      }
+    }
+    if (!preparedBy) preparedBy = deptHead?.name || extractUserName(bestForDept || bestOverall || {}) || 'Academic Head';
+    if (!preparedRole) preparedRole = 'Academic Head';
+    printContent(
+      { title, subtitle: '', bodyHtml },
+      { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy, preparedRole, hideVerified }
+    );
   };
 
   // Limit load/overload scoring to current load SY/Sem defaults

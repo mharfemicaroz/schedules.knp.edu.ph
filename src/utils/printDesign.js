@@ -158,6 +158,7 @@ export function printContent(
 
   const preparedBy = typeof opts.preparedBy === 'string' ? opts.preparedBy : '';
   const preparedRole = typeof opts.preparedRole === 'string' && opts.preparedRole.trim().length > 0 ? opts.preparedRole : 'Academic Head';
+  const hideVerified = opts.hideVerified === true;
   const preparedBlock = preparedBy
     ? `
       <div class='prt-block'>
@@ -166,6 +167,14 @@ export function printContent(
         <div class='prt-role'>${escapeHtml(preparedRole)}</div>
       </div>`
     : '';
+  const verifiedBlock = hideVerified
+    ? ''
+    : `
+      <div class='prt-block'>
+        <div class='prt-verify'>Verified by:</div>
+        <div class='prt-sign'>Dr. Mharfe M. Micaroz</div>
+        <div class='prt-role'>Vice President of Academic Affairs</div>
+      </div>`;
 
   const doc = `<!doctype html><html><head><meta charset='utf-8'><title>${escapeHtml(
     title
@@ -187,11 +196,7 @@ export function printContent(
     </div>
     <div class='prt-footer'>
       ${preparedBlock}
-      <div class='prt-block'>
-        <div class='prt-verify'>Verified by:</div>
-        <div class='prt-sign'>Dr. Mharfe M. Micaroz</div>
-        <div class='prt-role'>Vice President of Academic Affairs</div>
-      </div>
+      ${verifiedBlock}
       <div class='prt-block'>
         <div class='prt-approve'>Approved by:</div>
         <div class='prt-sign'>Dr. Mary Ann R. Araula</div>
