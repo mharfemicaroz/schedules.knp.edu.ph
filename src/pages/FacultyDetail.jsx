@@ -5,6 +5,7 @@ import { FiPrinter, FiArrowLeft, FiShare2 } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectFilteredFaculties, selectAllCourses } from '../store/dataSlice';
+import { selectSettings } from '../store/settingsSlice';
 import LoadingState from '../components/LoadingState';
 import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
 import EditScheduleModal from '../components/EditScheduleModal';
@@ -17,8 +18,10 @@ import AssignFacultyModal from '../components/AssignFacultyModal';
 import { buildConflicts, buildCrossFacultyOverlaps, parseTimeBlockToMinutes } from '../utils/conflicts';
 import Pagination from '../components/Pagination';
 import { Tag, TagLabel, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Wrap, WrapItem } from '@chakra-ui/react';
-import { encodeShareFacultyName, decodeShareFacultyName } from '../utils/share';
+import { encodeShareFacultyName, decodeShareFacultyToken } from '../utils/share';
 import { usePublicView } from '../utils/uiFlags';
+import { normalizeSem } from '../utils/facultyScoring';
+import api from '../services/apiService';
 
 
 export default function FacultyDetail() {
@@ -27,6 +30,7 @@ export default function FacultyDetail() {
   const dispatch = useDispatch();
   const faculties = useSelector(selectFilteredFaculties);
   const allCourses = useSelector(selectAllCourses);
+  const settings = useSelector(selectSettings);
   const loading = useSelector(s => s.data.loading);
   const acadData = useSelector(s => s.data.acadData);
   const [viewMode, setViewMode] = useLocalStorage('facultyDetailViewMode', getInitialToggleState(acadData, 'facultyDetailViewMode', 'regular'));
@@ -46,9 +50,29 @@ export default function FacultyDetail() {
 
   const [, set] = useState('');
   const isPublic = usePublicView();
+  const shareMeta = React.useMemo(() => decodeShareFacultyToken(String(id || '')), [id]);
+  const normalizeShareSy = React.useCallback((val) => {
+    return String(val || '').toUpperCase().replace(/[^0-9-]/g, '').trim();
+  }, []);
+  const normalizeShareSem = React.useCallback((val) => {
+    const norm = normalizeSem(val);
+    if (norm) return norm;
+    const raw = String(val || '').trim();
+    if (!raw) return '';
+    if (/^sem/i.test(raw)) return 'Sem';
+    return raw;
+  }, []);
+  const shareSy = (shareMeta.sy || '').trim();
+  const shareSyNorm = normalizeShareSy(shareSy);
+  const shareSemNorm = normalizeShareSem(shareMeta.sem || '');
+  const shareFilterActive = isPublic && (shareSy || shareSemNorm);
+  const activeSy = String(settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || '').trim();
+  const activeSem = String(settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || '').trim();
+  const activeSemNorm = normalizeShareSem(activeSem);
+  const [shareCourses, setShareCourses] = useState(null);
   let f = null;
   if (isPublic) {
-    const decodedName = decodeShareFacultyName(String(id || ''));
+    const decodedName = shareMeta.name || '';
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
     const target = norm(decodedName);
     f = faculties.find(x => norm(x.name) === target || norm(x.faculty) === target) || null;
@@ -67,9 +91,111 @@ export default function FacultyDetail() {
   const [selected, setSelected] = [_selected, _setSelected];
   const cancelRef = _cancelRef;
 
+  const matchesShareCourse = React.useCallback((row) => {
+    if (!shareFilterActive) return true;
+    const syVal = String(row?.schoolyear ?? row?.school_year ?? row?.schoolYear ?? row?.sy ?? '').trim();
+    const syValNorm = normalizeShareSy(syVal);
+    const semVal = normalizeShareSem(row?.semester ?? row?.term ?? row?.sem ?? '');
+    if (shareSyNorm && syValNorm && syValNorm !== shareSyNorm) return false;
+    if (shareSemNorm && semVal && semVal !== shareSemNorm) return false;
+    return true;
+  }, [shareFilterActive, shareSyNorm, shareSemNorm, normalizeShareSem, normalizeShareSy]);
+
+  // For public share links: if filtered courses are empty, fetch using share SY/Sem directly from API
+  React.useEffect(() => {
+    if (!isPublic || !shareFilterActive) {
+      setShareCourses(null);
+      return;
+    }
+    if (!f) return;
+    let alive = true;
+    (async () => {
+      const sy = shareSy || '';
+      const semNorm = shareSemNorm || '';
+      const semOptions = (() => {
+        if (!semNorm) return [''];
+        const opts = [semNorm];
+        if (semNorm === '1st') opts.push('1st Semester', 'First Semester', '1st Sem', 'First Term');
+        if (semNorm === '2nd') opts.push('2nd Semester', 'Second Semester', '2nd Sem', 'Second Term');
+        if (semNorm === 'Sem') opts.push('Semestral', 'Semester');
+        if (semNorm === '3rd') opts.push('Summer', 'Midyear', 'Mid Year');
+        opts.push(''); // final attempt without sem filter
+        const uniq = [];
+        opts.forEach(v => { if (!uniq.includes(v)) uniq.push(v); });
+        return uniq;
+      })();
+      let list = [];
+      try {
+        if (f.id != null) {
+          for (const sem of semOptions) {
+            let url = `/?_ts=${Date.now()}&facultyId=${encodeURIComponent(f.id)}`;
+            if (sy) url += `&schoolyear=${encodeURIComponent(sy)}`;
+            if (sem) url += `&semester=${encodeURIComponent(sem)}`;
+            const res = await api.request(url);
+            const items = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || []));
+            if (Array.isArray(items) && items.length) { list = items; break; }
+          }
+        }
+      } catch {}
+      if (!list.length) {
+        const name = f.faculty || f.name || '';
+        if (name) {
+          try {
+            for (const sem of semOptions) {
+              let url = `/instructor/${encodeURIComponent(name)}?_ts=${Date.now()}`;
+              if (sy) url += `&schoolyear=${encodeURIComponent(sy)}`;
+              if (sem) url += `&semester=${encodeURIComponent(sem)}`;
+              const res = await api.request(url);
+              const items = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || []));
+              if (Array.isArray(items) && items.length) { list = items; break; }
+            }
+          } catch {}
+        }
+      }
+      if (!list.length && Array.isArray(f.courses) && f.courses.length) {
+        list = f.courses.slice();
+      }
+      // Final fallback: use global allCourses matching this faculty
+      if (!list.length && Array.isArray(allCourses)) {
+        const norm = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const target = norm(f.faculty || f.name || '');
+        list = allCourses.filter(s => {
+          const idMatch = f.id != null && String(s.facultyId ?? s.faculty_id ?? '') === String(f.id);
+          const nameMatch = target && norm(s.facultyName || s.faculty || s.instructor || s.instructorName || s.full_name) === target;
+          return idMatch || nameMatch;
+        });
+      }
+      if (list.length && (sy || sem)) {
+        list = list.filter(matchesShareCourse);
+      }
+      if (!alive) return;
+      setShareCourses(list);
+    })();
+    return () => { alive = false; };
+  }, [isPublic, shareFilterActive, f, shareSy, shareSemNorm, matchesShareCourse]);
+
+  const facultyCourses = React.useMemo(() => {
+    const base = Array.isArray(shareCourses) ? shareCourses : (f && Array.isArray(f.courses) ? f.courses.slice() : []);
+    const list = Array.isArray(base) ? base : [];
+    return list.filter(matchesShareCourse);
+  }, [f, shareCourses, matchesShareCourse]);
+
+  const shareSySem = React.useMemo(() => {
+    const list = (facultyCourses && facultyCourses.length) ? facultyCourses : (f?.courses || []);
+    const sample = (list || []).find(c =>
+      (c && (c.school_year || c.schoolyear || c.schoolYear || c.semester || c.term || c.sem))
+    ) || {};
+    const syFromData = String(sample?.school_year ?? sample?.schoolyear ?? sample?.schoolYear ?? sample?.sy ?? '').trim();
+    const semFromData = normalizeShareSem(sample?.semester ?? sample?.term ?? sample?.sem ?? '');
+    return {
+      sy: activeSy || syFromData,
+      sem: activeSemNorm || semFromData,
+    };
+  }, [activeSy, activeSemNorm, facultyCourses, f, normalizeShareSem]);
+
     // Merge helper: combine same section + code + term + time; merge rooms and F2F days
   const sortedCourses = React.useMemo(() => {
-    const list = (f && Array.isArray(f.courses) ? f.courses.slice() : []);
+    const list = Array.isArray(facultyCourses) ? facultyCourses.slice() : [];
     const startOf = (c) => {
       if (Number.isFinite(c?.timeStartMinutes)) return c.timeStartMinutes;
       const tStr = String(c?.scheduleKey || c?.schedule || c?.time || '').trim();
@@ -179,12 +305,12 @@ export default function FacultyDetail() {
   const mergedStats = React.useMemo(() => {
     const release = Number(f?.loadReleaseUnits) || 0;
     const baseline = Math.max(0, 24 - release);
-    const list = viewMode === 'examination' ? (f?.courses || []) : (sortedCourses || []);
+    const list = viewMode === 'examination' ? (facultyCourses || []) : (sortedCourses || []);
     const loadUnits = list.reduce((sum, c) => sum + (Number(c.unit) || 0), 0);
     const overloadUnits = Math.max(0, loadUnits - baseline);
     const courseCount = list.length;
     return { loadUnits, overloadUnits, courseCount, release };
-  }, [f, sortedCourses, viewMode]);
+  }, [f, sortedCourses, viewMode, facultyCourses]);
 
   // Group courses by term for display (1st, 2nd, Sem, then others)
   const termGroups = React.useMemo(() => {
@@ -232,14 +358,16 @@ export default function FacultyDetail() {
     const facNameNorm = normalizeName(f.name);
     const seen = new Set();
     const codeOf = (r) => String(r.code || r.courseName || '').trim().toLowerCase();
-    const filteredAll = allCourses.filter(r => {
-      if (!isThisFaculty(r)) return true;
-      // Include course code in dedupe key so different codes don't merge away
-      const k = ['merged', facIdOf(r) || facNameNorm, termOf(r), timeKeyOf(r), sectionOf(r), codeOf(r)].join('|');
-      if (seen.has(k)) return false; // drop merged duplicate
-      seen.add(k);
-      return true;
-    });
+    const filteredAll = allCourses
+      .filter(r => !shareFilterActive || matchesShareCourse(r))
+      .filter(r => {
+        if (!isThisFaculty(r)) return true;
+        // Include course code in dedupe key so different codes don't merge away
+        const k = ['merged', facIdOf(r) || facNameNorm, termOf(r), timeKeyOf(r), sectionOf(r), codeOf(r)].join('|');
+        if (seen.has(k)) return false; // drop merged duplicate
+        seen.add(k);
+        return true;
+      });
 
     // Sanitize/normalize times for consistent comparisons
     const toKey = (start, end) => `${start}-${end}`;
@@ -302,7 +430,7 @@ export default function FacultyDetail() {
     }
 
     return uniq;
-  }, [allCourses, f]);
+  }, [allCourses, f, shareFilterActive, matchesShareCourse]);
 
   const [confPage, setConfPage] = useState(1);
   const [confPageSize, setConfPageSize] = useState(10);
@@ -477,7 +605,9 @@ export default function FacultyDetail() {
 
     // Build QR (share link) and two-column intro (name + details | QR)
     try {
-      const token = encodeShareFacultyName(f?.name || '');
+      const syForShare = shareFilterActive ? shareSy : (shareSySem.sy || activeSy);
+      const semForShare = shareFilterActive ? (shareMeta.sem || shareSemNorm) : (shareSySem.sem || activeSem);
+      const token = encodeShareFacultyName(f?.name || '', { schoolyear: syForShare, semester: semForShare });
       const origin = (window && window.location) ? `${window.location.origin}${window.location.pathname}` : '';
       const shareUrl = `${origin}#/share/faculty/${encodeURIComponent(token)}`;
       const qrData = encodeURIComponent(shareUrl);
@@ -617,7 +747,15 @@ export default function FacultyDetail() {
           )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
           {isAdmin && !isPublic && (
-            <Button as={RouterLink} to={`/share/faculty/${encodeURIComponent(encodeShareFacultyName(f?.name || ''))}`} leftIcon={<FiShare2 />} size="sm" colorScheme="blue">Share</Button>
+            <Button
+              as={RouterLink}
+              to={`/share/faculty/${encodeURIComponent(encodeShareFacultyName(f?.name || '', { schoolyear: shareSySem.sy, semester: shareSySem.sem }))}`}
+              leftIcon={<FiShare2 />}
+              size="sm"
+              colorScheme="blue"
+            >
+              Share
+            </Button>
           )}
           {isAdmin && !isPublic && (
             <Button onClick={assignDisc.onOpen} variant="solid" size="sm" colorScheme="blue">Assign Schedules</Button>

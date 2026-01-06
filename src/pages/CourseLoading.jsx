@@ -1427,7 +1427,7 @@ export default function CourseLoading() {
       </div>`;
     const introHtml = (() => {
       try {
-        const token = encodeShareFacultyName(f.name || f.faculty || '');
+        const token = encodeShareFacultyName(f.name || f.faculty || '', { schoolyear: settingsLoad?.school_year, semester: settingsLoad?.semester });
         const origin = (typeof window !== 'undefined' && window.location)
           ? `${window.location.origin}${window.location.pathname}`
           : '';

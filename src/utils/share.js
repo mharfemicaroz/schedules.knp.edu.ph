@@ -1,7 +1,8 @@
 // Lightweight obfuscation for share URLs (not cryptographically secure)
-// Encodes a display name into a base64url token with a simple pepper.
+// Encodes a display name (and optional metadata) into a base64url token with a simple pepper.
 
 const PEPPER = 'knp-share-v1';
+const FACULTY_PREFIX = `${PEPPER}:F:`;
 
 function toBase64Url(str) {
   try {
@@ -23,16 +24,50 @@ function fromBase64Url(tok) {
   }
 }
 
-export function encodeShareFacultyName(name) {
+function normalizeSemLabel(val) {
+  const v = String(val || '').trim().toLowerCase();
+  if (!v) return '';
+  if (v.startsWith('1')) return '1st';
+  if (v.startsWith('2')) return '2nd';
+  if (/summer|mid\s*year|midyear/.test(v) || v.startsWith('3')) return '3rd';
+  if (v.startsWith('s')) return 'Sem';
+  return val;
+}
+
+export function encodeShareFacultyName(name, opts = {}) {
   const plain = String(name || '').trim();
-  const withPepper = `${PEPPER}:${plain}`;
-  return toBase64Url(withPepper);
+  const sy = String(opts.schoolyear ?? opts.schoolYear ?? opts.sy ?? '').trim();
+  const sem = normalizeSemLabel(opts.semester ?? opts.sem ?? '');
+  // v2 payload with metadata; falls back gracefully if decoded by older clients
+  const payload = { v: 2, name: plain, sy, sem };
+  const raw = `${FACULTY_PREFIX}${JSON.stringify(payload)}`;
+  return toBase64Url(raw);
+}
+
+export function decodeShareFacultyToken(token) {
+  const decoded = fromBase64Url(token);
+  if (!decoded) return { name: '', sy: '', sem: '' };
+  if (decoded.startsWith(FACULTY_PREFIX)) {
+    try {
+      const payload = JSON.parse(decoded.slice(FACULTY_PREFIX.length));
+      return {
+        name: String(payload?.name || '').trim(),
+        sy: String(payload?.sy ?? payload?.schoolyear ?? payload?.schoolYear ?? '').trim(),
+        sem: normalizeSemLabel(payload?.sem ?? payload?.semester ?? payload?.term ?? ''),
+      };
+    } catch {
+      return { name: '', sy: '', sem: '' };
+    }
+  }
+  if (decoded.startsWith(`${PEPPER}:`)) {
+    const nameOnly = decoded.slice(PEPPER.length + 1);
+    return { name: nameOnly, sy: '', sem: '' };
+  }
+  return { name: '', sy: '', sem: '' };
 }
 
 export function decodeShareFacultyName(token) {
-  const decoded = fromBase64Url(token);
-  const m = decoded.startsWith(`${PEPPER}:`) ? decoded.slice(PEPPER.length + 1) : '';
-  return m;
+  return decodeShareFacultyToken(token).name;
 }
 
 export function encodeShareRoom(room) {
