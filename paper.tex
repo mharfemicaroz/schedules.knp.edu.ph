@@ -1,0 +1,240 @@
+\documentclass[12pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{amsthm}
+\usepackage{booktabs,graphicx}
+\usepackage{microtype}
+\usepackage[numbers]{natbib}
+
+\title{Building a Faculty Loading System Portal: Fast Multi-Step Reallocation with Bounded-Depth Graph Search for Conflict-Free Timetables}
+
+\author{
+Dr.\ Mharfe M.\ Micaroz\\
+Kolehiyo ng Pantukan\\
+Pantukan, Davao de Oro, Philippines\\
+\texttt{mharfe\_micaroz@knp.edu.ph}
+}
+
+\date{2026}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{assumption}{Assumption}
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{theorem}{Theorem}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Manual faculty loading commonly produces instructor double-bookings, section overlaps, and workload imbalance, especially when scheduling decisions are made under time pressure near the start of a term. Timetabling has long been studied as a constraint satisfaction and combinatorial optimization problem, often addressed with integer programming or constraint programming. However, in many institutional settings the schedule is already ``nearly complete'' and the practical need is not global optimality but rapid, auditable repair. This paper develops a formal assignment model for faculty loading and a bounded-depth graph search that performs multi-step reallocation to resolve conflicts while respecting hard feasibility rules, capacity constraints, and session compatibility. The method is framed as repair on a slot-occupancy state graph and is motivated by neighborhood-based timetabling heuristics (e.g., chain moves) that efficiently navigate near-feasible schedules. The contribution is a mathematically explicit repair model designed to be explainable, fast, and suitable for portal-based decision support in local college operations.
+\end{abstract}
+
+\noindent\textbf{Keywords:} timetabling, faculty loading, bounded-depth search, graph reallocation, constraint satisfaction, decision support
+
+\section{Introduction}
+Educational timetabling assigns instructional events to time periods (and often rooms) subject to hard constraints and soft preferences. Surveys describe the field as a mature area of combinatorial optimization with diverse institutional variants, where constraints typically include instructor availability, avoidance of conflicts, and operational preferences \citep{Schaerf1999,Babaei2015}. The computational difficulty is rooted in the close relationship between timetabling and graph coloring and other NP-complete problems: incompatibilities between events can be represented as edges, and feasible time assignments correspond to proper colorings under additional side constraints \citep{GareyJohnson1979,Schaerf1999}. Because of this, exact approaches such as integer linear programming (ILP) and mixed-integer programming have been widely explored for university timetabling, especially when the formulation includes many detailed rules and resource constraints \citep{Daskalaki2004,Rappos2022}. Constraint programming has also become prominent in scheduling, and modern CP-SAT technology provides strong modeling expressiveness and performance across classes of discrete optimization problems \citep{Perron2023}.
+
+Despite these advances, practice often differs from the assumptions under which global solvers are most beneficial. In many colleges, the timetable is built iteratively and only a small portion becomes infeasible due to local clashes or late changes. This operational pattern aligns with a common methodology emphasized in timetabling research: construction followed by repair, where neighborhood moves and chain-like reallocations progressively remove violations \citep{Burke2002,Kingston2014}. Repair-based methods are attractive when the institution uses a fixed catalogue of canonical time blocks, when conflict density is low relative to the total number of scheduled events, and when decision-makers require transparent, human-reviewable edits rather than a fully re-optimized schedule.
+
+The faculty loading context at Kolehiyo ng Pantukan reflects this situation. Loading decisions are constrained by canonical day-slot structures, instructor capacity, and practical session conventions (e.g., AM/PM/EVE). Yet manual workflows remain vulnerable to instructor double-booking and section overlaps and can obscure workload imbalance until late in the process. A research gap emerges at the intersection of (i) formal constraint models and (ii) deployable repair logic suitable for portal-based decision support in a local college setting: much of the literature emphasizes either solver-heavy global optimization or domain-general heuristic frameworks, while less attention is placed on a mathematically explicit, bounded-depth repair operator that produces short, auditable reallocation chains under explicit faculty loading constraints. In this study, we address this gap by formalizing faculty loading as a constrained assignment model and by developing a bounded-depth graph search that repairs conflicts through multi-step reallocations, prioritizing conflict elimination while controlling capacity and parsimony.
+
+\section{Mathematical Model}
+
+\subsection{Core assignment structure}
+We begin with a formal model that separates \emph{hard feasibility} from \emph{soft quality}. The hard feasibility layer defines which assignments are allowed and what constitutes a conflict, while the soft quality layer defines how to rank alternative conflict-free states once feasibility is satisfied. This separation aligns with timetabling theory, where hard constraints are mandatory and soft constraints define preference optimization \citep{Schaerf1999,Babaei2015}.
+
+Let $C$ denote the set of instructional events to be scheduled (courses/sections in a term). Let $F$ denote the set of faculty members. Let $\mathcal{D}$ denote the set of days, and let $S$ denote the set of canonical time blocks within a day. A time slot is the pair $t=(d,s)$, so that $T=\mathcal{D}\times S$. We assume the institution configures a finite slot catalogue $T^\ast\subseteq T$ that represents the portal's canonical schedule universe.
+
+Each course $c\in C$ has a unit load $u_c\ge 0$ (e.g., contact hours or credit-equivalent units). Each faculty member $f\in F$ has a capacity limit $U_f\ge 0$ that captures baseline teaching load minus releases. We also represent eligibility through a binary parameter $A_{c,f}$, where $A_{c,f}=1$ if faculty $f$ is eligible to teach course $c$. Slot feasibility is represented through $B_{c,t}$, where $B_{c,t}=1$ if course $c$ is admissible at time slot $t$ (e.g., to enforce session conventions or program-specific time rules). This representation is flexible: session constraints can be encoded by defining a session label $\sigma(c)$ for each course and $\sigma(t)$ for each slot and setting $B_{c,t}=1$ only when $\sigma(c)=\sigma(t)$.
+
+We define decision variables $x_{c,f,t}\in\{0,1\}$ such that $x_{c,f,t}=1$ iff course $c$ is assigned to faculty $f$ at slot $t$.
+
+\subsection{Hard feasibility constraints}
+The first feasibility requirement is that each course is placed exactly once:
+\begin{equation}
+\sum_{f\in F}\sum_{t\in T^\ast} x_{c,f,t}=1 \quad \text{for all } c\in C.
+\label{eq:placeonce}
+\end{equation}
+Next, we prevent faculty double-booking by requiring at most one course per faculty per slot:
+\begin{equation}
+\sum_{c\in C} x_{c,f,t}\le 1 \quad \text{for all } f\in F,\ t\in T^\ast.
+\label{eq:nodouble}
+\end{equation}
+Eligibility is enforced by:
+\begin{equation}
+x_{c,f,t}\le A_{c,f} \quad \text{for all } c\in C,\ f\in F,\ t\in T^\ast,
+\label{eq:eligibility}
+\end{equation}
+and slot feasibility is enforced by:
+\begin{equation}
+x_{c,f,t}\le B_{c,t} \quad \text{for all } c\in C,\ f\in F,\ t\in T^\ast.
+\label{eq:slotfeas}
+\end{equation}
+Finally, faculty load capacity is bounded by:
+\begin{equation}
+\sum_{c\in C}\sum_{t\in T^\ast} u_c\,x_{c,f,t}\le U_f \quad \text{for all } f\in F.
+\label{eq:loadcap}
+\end{equation}
+
+Equations \eqref{eq:placeonce}--\eqref{eq:loadcap} define the portal's feasible assignment space. In full global optimization, one would typically define an objective and solve for an optimal $x$. In repair-based use, the database schedule is interpreted as an initial state that may violate a subset of these constraints (most commonly \eqref{eq:nodouble} or analogous section-overlap rules). The purpose of the repair method is to produce a nearby feasible schedule while preserving as much of the original structure as possible.
+
+\subsection{Conflict theory and relation to graph coloring}
+Timetabling problems are often described using conflict graphs: events become vertices and edges represent incompatibility (e.g., shared instructor or shared student group). A time assignment becomes a coloring, where colors correspond to time slots; feasibility requires adjacent vertices not share the same color \citep{Schaerf1999,GareyJohnson1979}. While faculty loading includes additional structure (eligibility, load caps, session feasibility), this graph view is still valuable because many operational conflicts are fundamentally edge conflicts. In particular, faculty double-booking corresponds to an incompatibility relation that can be represented as edges between any two events taught by the same faculty; assigning the same slot to adjacent vertices corresponds to a violation.
+
+Repair heuristics in timetabling frequently exploit this structure through chain moves, including Kempe-like interchanges and ejection chains, which systematically alter a connected part of an assignment to remove violations while preserving feasibility of the modified region \citep{Kingston2014}. Our approach is consistent with this neighborhood philosophy: rather than recoloring the entire graph, we traverse a bounded-depth region of the state space around the conflict and construct a short move chain that reassigns a small number of events.
+
+\subsection{Assumptions for the bounded-depth repair setting}
+\begin{assumption}[Discrete canonical slots]
+Instructional time is represented using a finite canonical catalogue $T^\ast$; within-slot ordering is irrelevant and conflicts are evaluated at the slot level. This assumption matches common operational practice in institutions that schedule by fixed blocks and supports bounded branching in search.
+\end{assumption}
+
+\begin{assumption}[Single-faculty, single-slot events]
+Each course $c\in C$ occupies exactly one slot and is taught by exactly one faculty member. Team teaching and multi-slot meetings are not modeled in the base formulation, but can be incorporated by splitting events or adding coupling constraints.
+\end{assumption}
+
+\begin{assumption}[Capacity parameters are exogenous]
+Faculty capacities $U_f$ and unit loads $u_c$ are assumed known from institutional policy and records. The model treats them as fixed inputs to feasibility and overload evaluation.
+\end{assumption}
+
+\begin{assumption}[Near-feasible starting state]
+The initial schedule state $s_0$ drawn from the database is assumed to be close to feasible, in the sense that the number of hard constraint violations is small relative to $|C|$. This motivates repair rather than full re-optimization, aligning with construction-plus-repair practice in timetabling \citep{Burke2002,Kingston2014}.
+\end{assumption}
+
+\subsection{Quality modeling via composite penalty}
+To rank alternative feasible (or near-feasible) schedules, we define a composite penalty $\Phi(x)$ with explicit separation between conflict elimination and secondary quality criteria. Let $\Phi_{\text{conflict}}(x)$ count hard violations, and let $\Phi_{\text{move}}(x)$ count the number of edits relative to the initial schedule. We also define an overload penalty and optional preference penalties. The composite form is:
+\begin{equation}
+\Phi(x)=
+\lambda_1\Phi_{\text{conflict}}(x)+
+\lambda_2\Phi_{\text{overload}}(x)+
+\lambda_3\Phi_{\text{session}}(x)+
+\lambda_4\Phi_{\text{preference}}(x)+
+\lambda_5\Phi_{\text{move}}(x),
+\label{eq:phi}
+\end{equation}
+where $\lambda_i\ge 0$ weight the terms.
+
+A natural conflict term for faculty double-booking is:
+\begin{equation}
+\Phi_{\text{conflict}}(x)=
+\sum_{f\in F}\sum_{t\in T^\ast}
+\max\Bigl(0,\ \sum_{c\in C} x_{c,f,t}-1\Bigr)
+\ +\ \Phi_{\text{section}}(x),
+\label{eq:conflict}
+\end{equation}
+where $\Phi_{\text{section}}$ optionally counts overlaps for course groupings (e.g., same block/section). Overload is measured by:
+\begin{equation}
+\Phi_{\text{overload}}(x)=
+\sum_{f\in F}
+\max\Bigl(0,\ \sum_{c\in C}\sum_{t\in T^\ast}u_c x_{c,f,t}-U_f\Bigr).
+\label{eq:overload}
+\end{equation}
+The move penalty operationalizes the portal requirement of explainability and minimal disruption. If $x^{(0)}$ denotes the binary assignment for the initial schedule, then:
+\begin{equation}
+\Phi_{\text{move}}(x)=\frac{1}{2}\sum_{c\in C}\sum_{f\in F}\sum_{t\in T^\ast}\left|x_{c,f,t}-x^{(0)}_{c,f,t}\right|.
+\label{eq:move}
+\end{equation}
+The factor $\tfrac{1}{2}$ avoids double-counting because changing one course from one slot to another flips two binary positions.
+
+The role of $\Phi$ in this study is not to define a global optimum, but to serve as a disciplined criterion for comparing candidate repairs produced by bounded-depth search, emphasizing the primary goal of eliminating conflicts while preferring low-edit, capacity-respecting outcomes.
+
+\section{Bounded-Depth Graph Repair Search}
+
+\subsection{State space and move operators}
+Repair-based scheduling is naturally expressed as a state graph whose nodes are complete schedules and whose edges are small edits. Let a \emph{state} $s$ be a complete assignment function $\alpha_s:C\to (F\times T^\ast)$ such that each course $c$ maps to exactly one pair $(f,t)$. Each state corresponds to a binary tensor $x^s$ through $x^s_{c,f,t}=1$ iff $\alpha_s(c)=(f,t)$. We measure conflict count by $\textsf{Conf}(s)=\Phi_{\text{conflict}}(x^s)$ and overall cost by $\textsf{Cost}(s)=\Phi(x^s)$.
+
+A basic move changes the assignment of a single course. If $\alpha_s(c)=(f,t)$, a move selects a new pair $(f',t')$ and yields a successor state $s'$ with $\alpha_{s'}(c)=(f',t')$ and $\alpha_{s'}(c' )=\alpha_s(c')$ for all $c'\neq c$. The admissibility of a move is governed by the hard feasibility filters encoded in \eqref{eq:eligibility} and \eqref{eq:slotfeas}, as well as by capacity and conflict constraints, depending on whether the portal allows temporary intermediate violations.
+
+In this study we adopt a \emph{repair discipline} appropriate for institutional decision support: successors are expanded only if they do not worsen conflict count and they respect non-negotiable rules such as eligibility and slot feasibility. This supports fast convergence in near-feasible settings and yields explanations that are easy to justify to coordinators.
+
+\subsection{Bounded-depth repair objective}
+Let $s_0$ be the initial schedule from the database. Given a depth bound $D\in\mathbb{N}$, the bounded-depth repair problem is:
+\begin{equation}
+\text{find a path } s_0\to s_1\to\cdots\to s_k \text{ with } k\le D \text{ such that } \textsf{Conf}(s_k)=0,
+\label{eq:repairgoal}
+\end{equation}
+or, if no conflict-free state is reachable within depth $D$, return a best-effort state $s_k$ that minimizes $\textsf{Conf}(s_k)$ and then $\textsf{Cost}(s_k)$. The bounded-depth constraint is motivated by portal responsiveness and by the empirical observation in repair-based timetabling that many conflicts can be removed by short chains when the initial schedule is close to feasible \citep{Kingston2014}.
+
+\subsection{Pruning principles as formal dominance}
+Because the naïve branching factor can be large, we adopt pruning rules that can be stated as dominance relationships. Consider two partial paths that reach states with the same \emph{occupancy signature}, meaning that for each faculty-slot pair $(f,t)$ the set of courses assigned to it is identical (or, equivalently, the same set of blocking relationships persists). If two paths reach the same signature, then any future repair options available from one are also available from the other. In this case it is reasonable to keep the path with lower $\textsf{Cost}$ and fewer edits, as the alternative is dominated under the portal's parsimony requirement. This is a standard technique in constrained search where revisiting equivalent states provides no new benefit.
+
+We also restrict branching by prioritizing slot candidates that preserve session conventions and by focusing expansions on conflicted courses and their immediate blockers. This is consistent with neighborhood search philosophy in timetabling, where effective neighborhoods target the structural cause of violations rather than exploring globally \citep{Burke2002}.
+
+\subsection{Correctness properties and proof sketches}
+The bounded-depth search is not intended to be globally optimal, but it should satisfy basic correctness guarantees: it must terminate, it must not propose infeasible moves when feasibility filters are enforced, and it must be complete within its bounded horizon.
+
+\begin{proposition}[Termination]
+For any finite $C$, $F$, $T^\ast$ and depth bound $D$, a depth-limited repair search terminates after a finite number of expansions.
+\end{proposition}
+\begin{proof}
+The number of distinct course assignments is finite because each course has at most $|F||T^\ast|$ possible pairs. A depth-limited search explores only paths of length at most $D$, so the maximum number of nodes explored is bounded by $1+b+b^2+\cdots+b^D$, where $b$ is the maximum branching factor. Since $b<\infty$ and $D<\infty$, the explored set is finite, hence the procedure terminates.
+\end{proof}
+
+\begin{proposition}[Feasibility preservation under strict filters]
+Assume successors are generated only when \eqref{eq:placeonce}, \eqref{eq:eligibility}, and \eqref{eq:slotfeas} are satisfied and when the move does not violate locked-entry rules (if present). Then every expanded state satisfies these constraints.
+\end{proposition}
+\begin{proof}
+By construction, a successor state differs from its parent only by reassigning one course. If the generator checks eligibility and slot feasibility for that reassignment, then the changed variable still respects \eqref{eq:eligibility} and \eqref{eq:slotfeas}; all unchanged variables preserve prior satisfaction. Equation \eqref{eq:placeonce} holds because reassignment does not create or remove a course placement; it only changes its target pair. Therefore each expanded state satisfies the stated constraints.
+\end{proof}
+
+\begin{theorem}[Bounded completeness]
+If there exists a path of admissible moves from $s_0$ to a conflict-free state of length at most $D$, then an exhaustive depth-limited search (with no incorrect pruning) will find a conflict-free state within depth $D$.
+\end{theorem}
+\begin{proof}
+An exhaustive depth-limited search enumerates all admissible move sequences of length at most $D$. If a conflict-free state exists within this horizon, its generating sequence is included in the enumeration and will eventually be visited. Correct pruning must not remove all representatives of that sequence; under the assumption of no incorrect pruning, the goal state is reachable in the explored tree and will be found.
+\end{proof}
+
+\begin{proposition}[Complexity bound]
+Let $b$ be the maximum branching factor after feasibility filtering and local candidate ranking. The worst-case number of expanded states is $O(b^D)$.
+\end{proposition}
+\begin{proof}
+At depth $i$ there are at most $b^i$ nodes. Summing over $i=0,\dots,D$ yields $O(b^D)$ as the dominant term.
+\end{proof}
+
+These properties formalize the role of bounded depth: it provides a predictable response-time envelope while remaining complete for repairs that admit short reallocation chains. This bounded completeness is valuable in portals because it creates an explicit guarantee: if a conflict can be repaired within $D$ local edits under the admissibility rules, the method will discover it.
+
+\subsection{Relationship to established neighborhood moves}
+The use of short chains connects directly to established timetabling neighborhood concepts. In graph coloring, Kempe chains define connected subgraphs involving two colors whose interchange preserves proper coloring; analogous ideas appear in timetabling as structured local moves that repair violations while minimizing collateral disruption \citep{Kingston2014}. While our model is expressed as a slot-occupancy state graph rather than purely as a coloring, the underlying idea is similar: instead of changing one assignment in isolation (which often fails when a desired slot is occupied), we permit a limited cascade of dependent moves that ``ejects'' blockers and frees a feasible target. The main difference is that the admissibility of our moves is governed by institutional constraints beyond adjacency (eligibility, capacity, session feasibility), which are encoded directly in \eqref{eq:eligibility}--\eqref{eq:loadcap}.
+
+\section{Data Analysis Plan}
+% Intentionally left blank.
+
+\section{Results and Discussion}
+% Intentionally left blank.
+
+\section{Conclusion}
+% Intentionally left blank.
+
+\section*{References}
+\begin{thebibliography}{99}
+
+\bibitem[Schaerf, 1999]{Schaerf1999}
+Schaerf, A. (1999). A survey of automated timetabling. \emph{Artificial Intelligence Review, 13}(2), 87--127. \hfill {\footnotesize (Springer survey)}.
+
+\bibitem[Burke \& Petrovic, 2002]{Burke2002}
+Burke, E. K., \& Petrovic, S. (2002). Recent research directions in automated timetabling. \emph{European Journal of Operational Research, 140}(2), 266--280.
+
+\bibitem[Babaei, Karimpour, \& Hadidi, 2015]{Babaei2015}
+Babaei, H., Karimpour, J., \& Hadidi, A. (2015). A survey of approaches for university course timetabling problem. \emph{Computers \& Industrial Engineering, 86}, 43--59.
+
+\bibitem[Daskalaki, Birbas, \& Housos, 2004]{Daskalaki2004}
+Daskalaki, S., Birbas, T., \& Housos, E. (2004). An integer programming formulation for a case study in university timetabling. \emph{European Journal of Operational Research, 153}(1), 117--135.
+
+\bibitem[Rappos \& Rapsomanikis, 2022]{Rappos2022}
+Rappos, E., \& Rapsomanikis, G. (2022). Mixed-integer programming for university course timetabling. \emph{Journal of Scheduling}. \hfill {\footnotesize (MIP/solver-based formulation)}.
+
+\bibitem[Perron, Didier, \& Gay, 2023]{Perron2023}
+Perron, L., Didier, F., \& Gay, S. (2023). The CP-SAT-LP solver. In \emph{Proceedings of CP 2023 (LIPIcs)}. \hfill {\footnotesize (OR-Tools CP-SAT technical description)}.
+
+\bibitem[Kingston, 2014]{Kingston2014}
+Kingston, J. H. (2014). \emph{KHE14: An algorithm for high school timetabling}. PATAT 2014 Proceedings. \hfill {\footnotesize (Repair and ejection-chain methodology)}.
+
+\bibitem[Garey \& Johnson, 1979]{GareyJohnson1979}
+Garey, M. R., \& Johnson, D. S. (1979). \emph{Computers and Intractability: A Guide to the Theory of NP-Completeness}. W.\ H.\ Freeman.
+
+\end{thebibliography}
+
+\end{document}

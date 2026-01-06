@@ -1,6 +1,18 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import apiService from "../services/apiService";
 import { normalizeTimeBlock } from "../utils/timeNormalize";
+import { setSettings } from "./settingsSlice";
+
+const normalizeSy = (v) => String(v || "").trim().toLowerCase();
+const normalizeSem = (v) => {
+  const s = String(v || "").trim().toLowerCase();
+  if (!s) return "";
+  if (/summer|mid\s*year|midyear/.test(s)) return "summer";
+  if (s.startsWith("1")) return "1st";
+  if (s.startsWith("2")) return "2nd";
+  if (s.startsWith("3")) return "3rd";
+  return s;
+};
 
 function transformSchedulesToFacultyDataset(schedules) {
   if (!Array.isArray(schedules)) return { faculties: [], meta: {} };
@@ -174,28 +186,41 @@ function transformSchedulesToFacultyDataset(schedules) {
   };
 }
 
-export const loadAllSchedules = createAsyncThunk("data/loadAll", async (_, { getState }) => {
+export const loadAllSchedules = createAsyncThunk("data/loadAll", async (_, { getState, dispatch }) => {
   // View mode must respect System Settings: Schedules View Defaults (schedulesView)
   let sy, sem;
   try {
-    const st = getState()?.settings?.data?.schedulesView;
-    sy = st?.school_year || undefined;
-    sem = st?.semester || undefined;
+    const st = getState()?.settings?.data?.schedulesView || {};
+    sy = st.school_year || undefined;
+    sem = st.semester || undefined;
     if (!sy || !sem) {
       // Fallback: fetch settings directly if store not yet populated
       const s = await apiService.getSettings();
       sy = s?.schedulesView?.school_year || sy;
       sem = s?.schedulesView?.semester || sem;
+      // Persist fetched settings so shared/public views can reuse the values
+      if (s) {
+        try { dispatch(setSettings(s)); } catch {}
+      }
     }
   } catch {}
   const params = {};
-  if (sy) params.sy = sy;
-  if (sem) params.sem = sem;
+  if (sy) { params.sy = sy; params.schoolyear = sy; }
+  if (sem) { params.sem = sem; params.semester = sem; }
   const schedulesResponse = await apiService.getAllSchedules(params);
   const schedules = schedulesResponse.data || schedulesResponse;
+  const list = Array.isArray(schedules) ? schedules : [];
+  const hasFilters = !!(sy || sem);
+  const filtered = hasFilters
+    ? list.filter((s) => {
+        if (sy && normalizeSy(s.sy || s.schoolyear || s.schoolYear || s.school_year) !== normalizeSy(sy)) return false;
+        if (sem && normalizeSem(s.sem || s.semester || s.term) !== normalizeSem(sem)) return false;
+        return true;
+      })
+    : list;
   return {
-    raw: schedules,
-    data: transformSchedulesToFacultyDataset(schedules),
+    raw: hasFilters ? filtered : schedules,
+    data: transformSchedulesToFacultyDataset(filtered),
   };
 });
 

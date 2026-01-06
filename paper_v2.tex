@@ -1,0 +1,145 @@
+\documentclass[12pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{amsthm}
+\usepackage{booktabs,graphicx}
+\usepackage{microtype}
+\usepackage[numbers]{natbib}
+
+\title{Building a Faculty Loading System Portal: Fast Multi-Step Reallocation with Bounded-Depth Graph Search for Conflict-Free Timetables}
+
+\author{
+Dr.\ Mharfe M.\ Micaroz\\
+Kolehiyo ng Pantukan\\
+Pantukan, Davao de Oro, Philippines\\
+\texttt{mharfe\_micaroz@knp.edu.ph}
+}
+
+\date{2026}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{assumption}{Assumption}
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{theorem}{Theorem}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This companion paper documents the \emph{implemented} logic in the portal codebase rather than an idealized optimization model. The production system uses ad-hoc, rule-based conflict checks, fuzzy faculty scoring, and a small bounded-depth reallocation routine that operates on a hardcoded set of candidate time blocks. There is no global integer/constraint program; capacity and eligibility are approximated by heuristics derived from the dataset. We reconstruct the implemented mathematical intentions behind the code paths to make the deployed behavior transparent and auditable.
+\end{abstract}
+
+\noindent\textbf{Keywords:} timetabling, heuristics, bounded-depth search, conflict detection, fuzzy matching, decision support
+
+\section{Introduction}
+The running portal seeks to prevent obvious conflicts and provide quick suggestions without solving a full optimization problem. The codebase consists of:
+\begin{itemize}
+  \item Rule-based conflict detection on precomputed minutes and day tokens.
+  \item Fuzzy, similarity-based faculty scoring for assignment suggestions.
+  \item A bounded-depth chain-move generator over a small catalog of candidate time blocks to free a slot.
+\end{itemize}
+Unlike a formal ILP/CP model, these mechanisms operate directly on parsed schedule rows and rely on string normalization and minute comparisons. This paper formalizes those implemented heuristics.
+
+\section{Heuristic Conflict Model}
+Let $\mathcal{R}$ be the set of schedule rows. Each $r\in\mathcal{R}$ has fields:
+\[
+(\text{faculty},\ \text{term},\ \text{section},\ \text{day tokens},\ \text{time block},\ \text{minutes},\ \text{code}).
+\]
+Time is parsed into minutes via regex:
+\[
+\texttt{HH:MM-HH:MM(AM|PM|NN)} \mapsto [t_{\min}, t_{\max}],
+\]
+with NN interpreted as noon. A day string is tokenized into ordered labels from $\{\text{Mon},\dots,\text{Sun}\}$; composite tokens (e.g., TTH, MON-FRI) are expanded.
+
+For a given term $k$, conflicts are flagged via predicates implemented in \texttt{conflicts.js}:
+\begin{align}
+&\text{Double-booked (different courses)}:\ \exists r\neq r' \text{ with same faculty, term, day, } t(r)=t(r');\\
+&\text{Double-booked (same course, different sections)}:\ \exists r\neq r' \text{ with same faculty, term, day, } t(r)=t(r'),\ c(r)=c(r'),\ s(r)\neq s(r');\\
+&\text{Exact duplicate}:\ r\neq r',\ (\text{faculty},\text{term},\text{day},t,c,s) \text{ identical};\\
+&\text{Self-clash}:\ \text{same faculty, term, section, day with } t(r)\cap t(r')\neq\varnothing;\\
+&\text{Triple-booked}:\ |\{r:\text{same faculty, term, day, }t(r)=t^\ast\}|\ge 3;\\
+&\text{Cross-list collision}:\ \text{same faculty, term, day, code, different sections, }t(r)=t(r');\\
+&\text{Data-quality mismatch}:\ \text{same faculty, term, day, section, }t(r)=t(r'),\ c(r)\neq c(r');\\
+&\text{Cross-faculty overlap}:\ \text{same term, day, section with } t(r)\cap t(r')\neq\varnothing \text{ across faculties}.
+\end{align}
+Here $t(r)$ denotes the time key (string) if present, otherwise the parsed interval; overlap is computed as $\max(t_{\min}^r,t_{\min}^{r'}) < \min(t_{\max}^r,t_{\max}^{r'})$ or equality of time keys. There is no explicit hard feasibility set $T^\ast$; any string that can be parsed is admitted.
+
+\section{Heuristic Scoring for Assignment Suggestions}
+When suggesting a faculty for a course (see \texttt{facultyScoring.js}), the portal scores each candidate $f$ using fuzzy text signals and light workload cues:
+\begin{itemize}
+  \item \textbf{Program/department alignment:} similarity between the course program code and faculty department, using token normalization and proportional frequency of matching historical rows.
+  \item \textbf{Term recency:} a recency weight $\mathrm{rec}(f)=\max(0.25,0.75^{\Delta})$ where $\Delta$ is the difference in term order between the candidate term and the latest term taught by $f$.
+  \item \textbf{Time/session proximity:} the course midpoint minute is mapped to a band (AM/PM/EVE); matching band/session yields higher score.
+  \item \textbf{String similarity:} Dice/Levenshtein similarity between course codes/titles and faculty historical course tokens; aggregated via best-match averages.
+  \item \textbf{Employment prior:} full-time $\to$ higher baseline than part-time/``KNP'' markers.
+\end{itemize}
+The heuristic score is a weighted sum of these components; capacity $U_f$ is \emph{not} enforced. Overload is only displayed as a statistic: $\text{overload}_f = \max(0, \text{units}_f - 24)$.
+
+\section{Bounded-Depth Chain Reallocation as Implemented}
+The backend exposes a \texttt{suggestions} endpoint (\texttt{scheduleService.js}) that performs a bounded-depth search to clear a target time for the same faculty and section.
+
+\subsection{Candidate slot set}
+The search space is a small, hardcoded list of time blocks:
+\[
+\mathcal{T}_{\text{cand}} = \{\text{8-9AM},\,\text{9-10AM},\,\text{10-11AM},\,\text{11-12NN},\,\text{12-1PM},\,\text{1-2PM},\,\text{2-3PM},\,\text{3-4PM},\,\text{4-5PM},\,\text{5-6PM},\,\text{8-9PM}\}.
+\]
+Each block is parsed to minutes; keys are session-bucketed as morning/afternoon/evening. Only blocks sharing the candidate's session are explored.
+
+\subsection{State and feasibility}
+Let $s$ map each occupied block $(\text{term},\text{timeKey})$ to a list of rows for the target faculty. A move reassigns one blocking row from its current block to an alternate block in $\mathcal{T}_{\text{cand}}$ within the same term. A move is \emph{admissible} if it does not produce:
+\begin{enumerate}
+  \item Same-faculty same-term exact time collision (excluding the moved row itself).
+  \item Same-section same-term collision (section equality is normalized alphanumerically).
+\end{enumerate}
+Session/day alignment, eligibility, and capacity are not enforced; the day set is assumed compatible.
+
+\subsection{Search and depth bound}
+Depth-first search explores chains of blockers up to $D=\min(10,\maxDepth)$; default $D=3$. At depth $d$, a candidate target block $t^\ast$ is free if the occupancy list for $(\text{term}, t^\ast)$ is empty after performing prior moves. When free, a plan is recorded:
+\[
+\text{steps} = \bigl[(\text{blocker move}_1), \dots, (\text{blocker move}_{d-1}), (\text{place target at } t^\ast)\bigr].
+\]
+No cost function is optimized; plans are returned in reverse depth order (prioritizing shorter chains, capped to three per depth).
+
+\subsection{Completeness and limitations}
+The procedure is complete only over $\mathcal{T}_{\text{cand}}$ and the target faculty's rows in the same term. It does not consider cross-term swaps, cross-faculty trades, or capacity balancing. If the target's own time is already conflict-free, suggestions focus on moving the course to another free block (up to three options).
+
+\section{Data Flow and Normalizations}
+\begin{itemize}
+  \item Time parsing is tolerant: unparseable strings fall back to string-key equality for overlap checks.
+  \item Day parsing accepts tokens separated by commas, slashes, spaces, or dashes; ``TTH'' and ranges like ``MON-FRI'' are expanded.
+  \item Faculty identity is matched by exact numeric ID when present; otherwise by normalized name ($\mathrm{lower}$ and alphanumeric stripped).
+  \item Sections are normalized by stripping non-alphanumerics to avoid minor formatting differences.
+\end{itemize}
+
+\section{Discussion}
+The implemented system delivers speed and explainability by constraining search to a tiny slot set and by using deterministic conflict predicates. However, this comes at the cost of:
+\begin{itemize}
+  \item No enforcement of load capacities or eligibility matrices.
+  \item No global objective; edits are ranked only by chain length and enumeration order.
+  \item Session/day compatibility is assumed rather than verified.
+  \item Suggestions cannot exploit swaps outside $\mathcal{T}_{\text{cand}}$ or across faculties/terms.
+\end{itemize}
+These gaps identify clear areas for future work if a formal model is reintroduced.
+
+\section{Conclusion}
+This paper captures the heuristics and bounded-depth logic actually deployed in the portal. By expressing the code paths as explicit predicates and a narrowly scoped search, we provide an auditable specification that matches observable behavior and distinguishes the implemented system from a full optimization model.
+
+\section*{References}
+\begin{thebibliography}{9}
+
+\bibitem[Schaerf, 1999]{Schaerf1999}
+Schaerf, A. (1999). A survey of automated timetabling. \emph{Artificial Intelligence Review, 13}(2), 87--127.
+
+\bibitem[Burke \& Petrovic, 2002]{Burke2002}
+Burke, E. K., \& Petrovic, S. (2002). Recent research directions in automated timetabling. \emph{European Journal of Operational Research, 140}(2), 266--280.
+
+\bibitem[Kingston, 2014]{Kingston2014}
+Kingston, J. H. (2014). \emph{KHE14: An algorithm for high school timetabling}. PATAT 2014 Proceedings.
+
+\end{thebibliography}
+
+\end{document}
