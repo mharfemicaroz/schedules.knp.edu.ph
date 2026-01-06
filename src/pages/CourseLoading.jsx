@@ -3172,10 +3172,17 @@ const prefill = hit ? {
           const parsed = parseF2FDays(s.day || s.f2fSched || s.f2fsched);
           return parsed.length ? parsed : ['ANY'];
         })();
-        const hasDayOverlap = candDays.includes('ANY') || schedDays.includes('ANY') || candDays.some(d => schedDays.includes(d));
+        // If candidate day is concrete but schedule day is unknown (ANY), skip to avoid false positives
+        const hasDayOverlap = candDays.includes('ANY')
+          ? schedDays.includes('ANY') || candDays.some(d => schedDays.includes(d))
+          : (schedDays.includes('ANY') ? false : candDays.some(d => schedDays.includes(d)));
         if (!hasDayOverlap) continue;
         const sRange = getTimeRange(String(s.schedule || s.time || s.scheduleKey || ''));
-        if (!sRange) continue;
+        const sRangeOk =
+          sRange &&
+          ((Number.isFinite(sRange.start) && Number.isFinite(sRange.end)) ||
+            Boolean(String(sRange.key || '').trim()));
+        if (!sRangeOk) continue;
         if (timeRangesOverlap(candRange, sRange)) {
           conflict = true;
           details.push({
