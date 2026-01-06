@@ -544,8 +544,10 @@ export default function CoursesView() {
       setRows(prev => prev.map((r,idx) => idx===i ? { ...r, _checking: false } : r));
       return;
     }
-    const allowedSessions = allowedSessionsForCourse(row, row.session, row._day || row.day);
-    const sessionKey = normalizeSessionKey(row.session) || deriveSessionFromTime(timeStr);
+    const blockSessionKey = normalizeSessionKey(row.session);
+    const timeSessionKey = deriveSessionFromTime(timeStr);
+    const sessionKey = timeSessionKey || blockSessionKey;
+    const allowedSessions = allowedSessionsForCourse(row, blockSessionKey || row.session, row._day || row.day);
     const inAllowedSession = (() => {
       if (!Array.isArray(allowedSessions) || allowedSessions.length === 0) return true;
       if (!sessionKey) return true;
