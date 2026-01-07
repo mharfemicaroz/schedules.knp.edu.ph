@@ -222,6 +222,20 @@ class ApiService {
     return await res.json();
   }
 
+  async getFacultySummary(params = {}) {
+    const search = new URLSearchParams();
+    const sy = params.sy || params.schoolyear || params.school_year;
+    const sem = params.sem || params.semester || params.semester_short;
+    if (sy) search.set('schoolyear', sy);
+    if (sem) search.set('semester', sem);
+    const qs = search.toString();
+    const url = `${this.baseURL}${this.schedulesPath}/faculty/summary${qs ? `?${qs}` : ''}`;
+    const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   // POST /api/schedules/:id/resolve - Resolve double-book by deleting conflicting row and saving candidate
   async resolveSchedule(id, payload) {
     const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/resolve`;

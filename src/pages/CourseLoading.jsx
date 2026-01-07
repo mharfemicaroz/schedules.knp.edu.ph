@@ -35,6 +35,7 @@ import AssignmentRow from '../components/AssignmentRow';
 import CoursesView from '../components/CoursesView';
 import CourseSummaryView from '../components/CourseSummaryView';
 import CourseLoadingSupport from '../components/CourseLoadingSupport';
+import CourseLoadingFacultySummary from '../components/CourseLoadingFacultySummary';
 
 
 function pickSchedules(rows = [], limit = 40) {
@@ -1122,6 +1123,7 @@ export default function CourseLoading() {
 
   const blocksAll = useSelector(selectBlocks);
   const facultyAll = useSelector(selectAllFaculty);
+  const facultyLoading = useSelector(s => s.faculty.loading);
   const facultyOpts = useSelector(selectFacultyFilterOptions);
   const blocksLoading = useSelector(s => s.blocks.loading);
   const settings = useSelector(selectSettings);
@@ -1226,16 +1228,18 @@ export default function CourseLoading() {
     return head;
   }, [userDeptRows]);
 
-  const allowedViews = React.useMemo(
-    () => (registrarViewOnly ? ['blocks', 'summary'] : ['blocks', 'faculty', 'courses', 'summary']),
-    [registrarViewOnly]
-  );
-  const [viewMode, setViewMode] = React.useState('blocks'); // 'blocks' | 'faculty' | 'courses' | 'summary'
+  const allowedViews = React.useMemo(() => {
+    if (registrarViewOnly) return ['blocks', 'summary'];
+    const list = ['blocks', 'faculty', 'courses', 'summary'];
+    if (isAdmin) list.push('facultySummary');
+    return list;
+  }, [registrarViewOnly, isAdmin]);
+  const [viewMode, setViewMode] = React.useState('blocks'); // 'blocks' | 'faculty' | 'courses' | 'summary' | 'facultySummary'
   React.useEffect(() => {
-    if (registrarViewOnly && !allowedViews.includes(viewMode)) {
-      setViewMode('blocks');
+    if (!allowedViews.includes(viewMode)) {
+      setViewMode(allowedViews[0] || 'blocks');
     }
-  }, [registrarViewOnly, allowedViews, viewMode]);
+  }, [allowedViews, viewMode]);
   const [selectedBlock, setSelectedBlock] = React.useState(null);
   const [selectedProgram, setSelectedProgram] = React.useState('');
   const [progBlocksLimit, setProgBlocksLimit] = React.useState(6);
@@ -3900,11 +3904,11 @@ const prefill = hit ? {
   }, []);
 
   const switchViewMode = React.useCallback((next) => {
-    if (registrarViewOnly && !allowedViews.includes(next)) return;
+    if (!allowedViews.includes(next)) return;
     try { clearTransientState(); } catch {}
     setAutoArrange(false);
     setViewMode(next);
-  }, [registrarViewOnly, allowedViews, clearTransientState]);
+  }, [allowedViews, clearTransientState]);
   const viewOnlyGridTemplate = '3fr 1fr 1fr 1.2fr 1fr 1.5fr 1fr';
   React.useEffect(() => {
     if (registrarViewOnly && termViewMode !== 'regular') {
@@ -4860,7 +4864,17 @@ const prefill = hit ? {
           <Heading size="md">Course Loading</Heading>
           <HStack spacing={1} ml={3}>
             {allowedViews.map((view) => {
-              const label = view === 'blocks' ? 'Blocks' : view === 'faculty' ? 'Faculty' : view === 'courses' ? 'Courses' : 'Summary';
+              const label = (
+                view === 'blocks'
+                  ? 'Blocks'
+                  : view === 'faculty'
+                  ? 'Faculty'
+                  : view === 'courses'
+                  ? 'Courses'
+                  : view === 'facultySummary'
+                  ? 'Faculty Summary'
+                  : 'Summary'
+              );
               return (
                 <Button key={view} size="sm" variant={viewMode===view?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode(view)}>
                   {label}
@@ -5025,7 +5039,7 @@ const prefill = hit ? {
         </Box>
         )}
 
-        <Box gridColumn={{ base: 'auto', lg: ((viewMode==='courses' || viewMode==='summary') ? '1 / span 5' : '2 / span 4') }} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg}>
+        <Box gridColumn={{ base: 'auto', lg: ((viewMode==='courses' || viewMode==='summary' || viewMode==='facultySummary') ? '1 / span 5' : '2 / span 4') }} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg}>
           {!selectedBlock && !selectedProgram && (viewMode === 'blocks' || viewMode === 'faculty') && (
             <VStack py={10} spacing={2}>
               {viewMode === 'blocks' ? (
@@ -5046,6 +5060,14 @@ const prefill = hit ? {
           )}
           {viewMode === 'summary' && (
             <CourseSummaryView viewOnly={registrarViewOnly} />
+          )}
+          {viewMode === 'facultySummary' && (
+            <CourseLoadingFacultySummary
+              faculties={facOptions || []}
+              courses={scopedCourses || []}
+              settingsLoad={settingsLoad}
+              loading={facultyLoading}
+            />
           )}
           {viewMode === 'blocks' && !selectedBlock && !!selectedProgram && (
             <VStack align="stretch" spacing={3}>
