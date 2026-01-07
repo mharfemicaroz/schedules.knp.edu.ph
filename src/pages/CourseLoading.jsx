@@ -190,6 +190,92 @@ function extractUserName(row = {}) {
     .find(Boolean);
   return cand || '';
 }
+function parseDateLoose(val) {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+}
+function expandDateRangeToken(token) {
+  const m = String(token || '').match(/^(\w+)\s+(\d+)-(\d+),\s*(\d{4})$/);
+  if (!m) return [];
+  const month = m[1];
+  const startD = parseInt(m[2], 10);
+  const endD = parseInt(m[3], 10);
+  const year = parseInt(m[4], 10);
+  const out = [];
+  for (let d = startD; d <= endD; d++) {
+    const dt = new Date(`${month} ${d}, ${year}`);
+    if (!isNaN(dt.getTime())) out.push(dt);
+  }
+  return out;
+}
+function resolveStartOfClasses(acadData, semesterRaw) {
+  const cal = Array.isArray(acadData)
+    ? (acadData[0]?.academic_calendar || acadData[0] || {})
+    : (acadData?.academic_calendar || acadData || {});
+  if (!cal) return null;
+  const semNorm = String(semesterRaw || '').toLowerCase();
+  const preferSecondTerm = /\b2(nd)?\s*term|\bsecond\s*term/.test(semNorm);
+  const isSecondSem = /\b2(nd)?\s*sem|\bsecond\s*sem/.test(semNorm);
+  const isSummer = /summer|mid\s*year|midyear/.test(semNorm);
+  let semNode = cal.first_semester || cal.firstSemester || cal.first;
+  if (isSecondSem) semNode = cal.second_semester || cal.secondSemester || cal.second || semNode;
+  if (isSummer) semNode = cal.summer || cal.summer_term || semNode;
+
+  const matchStartEvent = (a) => {
+    const label = String(a?.event || a?.title || '').toLowerCase();
+    return /start\s*of\s*classes|classes\s*begin|opening\s*of\s*classes|first\s*day\s*of\s*classes|start\s*of\s*class/.test(label);
+  };
+  const termCandidates = (term) => {
+    const starts = [];
+    const fallback = [];
+    if (!term) return { primary: [], any: [] };
+    const consider = (d, bucket) => { const dt = parseDateLoose(d); if (dt) bucket.push(dt); };
+    consider(term.start, starts);
+    const acts = Array.isArray(term.activities) ? term.activities : [];
+    acts.forEach((a) => {
+      const bucket = matchStartEvent(a) ? starts : fallback;
+      if (a.date_range) {
+        expandDateRangeToken(a.date_range).forEach((d) => consider(d, bucket));
+      } else if (Array.isArray(a.date)) {
+        a.date.forEach((d) => consider(d, bucket));
+      } else if (a.date) {
+        consider(a.date, bucket);
+      } else if (a.start) {
+        consider(a.start, bucket);
+      }
+    });
+    const sortDates = (arr) => arr.slice().sort((a, b) => a - b);
+    return { primary: sortDates(starts), any: sortDates(fallback) };
+  };
+
+  if (semNode?.term) {
+    const { primary, any } = termCandidates(semNode.term);
+    if (primary.length) return primary[0];
+    if (any.length) return any[0];
+  }
+
+  const firstTerm = semNode?.first_term || null;
+  const secondTerm = semNode?.second_term || null;
+  const preferred = preferSecondTerm ? secondTerm : firstTerm;
+  const secondary = preferSecondTerm ? firstTerm : secondTerm;
+
+  const preferredDates = termCandidates(preferred);
+  if (preferredDates.primary.length) return preferredDates.primary[0];
+  if (preferredDates.any.length) return preferredDates.any[0];
+
+  const secondaryDates = termCandidates(secondary);
+  if (secondaryDates.primary.length) return secondaryDates.primary[0];
+  if (secondaryDates.any.length) return secondaryDates.any[0];
+
+  // As a last resort, scan any activities under the semester node
+  const catchAll = termCandidates({ activities: semNode?.activities || [] });
+  if (catchAll.primary.length) return catchAll.primary[0];
+  if (catchAll.any.length) return catchAll.any[0];
+
+  return null;
+}
 // function normalizeSem(s) { const v = String(s || '').trim().toLowerCase(); if (!v) return ''; if (v.startsWith('1')) return '1st'; if (v.startsWith('2')) return '2nd'; if (v.startsWith('s')) return 'Sem'; return s; }
 function canonicalTerm(s) {
   const norm = normalizeSem(s);
@@ -950,6 +1036,7 @@ export default function CourseLoading() {
   const [allowedDepts, setAllowedDepts] = React.useState(null);
   const [userDeptRows, setUserDeptRows] = React.useState(null);
   const deptHeadCacheRef = React.useRef(new Map());
+  const [acadData, setAcadData] = React.useState(null);
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -1245,6 +1332,20 @@ export default function CourseLoading() {
   }, [facultyAll]);
 
   const settingsLoad = settings?.schedulesLoad || { school_year: '', semester: '' };
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!settingsLoad?.school_year) { if (alive) setAcadData(null); return; }
+        const res = await api.getAcademicCalendar({ school_year: settingsLoad.school_year });
+        const data = res?.data || res;
+        if (alive) setAcadData(data);
+      } catch {
+        if (alive) setAcadData(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [settingsLoad?.school_year]);
 
   // --- Printing helpers ---
   const esc = (val) => String(val ?? '')
@@ -1562,10 +1663,19 @@ export default function CourseLoading() {
       <tr><th>Overload Units</th><td>${esc(String(overloadUnits))}</td><th>Courses</th><td>${esc(String(list.length))}</td></tr>
       <tr><th>Schedule Type</th><td colspan="3">${esc(scheduleType)}</td></tr>
     </tbody></table>`;
+    const semLabelFull = resolveSemesterLabel(settingsLoad?.semester || '', settingsLoad?.semester || '') || 'Current Semester';
+    const semShort = semLabelFull.replace(/semester/i, 'sem').replace(/\s+/g, ' ').trim();
+    const syText = settingsLoad?.school_year || 'TBD';
+    const startOfClasses = resolveStartOfClasses(acadData, settingsLoad?.semester);
+    const startDateText = startOfClasses
+      ? startOfClasses.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+      : 'TBD';
     const tentativeNoteHtml = `
       <div class="prt-banner">
-        <div class="prt-banner-title">Tentative Load</div>
-        <p class="prt-banner-text">This is a tentative teaching load and not final. Assignments may change after validations and approvals.</p>
+        <div class="prt-banner-title">Notice of Teaching Load</div>
+        <p class="prt-banner-text">Classes for ${esc(semShort || 'current sem')}, SY ${esc(syText)} begin on ${esc(startDateText)}.</p>
+        <p class="prt-banner-text">Admit only officially enrolled students; verify COR and class codes.</p>
+        <p class="prt-banner-text">This load is tentative; we'll notify you of any changes.</p>
       </div>`;
     const introHtml = (() => {
       try {
