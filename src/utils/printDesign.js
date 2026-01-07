@@ -1,16 +1,24 @@
 export function buildTable(headers = [], rows = []) {
-  const norm = (s) => String(s || '').trim().toLowerCase();
+  const norm = (s) =>
+    String(s || "")
+      .trim()
+      .toLowerCase();
   const colClasses = headers.map((h) => {
     const n = norm(h);
-    if (n === 'title') return 'col-title';
-    if (n === 'faculty') return 'col-faculty';
-    return 'col-tight';
+    if (n === "title") return "col-title";
+    if (n === "faculty") return "col-faculty";
+    return "col-tight";
   });
   const thead = `<thead><tr>${headers
     .map((h, i) => `<th class="${colClasses[i]}">${escapeHtml(h)}</th>`)
     .join("")}</tr></thead>`;
   const tbody = `<tbody>${rows
-    .map((r) => `<tr>${r.map((c, i) => `<td class="${colClasses[i]}">${escapeHtml(c)}</td>`).join("")}</tr>`)
+    .map(
+      (r) =>
+        `<tr>${r
+          .map((c, i) => `<td class="${colClasses[i]}">${escapeHtml(c)}</td>`)
+          .join("")}</tr>`
+    )
     .join("")}</tbody>`;
   return `<table class="prt-table">${thead}${tbody}</table>`;
 }
@@ -49,8 +57,12 @@ export function printContent(
   }; object-fit: cover; box-shadow: 0 3px 10px rgba(0,0,0,0.20); }
     .inst-lines { line-height: ${compact ? "1.1" : "1.2"}; }
     .inst-name { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: 0.2px; color: #0a0a0a; }
-    .inst-office { margin: ${compact ? "2px 0 0 0" : "6px 0 0 0"}; font-size: 16px; color: #111; font-weight: 800; }
-    .inst-app { margin: ${compact ? "2px 0 0 0" : "8px 0 0 0"}; font-size: 14px; color: #333; font-weight: 700; }
+    .inst-office { margin: ${
+      compact ? "2px 0 0 0" : "6px 0 0 0"
+    }; font-size: 16px; color: #111; font-weight: 800; }
+    .inst-app { margin: ${
+      compact ? "2px 0 0 0" : "8px 0 0 0"
+    }; font-size: 14px; color: #333; font-weight: 700; }
     .prt-header { padding: 0 ${compact ? "14px" : "32px"}; margin-top: ${
     compact ? "8px" : "16px"
   }; }
@@ -77,8 +89,12 @@ export function printContent(
     .prt-qr-cap { font-size: 11px; color: #374151; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; text-align: center; max-width: ${
       compact ? "160px" : "200px"
     }; }
-    .prt-fac-name { font-weight: 900; font-size: 20px; margin: 0 0 ${compact ? "4px" : "6px"} 0; }
-    .prt-fac-sub { color: #333; font-size: 12px; font-weight: 700; margin: 0 0 ${compact ? "4px" : "6px"} 0; }
+    .prt-fac-name { font-weight: 900; font-size: 20px; margin: 0 0 ${
+      compact ? "4px" : "6px"
+    } 0; }
+    .prt-fac-sub { color: #333; font-size: 12px; font-weight: 700; margin: 0 0 ${
+      compact ? "4px" : "6px"
+    } 0; }
     .prt-body { padding: ${compact ? "8px 12px 12px" : "16px 24px 24px"}; }
     .prt-table { width: 100%; border-collapse: collapse; margin-top: ${
       compact ? "4px" : "8px"
@@ -86,16 +102,16 @@ export function printContent(
     .prt-table th, .prt-table td { border: 1px solid #ddd; padding: ${
       compact ? "3px 6px" : "8px 10px"
     }; font-size: 12px; line-height: ${
-      compact ? "1.15" : "1.3"
-    }; vertical-align: top; white-space: nowrap; }
+    compact ? "1.15" : "1.3"
+  }; vertical-align: top; white-space: nowrap; }
     .prt-table .col-title, .prt-table .col-faculty { white-space: normal; }
     .prt-table .col-tight { width: 1%; }
     .prt-table th { background: #f6f9fc; text-align: left; font-weight: 700; }
     .prt-footer { padding: 0 ${compact ? "12px" : "24px"} ${
     compact ? "8px" : "16px"
-  }; margin-top: ${compact ? "8px" : "12px"}; font-size: 13px; display: ${compact ? "grid" : "flex"}; grid-template-columns: ${
-    compact ? "1fr 1fr" : "none"
-  }; gap: ${
+  }; margin-top: ${compact ? "8px" : "12px"}; font-size: 13px; display: ${
+    compact ? "grid" : "flex"
+  }; grid-template-columns: ${compact ? "1fr 1fr" : "none"}; gap: ${
     compact ? "12px" : "32px"
   }; justify-content: space-between; flex-wrap: wrap; }
     .prt-block { min-width: ${compact ? "180px" : "260px"}; }
@@ -109,15 +125,19 @@ export function printContent(
   }; font-weight: 700; }
     .prt-role { color: #444; font-size: 12px; }
     .prt-notice { margin: ${compact ? "6px 0 10px" : "12px 0 16px"}; padding: ${
-      compact ? "6px 8px" : "10px 12px"
-    }; background: #f8fafc; border-left: 3px solid #2563eb; border-radius: 6px; }
+    compact ? "6px 8px" : "10px 12px"
+  }; background: #f8fafc; border-left: 3px solid #2563eb; border-radius: 6px; }
     .prt-notice-title { font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; margin: 0 0 ${
       compact ? "4px" : "6px"
     } 0; font-size: 12px; color: #0a0a0a; }
-    .prt-notice p { margin: ${compact ? "2px 0" : "4px 0"}; font-size: 12px; color: #111; }
-    .prt-banner { margin: ${compact ? "10px 0 12px" : "14px 0 16px"}; padding: ${
-      compact ? "10px 12px" : "14px 16px"
-    }; background: linear-gradient(120deg, #eef2ff, #f0f9ff); border: 1px solid #dbeafe; border-radius: 12px; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.12); }
+    .prt-notice p { margin: ${
+      compact ? "2px 0" : "4px 0"
+    }; font-size: 12px; color: #111; }
+    .prt-banner { margin: ${
+      compact ? "10px 0 12px" : "14px 0 16px"
+    }; padding: ${
+    compact ? "10px 12px" : "14px 16px"
+  }; background: linear-gradient(120deg, #eef2ff, #f0f9ff); border: 1px solid #dbeafe; border-radius: 12px; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.12); }
     .prt-banner-title { font-weight: 900; letter-spacing: 0.4px; text-transform: uppercase; color: #1d4ed8; margin: 0 0 ${
       compact ? "4px" : "6px"
     } 0; font-size: 12px; }
@@ -156,8 +176,11 @@ export function printContent(
     ? `<div class='prt-printed'>Printed: ${escapeHtml(now)}</div>`
     : "";
 
-  const preparedBy = typeof opts.preparedBy === 'string' ? opts.preparedBy : '';
-  const preparedRole = typeof opts.preparedRole === 'string' && opts.preparedRole.trim().length > 0 ? opts.preparedRole : 'Academic Head';
+  const preparedBy = typeof opts.preparedBy === "string" ? opts.preparedBy : "";
+  const preparedRole =
+    typeof opts.preparedRole === "string" && opts.preparedRole.trim().length > 0
+      ? opts.preparedRole
+      : "Academic Head";
   const hideVerified = opts.hideVerified === true;
   const preparedBlock = preparedBy
     ? `
@@ -166,9 +189,9 @@ export function printContent(
         <div class='prt-sign'>${escapeHtml(preparedBy)}</div>
         <div class='prt-role'>${escapeHtml(preparedRole)}</div>
       </div>`
-    : '';
+    : "";
   const verifiedBlock = hideVerified
-    ? ''
+    ? ""
     : `
       <div class='prt-block'>
         <div class='prt-verify'>Verified by:</div>

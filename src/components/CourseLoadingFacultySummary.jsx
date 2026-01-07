@@ -70,9 +70,8 @@ function splitOverload(total) {
 }
 
 function fmtHours(units) {
-  const hrs = units / 3;
-  if (!Number.isFinite(hrs)) return '0';
-  const rounded = Math.round(hrs * 100) / 100;
+  if (!Number.isFinite(units)) return '0';
+  const rounded = Math.round(units * 100) / 100;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
 }
 
@@ -258,40 +257,57 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
   const deptOptions = React.useMemo(() => buildDeptOptions(baseRows.length ? baseRows : faculties), [baseRows, faculties]);
   const employmentOptions = React.useMemo(() => buildEmploymentOptions(baseRows.length ? baseRows : faculties), [baseRows, faculties]);
 
-  const rows = React.useMemo(() => {
-    const ql = q.trim().toLowerCase();
-    const filtered = (baseRows || [])
-      .filter(r => (!ql || [r.faculty, r.department, r.employment].some(x => String(x || '').toLowerCase().includes(ql))))
-      .filter(r => (!dept || String(r.department || '').toLowerCase() === String(dept || '').toLowerCase()))
-      .filter(r => (!employment || String(r.employment || '').toLowerCase() === String(employment || '').toLowerCase()));
+const rows = React.useMemo(() => {
+  const ql = q.trim().toLowerCase();
+  const filtered = (baseRows || [])
+    .filter(r => (!ql || [r.faculty, r.department, r.employment].some(x => String(x || '').toLowerCase().includes(ql))))
+    .filter(r => (!dept || String(r.department || '').toLowerCase() === String(dept || '').toLowerCase()))
+    .filter(r => (!employment || String(r.employment || '').toLowerCase() === String(employment || '').toLowerCase()));
 
-    const dir = sortDir === 'asc' ? 1 : -1;
-    const valueOf = (r, key) => {
-      switch (key) {
-        case 'faculty': return String(r.faculty || '');
-        case 'department': return String(r.department || '');
-        case 'employment': return String(r.employment || '');
-        case 'load': return r.loadUnits || 0;
-        case 'release': return r.releaseUnits || 0;
-        case 'overload': return r.overloadUnits ?? r.overload ?? 0;
-        case 'first': return r.overloadFirst || 0;
-        case 'second': return r.overloadSecond || 0;
-        case 'courses': return r.courseCount || 0;
-        default: return '';
-      }
-    };
+  const dir = sortDir === 'asc' ? 1 : -1;
 
-    return filtered.sort((a, b) => {
-      const va = valueOf(a, sortKey);
-      const vb = valueOf(b, sortKey);
-      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-      const sa = String(va).toLowerCase();
-      const sb = String(vb).toLowerCase();
-      if (sa < sb) return -1 * dir;
-      if (sa > sb) return 1 * dir;
-      return String(a.faculty || '').localeCompare(String(b.faculty || ''));
-    });
-  }, [baseRows, q, dept, employment, sortKey, sortDir]);
+  const valueOf = (r, key) => {
+    switch (key) {
+      case 'faculty': return String(r.faculty || '');
+      case 'department': return String(r.department || '');
+      case 'employment': return String(r.employment || '');
+      case 'load': return r.loadUnits || 0;
+      case 'release': return r.releaseUnits || 0;
+      case 'overload': return r.overloadUnits ?? r.overload ?? 0;
+      case 'first': return r.overloadFirst || 0;
+      case 'second': return r.overloadSecond || 0;
+      case 'courses': return r.courseCount || 0;
+      default: return '';
+    }
+  };
+
+  const cmpStr = (a, b) =>
+    String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true, sensitivity: 'base' });
+
+  return filtered.sort((a, b) => {
+    // primary grouping order (always applied)
+    const group =
+      cmpStr(a.employment, b.employment) ||
+      cmpStr(a.department, b.department) ||
+      cmpStr(a.faculty, b.faculty);
+
+    if (group !== 0) return group;
+
+    // then apply user-selected sort within the same (employment, department, faculty)
+    const va = valueOf(a, sortKey);
+    const vb = valueOf(b, sortKey);
+
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+
+    const sa = String(va).toLowerCase();
+    const sb = String(vb).toLowerCase();
+    if (sa < sb) return -1 * dir;
+    if (sa > sb) return 1 * dir;
+
+    return 0;
+  });
+}, [baseRows, q, dept, employment, sortKey, sortDir]);
+
 
   const totals = React.useMemo(() => {
     const totalLoad = rows.reduce((s, r) => s + (Number(r.loadUnits) || 0), 0);
@@ -359,23 +375,37 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
       '2nd Term (units/hrs)',
       'Courses'
     ];
-    const data = rows.map(r => [
-      r.faculty,
-      r.department,
-      r.employment,
-      String(r.loadUnits),
-      String(r.releaseUnits),
-      String(r.overloadUnits ?? r.overload),
-      `${r.overloadFirst}u / ${r.overloadFirstHours}h`,
-      `${r.overloadSecond}u / ${r.overloadSecondHours}h`,
-      String(r.courseCount)
-    ]);
+    const compare = (a, b) =>
+      String(a ?? "").localeCompare(String(b ?? ""), undefined, {
+        numeric: true,
+        sensitivity: "base"
+      });
+
+    const data = [...rows]
+      .sort(
+        (a, b) =>
+          compare(a.employment, b.employment) ||
+          compare(a.department, b.department) ||
+          compare(a.faculty, b.faculty)
+      )
+      .map(r => [
+        r.faculty,
+        r.department,
+        r.employment,
+        String(r.loadUnits),
+        String(r.releaseUnits),
+        String(r.overloadUnits ?? r.overload),
+        `${r.overloadFirst}u / ${r.overloadFirstHours}h`,
+        `${r.overloadSecond}u / ${r.overloadSecondHours}h`,
+        String(r.courseCount)
+      ]);
+
     const subtitle = [
       settingsLoad?.school_year ? `SY ${settingsLoad.school_year}` : '',
       settingsLoad?.semester ? `Sem ${settingsLoad.semester}` : ''
     ].filter(Boolean).join('  |  ');
     const bodyHtml = buildTable(headers, data);
-    printContent({ title: 'Faculty Overload Summary', subtitle, bodyHtml });
+    printContent({ title: 'Faculty Overload Summary', subtitle, bodyHtml },{orientation: 'landscape'});
   };
 
   const toggleSort = (key) => {
