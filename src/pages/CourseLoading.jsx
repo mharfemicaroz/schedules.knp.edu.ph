@@ -210,72 +210,173 @@ function expandDateRangeToken(token) {
   }
   return out;
 }
-function resolveStartOfClasses(acadData, semesterRaw) {
-  const cal = Array.isArray(acadData)
-    ? (acadData[0]?.academic_calendar || acadData[0] || {})
-    : (acadData?.academic_calendar || acadData || {});
-  if (!cal) return null;
-  const semNorm = String(semesterRaw || '').toLowerCase();
-  const preferSecondTerm = /\b2(nd)?\s*term|\bsecond\s*term/.test(semNorm);
-  const isSecondSem = /\b2(nd)?\s*sem|\bsecond\s*sem/.test(semNorm);
-  const isSummer = /summer|mid\s*year|midyear/.test(semNorm);
-  let semNode = cal.first_semester || cal.firstSemester || cal.first;
-  if (isSecondSem) semNode = cal.second_semester || cal.secondSemester || cal.second || semNode;
-  if (isSummer) semNode = cal.summer || cal.summer_term || semNode;
+function resolveStartOfClasses(acadData, syRaw, semesterRaw) {
+  const MONTHS = {
+    jan: 0, january: 0,
+    feb: 1, february: 1,
+    mar: 2, march: 2,
+    apr: 3, april: 3,
+    may: 4,
+    jun: 5, june: 5,
+    jul: 6, july: 6,
+    aug: 7, august: 7,
+    sep: 8, sept: 8, september: 8,
+    oct: 9, october: 9,
+    nov: 10, november: 10,
+    dec: 11, december: 11
+  };
+
+  const norm = (v) =>
+    String(v ?? "")
+      .toLowerCase()
+      .replace(/[\u2013\u2014]/g, "-")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  const parseDateLoose = (raw) => {
+    if (!raw) return null;
+    if (raw instanceof Date) return new Date(Date.UTC(raw.getFullYear(), raw.getMonth(), raw.getDate()));
+    const s = String(raw).trim().replace(/\s+/g, " ");
+    if (!s) return null;
+
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
+
+    m = s.match(/^([A-Za-z]+)\s+(\d{1,2})(?:,)?\s+(\d{4})$/);
+    if (m) {
+      const mm = MONTHS[String(m[1]).toLowerCase()];
+      if (mm == null) return null;
+      return new Date(Date.UTC(+m[3], mm, +m[2]));
+    }
+
+    const t = Date.parse(s);
+    if (!Number.isNaN(t)) {
+      const d = new Date(t);
+      return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    }
+    return null;
+  };
+
+  const formatLong = (dt) => {
+    if (!dt) return null;
+    const mo = dt.toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+    return `${mo} ${dt.getUTCDate()}, ${dt.getUTCFullYear()}`;
+  };
 
   const matchStartEvent = (a) => {
-    const label = String(a?.event || a?.title || '').toLowerCase();
-    return /start\s*of\s*classes|classes\s*begin|opening\s*of\s*classes|first\s*day\s*of\s*classes|start\s*of\s*class/.test(label);
-  };
-  const termCandidates = (term) => {
-    const starts = [];
-    const fallback = [];
-    if (!term) return { primary: [], any: [] };
-    const consider = (d, bucket) => { const dt = parseDateLoose(d); if (dt) bucket.push(dt); };
-    consider(term.start, starts);
-    const acts = Array.isArray(term.activities) ? term.activities : [];
-    acts.forEach((a) => {
-      const bucket = matchStartEvent(a) ? starts : fallback;
-      if (a.date_range) {
-        expandDateRangeToken(a.date_range).forEach((d) => consider(d, bucket));
-      } else if (Array.isArray(a.date)) {
-        a.date.forEach((d) => consider(d, bucket));
-      } else if (a.date) {
-        consider(a.date, bucket);
-      } else if (a.start) {
-        consider(a.start, bucket);
-      }
-    });
-    const sortDates = (arr) => arr.slice().sort((a, b) => a - b);
-    return { primary: sortDates(starts), any: sortDates(fallback) };
+    const label = norm(a?.event || a?.title || "");
+    return /(^| )start of classes( |$)|(^| )classes begin( |$)|(^| )opening of classes( |$)|(^| )first day of classes( |$)/.test(label);
   };
 
-  if (semNode?.term) {
-    const { primary, any } = termCandidates(semNode.term);
-    if (primary.length) return primary[0];
-    if (any.length) return any[0];
+  const getCalendars = (root) => {
+    const out = [];
+    const stack = [root];
+    const seen = new Set();
+    while (stack.length) {
+      const node = stack.pop();
+      if (!node) continue;
+      if (typeof node === "object") {
+        if (seen.has(node)) continue;
+        seen.add(node);
+      }
+      if (Array.isArray(node)) {
+        for (let i = 0; i < node.length; i++) stack.push(node[i]);
+        continue;
+      }
+      if (typeof node !== "object") continue;
+
+      if (
+        node.school_year &&
+        (node.first_semester || node.second_semester || node.summer || node.firstSemester || node.secondSemester)
+      ) out.push(node);
+
+      if (node.academic_calendar) stack.push(node.academic_calendar);
+      for (const k of Object.keys(node)) {
+        if (k !== "academic_calendar") stack.push(node[k]);
+      }
+    }
+    return out;
+  };
+
+  const pickEarliest = (arr) => {
+    const a = arr.filter(Boolean).sort((x, y) => x - y);
+    return a[0] || null;
+  };
+
+  const collectStartDates = (term) => {
+    const primary = [];
+    const any = [];
+    if (!term) return { primary, any };
+
+    const push = (raw, bucket) => {
+      const dt = parseDateLoose(raw);
+      if (dt) bucket.push(dt);
+    };
+
+    if (term.start) push(term.start, any);
+
+    const acts = Array.isArray(term.activities) ? term.activities : [];
+    for (const a of acts) {
+      const bucket = matchStartEvent(a) ? primary : any;
+      if (Array.isArray(a.date)) for (const d of a.date) push(d, bucket);
+      else if (a.date) push(a.date, bucket);
+      else if (a.start) push(a.start, bucket);
+    }
+
+    return { primary, any };
+  };
+
+  const calendars = getCalendars(acadData);
+  if (!calendars.length) return { startOfClasses: null };
+
+  const syN = norm(syRaw).replace(/ /g, "");
+  let cal = calendars[0];
+  if (syN) {
+    const exact = calendars.find((c) => norm(c.school_year).replace(/ /g, "") === syN);
+    cal = exact || cal;
   }
 
-  const firstTerm = semNode?.first_term || null;
-  const secondTerm = semNode?.second_term || null;
-  const preferred = preferSecondTerm ? secondTerm : firstTerm;
-  const secondary = preferSecondTerm ? firstTerm : secondTerm;
+  const semN = norm(semesterRaw);
 
-  const preferredDates = termCandidates(preferred);
-  if (preferredDates.primary.length) return preferredDates.primary[0];
-  if (preferredDates.any.length) return preferredDates.any[0];
+  let semNode = null;
+  if (/(^| )summer( |$)|(^| )mid year( |$)|(^| )midyear( |$)/.test(semN)) {
+    semNode = cal.summer || cal.summer_term || null;
+  } else if ((/(^| )2(nd)?( |$)|(^| )second( |$)/.test(semN) && /sem/.test(semN))) {
+    semNode = cal.second_semester || cal.secondSemester || cal.second || null;
+  } else if ((/(^| )1(st)?( |$)|(^| )first( |$)/.test(semN) && /sem/.test(semN))) {
+    semNode = cal.first_semester || cal.firstSemester || cal.first || null;
+  } else {
+    semNode = cal.first_semester || cal.firstSemester || cal.first || null;
+  }
 
-  const secondaryDates = termCandidates(secondary);
-  if (secondaryDates.primary.length) return secondaryDates.primary[0];
-  if (secondaryDates.any.length) return secondaryDates.any[0];
+  if (!semNode) return { startOfClasses: null };
 
-  // As a last resort, scan any activities under the semester node
-  const catchAll = termCandidates({ activities: semNode?.activities || [] });
-  if (catchAll.primary.length) return catchAll.primary[0];
-  if (catchAll.any.length) return catchAll.any[0];
+  const terms = [];
+  if (semNode.term) terms.push(semNode.term);
+  if (semNode.first_term) terms.push(semNode.first_term);
+  if (semNode.second_term) terms.push(semNode.second_term);
+  if (semNode.firstTerm) terms.push(semNode.firstTerm);
+  if (semNode.secondTerm) terms.push(semNode.secondTerm);
 
-  return null;
+  const allPrimary = [];
+  const allAny = [];
+  for (const t of terms) {
+    const { primary, any } = collectStartDates(t);
+    allPrimary.push(...primary);
+    allAny.push(...any);
+  }
+
+  const semPeriodStart = parseDateLoose(semNode?.semester_period?.start);
+  const best = pickEarliest(allPrimary) || pickEarliest(allAny) || semPeriodStart || null;
+
+  return { startOfClasses: formatLong(best) };
 }
+
+
+
 // function normalizeSem(s) { const v = String(s || '').trim().toLowerCase(); if (!v) return ''; if (v.startsWith('1')) return '1st'; if (v.startsWith('2')) return '2nd'; if (v.startsWith('s')) return 'Sem'; return s; }
 function canonicalTerm(s) {
   const norm = normalizeSem(s);
@@ -1666,10 +1767,12 @@ export default function CourseLoading() {
     const semLabelFull = resolveSemesterLabel(settingsLoad?.semester || '', settingsLoad?.semester || '') || 'Current Semester';
     const semShort = semLabelFull.replace(/semester/i, 'sem').replace(/\s+/g, ' ').trim();
     const syText = settingsLoad?.school_year || 'TBD';
-    const startOfClasses = resolveStartOfClasses(acadData, settingsLoad?.semester);
-    const startDateText = startOfClasses
-      ? startOfClasses.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
-      : 'TBD';
+    console.log({ acadData});
+    const startOfClasses = resolveStartOfClasses(acadData, settingsLoad?.school_year, settingsLoad?.semester);
+    // const startDateText = startOfClasses
+    //   ? startOfClasses.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+    //   : 'TBD';
+    const startDateText = 'January 19, 2026'
     const tentativeNoteHtml = `
       <div class="prt-banner">
         <div class="prt-banner-title">Notice of Teaching Load</div>
