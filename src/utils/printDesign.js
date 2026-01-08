@@ -31,6 +31,11 @@ export function printContent(
   const orientation = opts.orientation || "portrait"; // 'portrait' | 'landscape'
   const compact = !!opts.compact;
   const margin = opts.margin || (compact ? "8mm" : "16mm");
+  const hideHero = opts.hideHero === true;
+  const hideHeader = opts.hideHeader === true;
+  const hideFooter = opts.hideFooter === true;
+  const hidePrinted = opts.hidePrinted === true;
+  const hideBodyWrapper = opts.hideBodyWrapper === true;
   const w = window.open("", "_blank");
   if (!w) return;
   const styles = `
@@ -148,6 +153,10 @@ export function printContent(
     .prt-printed { padding: 0 ${compact ? "12px" : "24px"} ${
     compact ? "12px" : "18px"
   }; text-align: right; color: #666; font-size: 12px; }
+    .prt-page { page-break-after: always; break-after: page; min-height: 100%; display: flex; flex-direction: column; }
+    .prt-page:last-child { page-break-after: auto; break-after: auto; }
+    .prt-page .prt-body { flex: 1 1 auto; }
+    .prt-page .prt-footer { margin-top: auto; }
   `;
   const nowDate = new Date();
   const now = nowDate.toLocaleString();
@@ -164,7 +173,7 @@ export function printContent(
         <div class='prt-role'>Date: ${escapeHtml(when)}</div>
       </div>`;
   }
-  const headerHtml = isFacultyDetail
+  const headerHtml = (hideHeader || isFacultyDetail)
     ? ""
     : `
     <div class='prt-header'>
@@ -172,9 +181,9 @@ export function printContent(
       ${subtitle ? `<p class='prt-sub'>${escapeHtml(subtitle)}</p>` : ""}
       <p class='prt-meta'>Printed: ${escapeHtml(now)}</p>
     </div>`;
-  const printedBlock = isFacultyDetail
-    ? `<div class='prt-printed'>Printed: ${escapeHtml(now)}</div>`
-    : "";
+  const printedBlock = (hidePrinted || !isFacultyDetail)
+    ? ""
+    : `<div class='prt-printed'>Printed: ${escapeHtml(now)}</div>`;
 
   const preparedBy = typeof opts.preparedBy === "string" ? opts.preparedBy : "";
   const preparedRole =
@@ -198,25 +207,9 @@ export function printContent(
         <div class='prt-sign'>Dr. Mharfe M. Micaroz</div>
         <div class='prt-role'>Vice President of Academic Affairs</div>
       </div>`;
-
-  const doc = `<!doctype html><html><head><meta charset='utf-8'><title>${escapeHtml(
-    title
-  )}</title><style>${styles}</style></head>
-  <body>
-    <div class='inst-hero'>
-      <div class='inst-wrap'>
-        <img class='inst-logo' src='/logo.png' alt='Logo' />
-        <div class='inst-lines'>
-          <p class='inst-name'>Kolehiyo ng Pantukan</p>
-          <p class='inst-office'>Office of the Vice President of Academic Affairs</p>
-          <p class='inst-app'>Smart Academic Scheduler</p>
-        </div>
-      </div>
-    </div>
-    ${headerHtml}
-    <div class='prt-body'>
-      ${bodyHtml}
-    </div>
+  const footerHtml = hideFooter
+    ? ""
+    : `
     <div class='prt-footer'>
       ${preparedBlock}
       ${verifiedBlock}
@@ -225,7 +218,25 @@ export function printContent(
         <div class='prt-sign'>Dr. Mary Ann R. Araula</div>
         <div class='prt-role'>Acting College President</div>
       </div>
-    </div>
+    </div>`;
+
+  const doc = `<!doctype html><html><head><meta charset='utf-8'><title>${escapeHtml(
+    title
+  )}</title><style>${styles}</style></head>
+  <body>
+    ${hideHero ? "" : `<div class='inst-hero'>
+      <div class='inst-wrap'>
+        <img class='inst-logo' src='/logo.png' alt='Logo' />
+        <div class='inst-lines'>
+          <p class='inst-name'>Kolehiyo ng Pantukan</p>
+          <p class='inst-office'>Office of the Vice President of Academic Affairs</p>
+          <p class='inst-app'>Smart Academic Scheduler</p>
+        </div>
+      </div>
+    </div>`}
+    ${headerHtml}
+    ${hideBodyWrapper ? bodyHtml : `<div class='prt-body'>${bodyHtml}</div>`}
+    ${footerHtml}
     ${conforme}
     ${printedBlock}
     <script>window.onload = () => { window.print(); setTimeout(()=>window.close(), 300); };</script>

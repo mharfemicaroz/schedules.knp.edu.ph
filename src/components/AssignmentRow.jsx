@@ -48,6 +48,7 @@ function AssignmentRow({
   blockSession,
   variant = 'default',
   viewOnly = false,
+  hideFacultyName = false,
 }) {
   const rowBorder = useColorModeValue('gray.100', 'gray.700');
   const mutedText = useColorModeValue('gray.600', 'gray.300');
@@ -287,7 +288,11 @@ function AssignmentRow({
     const displayTerm = currTerm || '-';
     const displayDay = currDay || 'MON-FRI';
     const displayTime = currTime || '-';
-    const displayFaculty = currFacName || 'Unassigned';
+    const displayFaculty = (() => {
+      if (!hideFacultyName) return currFacName || 'Unassigned';
+      const hasName = String(currFacName || '').trim().length > 0;
+      return hasName ? 'Hidden' : 'Unassigned';
+    })();
     const displayBlock = blockCode || row?.blockCode || row?.section || '-';
     const displayRoom = row?.room || '-';
     const gridTemplate = '3fr 1fr 1fr 1.2fr 1fr 1.5fr 1fr';

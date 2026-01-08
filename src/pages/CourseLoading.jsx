@@ -1129,6 +1129,7 @@ export default function CourseLoading() {
   const settings = useSelector(selectSettings);
   const prospectus = useSelector(selectAllProspectus);
   const existing = useSelector(selectAllCourses);
+  const rawSchedules = useSelector((s) => s.data?.raw);
   const dataFaculties = useSelector(s => s.data.faculties);
   const accessToken = useSelector(s => s.auth.accessToken);
   const authUser = useSelector(s => s.auth.user);
@@ -1329,6 +1330,7 @@ export default function CourseLoading() {
   const [facSuggPlans, setFacSuggPlans] = React.useState([]);
   const [facSuggTargetId, setFacSuggTargetId] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
+  const [printingAll, setPrintingAll] = React.useState(false);
   const [lockDialogBusy, setLockDialogBusy] = React.useState(false);
   const [lockDialogIndex, setLockDialogIndex] = React.useState(null);
   const [lockDialogBulkIdxs, setLockDialogBulkIdxs] = React.useState([]);
@@ -1456,6 +1458,11 @@ export default function CourseLoading() {
   const esc = (val) => String(val ?? '')
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/\"/g,'&quot;').replace(/'/g,'&#039;');
+  const formatFacultyName = (raw, hide) => {
+    const name = String(raw || '').trim();
+    if (!hide) return name;
+    return name ? 'Hidden' : 'Unassigned';
+  };
 
   const termOrder = (t) => {
     const v = String(t || '').trim().toLowerCase();
@@ -1471,6 +1478,7 @@ export default function CourseLoading() {
     const title = `Block: ${selectedBlock.blockCode || ''}`;
     const subtitle = [`School Year: ${settingsLoad?.school_year || ''}`, `Semester: ${settingsLoad?.semester || ''}`].filter(Boolean).join('  |  ');
     const headers = ['#','Course','Title','Units','Term','Time','Day','Room','Faculty'];
+    const hideFacultyNames = registrarViewOnly;
     const sorted = (rows || []).slice().sort((a,b) => {
       // Sort by explicit term only; do not fall back to semester
       const ta = termOrder(a._term || a.term);
@@ -1492,7 +1500,7 @@ export default function CourseLoading() {
       String(r._day || r.day || ''),
       // Prefer per-row room; if empty, fallback to selected block's room aggregation
       String(r.room || selectedBlock?.room || ''),
-      String(r._faculty || r.faculty || r.instructor || ''),
+      formatFacultyName(r._faculty || r.faculty || r.instructor || '', hideFacultyNames),
     ]);
     const totalUnits = sorted.reduce((sum, r) => {
       const v = Number(r.unit ?? r.units ?? 0);
@@ -1551,6 +1559,406 @@ export default function CourseLoading() {
     printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
   };
 
+  const onPrintAllBlocks = async () => {
+    const list = Array.isArray(blocks) ? blocks.slice() : [];
+    if (list.length === 0) {
+      toast({ title: 'Nothing to print', description: 'No blocks found.', status: 'info' });
+      return;
+    }
+    const headers = ['#','Course','Title','Units','Term','Time','Day','Room','Faculty'];
+    const hideFacultyNames = registrarViewOnly;
+    const termText = (r) => {
+      const raw = r?._term || r?.term || r?.semester || r?.sem || '';
+      const norm = canonicalTerm(raw);
+      return norm || String(raw || '').trim();
+    };
+    const normBlock = (v) => String(v || '').trim().toUpperCase();
+    const sortedBlocks = list
+      .map((b) => {
+        const code = String(b.blockCode || b.block_code || b.block || '').trim();
+        return { ref: b, code };
+      })
+      .filter((b) => b.code)
+      .sort((a, b) => {
+        const keyOf = (item) => {
+          const meta = parseBlockMeta(item.code);
+          const yr = parseInt(meta.yearlevel || '0', 10) || 0;
+          const sec = String(meta.section || '').padStart(3, '0');
+          return [meta.programcode, yr.toString().padStart(2,'0'), sec, item.code].join('|');
+        };
+        return keyOf(a).localeCompare(keyOf(b));
+      });
+    if (sortedBlocks.length === 0) {
+      toast({ title: 'Nothing to print', description: 'No block codes available.', status: 'info' });
+      return;
+    }
+
+    const blockSet = new Set(sortedBlocks.map((b) => normBlock(b.code)));
+    const loadSy = String(settingsLoad?.school_year || '').trim();
+    const loadSem = mapSemesterLabel(settingsLoad?.semester || '').trim().toLowerCase();
+    const normSy = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, '');
+    const matchesLoad = (rec) => {
+      if (!loadSy && !loadSem) return true;
+      const syVal = String(
+        rec?.schoolyear ||
+        rec?.schoolYear ||
+        rec?.school_year ||
+        rec?.sy ||
+        rec?.schedule?.schoolyear ||
+        rec?.schedule?.schoolYear ||
+        rec?.schedule?.school_year ||
+        rec?.schedule?.sy ||
+        ''
+      ).trim();
+      if (loadSy) {
+        if (!syVal || normSy(syVal) !== normSy(loadSy)) return false;
+      }
+      if (loadSem) {
+        const semRaw = (
+          rec?.semester ||
+          rec?.sem ||
+          rec?.schedule?.semester ||
+          rec?.schedule?.sem ||
+          ''
+        );
+        const semVal = mapSemesterLabel(semRaw).trim().toLowerCase();
+        if (!semVal || semVal !== loadSem) return false;
+      }
+      return true;
+    };
+    const filterByLoad = (list) => {
+      const base = Array.isArray(list) ? list : [];
+      if (!loadSy && !loadSem) return base;
+      return base.filter(matchesLoad);
+    };
+    const countMatches = (rows) => {
+      if (!Array.isArray(rows) || rows.length === 0) return 0;
+      let hits = 0;
+      rows.forEach((r) => {
+        const code = normBlock(r.blockCode || r.block_code || r.section || r.block || '');
+        if (code && blockSet.has(code)) hits += 1;
+      });
+      return hits;
+    };
+    let serverList = [];
+    try {
+      const qs = new URLSearchParams();
+      if (loadSy) qs.set('schoolyear', loadSy);
+      if (settingsLoad?.semester) qs.set('semester', settingsLoad.semester);
+      const resp = await api.request(`/?${qs.toString()}`);
+      serverList = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : (resp?.items || []));
+    } catch {}
+    const scopedList = filterByLoad(scopedCourses);
+    const rawList = filterByLoad(rawSchedules);
+    const existingList = filterByLoad(existing);
+    const freshList = filterByLoad(freshCache);
+    const scopedMatches = countMatches(scopedList);
+    const rawMatches = countMatches(rawList);
+    const existingMatches = countMatches(existingList);
+    let scheduleList = filterByLoad(serverList);
+    if (!scheduleList.length) {
+      scheduleList = scopedList;
+      if (scopedMatches === 0) {
+        if (rawMatches > 0) scheduleList = rawList;
+        else if (existingMatches > 0) scheduleList = existingList;
+        else scheduleList = rawList.length ? rawList : existingList;
+      }
+    }
+    const rawById = new Map(rawList.map((r) => [String(r?.id ?? r?.schedule_id ?? r?.scheduleId ?? ''), r]));
+    const existingById = new Map(existingList.map((r) => [String(r?.id ?? r?.schedule_id ?? r?.scheduleId ?? ''), r]));
+    const freshById = new Map(freshList.map((r) => [String(r?.id ?? r?.schedule_id ?? r?.scheduleId ?? ''), r]));
+    const normKeyPart = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const makeRowKey = (rec) => {
+      const blk = normKeyPart(rec?.blockCode || rec?.block_code || rec?.section || rec?.block || '');
+      const code = normKeyPart(
+        rec?.course_name ||
+        rec?.courseName ||
+        rec?.code ||
+        rec?.course ||
+        rec?.course_code ||
+        rec?.courseCode ||
+        rec?.subject_code ||
+        rec?.subjectCode ||
+        rec?.subject ||
+        ''
+      );
+      const title = normKeyPart(
+        rec?.course_title ||
+        rec?.courseTitle ||
+        rec?.title ||
+        rec?.subject_title ||
+        rec?.subjectTitle ||
+        rec?.subject_name ||
+        rec?.subjectName ||
+        ''
+      );
+      const primary = code || title;
+      if (!blk || !primary) return '';
+      return [blk, primary, title].join('|');
+    };
+    const draftFacultyById = new Map();
+    const draftFacultyByProspectusId = new Map();
+    const draftFacultyByKey = new Map();
+    if (Array.isArray(rows) && rows.length) {
+      rows.forEach((r) => {
+        const name = String(r?._faculty || r?.faculty || r?.instructor || '').trim();
+        if (!name) return;
+        const rid = r?._existingId ?? r?.schedule_id ?? r?.scheduleId ?? null;
+        if (rid != null) draftFacultyById.set(String(rid), name);
+        const pid = r?.prospectusId ?? r?.prospectus_id ?? r?.prospectus?.id ?? r?.id ?? null;
+        if (pid != null) draftFacultyByProspectusId.set(String(pid), name);
+        const key = makeRowKey({ ...r, blockCode: r?.blockCode || r?.section || selectedBlock?.blockCode || '' });
+        if (key) draftFacultyByKey.set(key, name);
+      });
+    }
+    const pickFacultyName = (rec) => {
+      if (!rec) return '';
+      const direct = [
+        rec?._faculty,
+        rec?.faculty,
+        rec?.instructor,
+        rec?.schedule?.instructor,
+        rec?.schedule?.instructorName,
+        rec?.schedule?.instructor_name,
+        rec?.schedule?.faculty,
+        rec?.schedule?.facultyName,
+        rec?.schedule?.faculty_name,
+        rec?.facultyName,
+        rec?.instructorName,
+        rec?.full_name,
+        rec?.fullName,
+        rec?.fullname,
+        rec?.faculty_name,
+        rec?.instructor_name,
+        rec?.teacher,
+        rec?.assignedFaculty,
+        rec?.schedule?.teacher,
+        rec?.schedule?.assignedFaculty,
+        rec?.schedule?.full_name,
+        rec?.schedule?.fullName,
+        rec?.schedule?.fullname,
+        rec?.facultyProfile?.faculty,
+        rec?.facultyProfile?.name,
+        rec?.facultyProfile?.full_name,
+        rec?.facultyProfile?.fullName,
+        rec?.facultyProfile?.fullname,
+        rec?.faculty_profile?.faculty,
+        rec?.faculty_profile?.name,
+        rec?.faculty_profile?.full_name,
+        rec?.faculty_profile?.fullName,
+        rec?.faculty_profile?.fullname,
+        rec?.schedule?.facultyProfile?.faculty,
+        rec?.schedule?.facultyProfile?.name,
+        rec?.schedule?.facultyProfile?.full_name,
+        rec?.schedule?.facultyProfile?.fullName,
+        rec?.schedule?.facultyProfile?.fullname,
+        rec?.schedule?.faculty_profile?.faculty,
+        rec?.schedule?.faculty_profile?.name,
+        rec?.schedule?.faculty_profile?.full_name,
+        rec?.schedule?.faculty_profile?.fullName,
+        rec?.schedule?.faculty_profile?.fullname,
+      ]
+        .map((v) => String(v || '').trim())
+        .find(Boolean);
+      return direct || '';
+    };
+    const pickFacultyId = (rec) => {
+      if (!rec) return null;
+      return (
+        rec?.facultyId ??
+        rec?.faculty_id ??
+        rec?.facultyid ??
+        rec?.instructorId ??
+        rec?.instructor_id ??
+        rec?.teacherId ??
+        rec?.teacher_id ??
+        rec?.assignedFacultyId ??
+        rec?.assigned_faculty_id ??
+        rec?.facultyProfile?.id ??
+        rec?.faculty_profile?.id ??
+        rec?.schedule?.facultyId ??
+        rec?.schedule?.faculty_id ??
+        rec?.schedule?.facultyid ??
+        rec?.schedule?.instructorId ??
+        rec?.schedule?.instructor_id ??
+        rec?.schedule?.teacherId ??
+        rec?.schedule?.teacher_id ??
+        rec?.schedule?.assignedFacultyId ??
+        rec?.schedule?.assigned_faculty_id ??
+        rec?.schedule?.facultyProfile?.id ??
+        rec?.schedule?.faculty_profile?.id ??
+        null
+      );
+    };
+    const resolveFacultyName = (rec) => {
+      const rawId = rec?._existingId ?? rec?.id ?? rec?.schedule_id ?? rec?.scheduleId ?? null;
+      if (rawId != null) {
+        const fromDraft = draftFacultyById.get(String(rawId));
+        if (fromDraft) return fromDraft;
+      }
+      const pid = rec?.prospectusId ?? rec?.prospectus_id ?? rec?.prospectus?.id ?? null;
+      if (pid != null) {
+        const fromDraftPid = draftFacultyByProspectusId.get(String(pid));
+        if (fromDraftPid) return fromDraftPid;
+      }
+      const key = makeRowKey(rec);
+      if (key) {
+        const fromDraftKey = draftFacultyByKey.get(key);
+        if (fromDraftKey) return fromDraftKey;
+      }
+      const direct = pickFacultyName(rec);
+      if (direct) return direct;
+      const lookup = rawId != null
+        ? (freshById.get(String(rawId)) || rawById.get(String(rawId)) || existingById.get(String(rawId)))
+        : null;
+      const fallback = pickFacultyName(lookup);
+      if (fallback) return fallback;
+      const fid = pickFacultyId(rec) ?? pickFacultyId(lookup);
+      if (fid == null) return '';
+      try {
+        const fac = (facultyAll || []).find(f => String(f?.id) === String(fid));
+        return fac?.name || fac?.faculty || fac?.full_name || '';
+      } catch {
+        return '';
+      }
+    };
+    const subtitle = [`School Year: ${settingsLoad?.school_year || ''}`, `Semester: ${settingsLoad?.semester || ''}`]
+      .filter(Boolean)
+      .join('  |  ');
+    const printedAt = new Date().toLocaleString();
+    const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
+    const preparedRole = (() => {
+      if (registrarViewOnly) return 'College Registrar';
+      try {
+        const list = Array.isArray(userDeptRows) ? userDeptRows : [];
+        const primary = list.find(r => r && r.isPrimary && String(r.position || '').trim());
+        const any = list.find(r => String(r?.position || '').trim());
+        return String(primary?.position || any?.position || 'Academic Head');
+      } catch { return 'Academic Head'; }
+    })();
+    const preparedBy = prep || 'Academic Head';
+    const preparedByHtml = `
+      <div class='prt-block'>
+        <div class='prt-verify'>Prepared by:</div>
+        <div class='prt-sign'>${esc(preparedBy)}</div>
+        <div class='prt-role'>${esc(preparedRole)}</div>
+      </div>`;
+    const verifiedByHtml = `
+      <div class='prt-block'>
+        <div class='prt-verify'>Verified by:</div>
+        <div class='prt-sign'>Dr. Mharfe M. Micaroz</div>
+        <div class='prt-role'>Vice President of Academic Affairs</div>
+      </div>`;
+    const approvedByHtml = `
+      <div class='prt-block'>
+        <div class='prt-approve'>Approved by:</div>
+        <div class='prt-sign'>Dr. Mary Ann R. Araula</div>
+        <div class='prt-role'>Acting College President</div>
+      </div>`;
+    const footerHtml = `<div class='prt-footer'>${preparedByHtml}${verifiedByHtml}${approvedByHtml}</div>`;
+
+    const blocksHtml = sortedBlocks.map((blk) => {
+      const blockCode = blk.code;
+      const blockNorm = normBlock(blockCode);
+      const meta = blk.ref || {};
+      const blockRoom = String(meta.room || meta.rooms || '').trim();
+      const blockSession = String(meta.session || meta.session_name || meta.sessionName || '').trim();
+      const items = scheduleList.filter((r) => normBlock(r.blockCode || r.block_code || r.section || r.block || '') === blockNorm);
+      const sorted = items.slice().sort((a,b) => {
+        const ta = termOrder(termText(a));
+        const tb = termOrder(termText(b));
+        if (ta !== tb) return ta - tb;
+        const sa = timeStart(a._time || a.time || a.schedule);
+        const sb = timeStart(b._time || b.time || b.schedule);
+        if (sa !== sb) return sa - sb;
+        return String(a.course_name || a.courseName || a.code || '').localeCompare(String(b.course_name || b.courseName || b.code || ''));
+      });
+      const bodyRows = sorted.map((r,i) => {
+        const rawFaculty = registrarViewOnly ? 'Hidden' : resolveFacultyName(r);
+        return [
+          String(i+1),
+          String(r.course_name || r.courseName || r.code || ''),
+          String(r.course_title || r.courseTitle || r.title || ''),
+          String(r.unit ?? r.units ?? ''),
+          String(termText(r) || ''),
+          String(r._time || r.time || r.schedule || ''),
+          String(r._day || r.day || ''),
+          String(r.room || blockRoom || ''),
+          formatFacultyName(rawFaculty, hideFacultyNames),
+        ];
+      });
+      const totalUnits = sorted.reduce((sum, r) => {
+        const v = Number(r.unit ?? r.units ?? 0);
+        return sum + (Number.isFinite(v) ? v : 0);
+      }, 0);
+      const normShort = (t) => {
+        const v = String(t || '').trim().toLowerCase();
+        if (!v) return '';
+        if (v.startsWith('1')) return '1st';
+        if (v.startsWith('2')) return '2nd';
+        if (v.startsWith('s')) return 'Sem';
+        return '';
+      };
+      const termSums = { '1st': 0, '2nd': 0, 'Sem': 0 };
+      sorted.forEach(r => {
+        const k = normShort(termText(r));
+        if (k && Object.prototype.hasOwnProperty.call(termSums, k)) {
+          const u = Number(r.unit ?? r.units ?? 0);
+          if (Number.isFinite(u)) termSums[k] += u;
+        }
+      });
+      const summaryPairs = [];
+      if (termSums['1st'] > 0) summaryPairs.push(['1st Term Units', termSums['1st']]);
+      if (termSums['2nd'] > 0) summaryPairs.push(['2nd Term Units', termSums['2nd']]);
+      if (termSums['Sem'] > 0) summaryPairs.push(['Sem Units', termSums['Sem']]);
+      summaryPairs.push(['Total Units', totalUnits]);
+      const summaryRowsHtml = [];
+      for (let i = 0; i < summaryPairs.length; i += 2) {
+        const [l1, v1] = summaryPairs[i];
+        const p2 = summaryPairs[i + 1] || ['', ''];
+        const l2 = p2[0], v2 = p2[1];
+        summaryRowsHtml.push(`<tr><th>${esc(l1)}</th><td>${esc(String(v1))}</td><th>${esc(l2)}</th><td>${v2 === '' ? '' : esc(String(v2))}</td></tr>`);
+      }
+      const termSummaryHtml = `<table class="prt-table"><tbody>${summaryRowsHtml.join('')}</tbody></table>`;
+      const metaHtml = [
+        `<table class="prt-table"><tbody>
+          <tr><th>Block Code</th><td>${esc(blockCode)}</td><th>Session</th><td>${esc(blockSession)}</td></tr>
+          <tr><th>Rooms</th><td colspan="3">${esc(String(blockRoom))}</td></tr>
+          <tr><th>Total Units</th><td>${esc(String(totalUnits))}</td><th>Courses</th><td>${esc(String(sorted.length))}</td></tr>
+        </tbody></table>`,
+      ].join('');
+      const emptyNote = sorted.length === 0
+        ? `<div style="margin-top:6px;font-size:12px;color:#555;">No schedules found for this block.</div>`
+        : '';
+      const headerHtml = `
+        <div class='prt-header'>
+          <p class='prt-title'>${esc(`Block: ${blockCode}`)}</p>
+          ${subtitle ? `<p class='prt-sub'>${esc(subtitle)}</p>` : ''}
+          <p class='prt-meta'>Printed: ${esc(printedAt)}</p>
+        </div>`;
+      const bodyHtml = `
+        <div class='prt-body'>
+          ${metaHtml}
+          ${buildTable(headers, bodyRows)}
+          ${termSummaryHtml}
+          ${emptyNote}
+        </div>`;
+      return `
+        <div class='prt-page'>
+          ${headerHtml}
+          ${bodyHtml}
+          ${footerHtml}
+        </div>
+      `;
+    }).join('');
+
+    const title = 'Blocks: All';
+    printContent(
+      { title, subtitle, bodyHtml: blocksHtml },
+      { pageSize: 'A4', orientation: 'landscape', compact: true, hideHero: true, hideHeader: true, hideFooter: true, hideBodyWrapper: true }
+    );
+  };
+
   const onPrintProgram = () => {
     if (!selectedProgram) return;
     const title = `Program: ${selectedProgram}`;
@@ -1558,6 +1966,7 @@ export default function CourseLoading() {
       .filter(Boolean)
       .join('  |  ');
     const headers = ['Code', 'Title', 'Units', 'Term', 'Time', 'Day', 'Room', 'Faculty'];
+    const hideFacultyNames = registrarViewOnly;
     const list = Array.isArray(rows) ? rows.slice() : [];
     // Focus only on the currently viewed program
     const normProgram = (p) => String(p || '').trim().toLowerCase();
@@ -1616,7 +2025,7 @@ export default function CourseLoading() {
               String(r._time || r.time || r.schedule || ''),
               String(r._day || r.day || ''),
               String(r.room || blkRoom || ''),
-              String(r._faculty || r.faculty || r.instructor || ''),
+              formatFacultyName(r._faculty || r.faculty || r.instructor || '', hideFacultyNames),
             ]);
             const metaLine = [
               `<span style="font-weight:800;font-size:13px;">${esc(sec)}</span>`,
@@ -4903,7 +5312,18 @@ const prefill = hit ? {
             <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={panelBg} w="full">
               <HStack justify="space-between" align="center">
                 <Heading size="sm">Blocks</Heading>
-                <Badge colorScheme="gray">{(blocks || []).length}</Badge>
+                <HStack spacing={2}>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    leftIcon={<FiPrinter />}
+                    onClick={onPrintAllBlocks}
+                    isDisabled={blocksLoading || !(Array.isArray(blocks) && blocks.length > 0)}
+                  >
+                    Print All
+                  </Button>
+                  <Badge colorScheme="gray">{(blocks || []).length}</Badge>
+                </HStack>
               </HStack>
               <Box h="calc(100dvh - 240px)" overflowY="auto" w="full">
                 <BlockList
@@ -5219,6 +5639,7 @@ const prefill = hit ? {
                                       onRequestHistory={openHistoryForRow}
                                       isAdmin={role==='admin' || role==='manager'}
                                       viewOnly={registrarViewOnly}
+                                      hideFacultyName={registrarViewOnly}
                                     />
                                   </Box>
                                 );
@@ -5445,6 +5866,7 @@ const prefill = hit ? {
                               onRequestHistory={openHistoryForRow}
                               isAdmin={role==='admin' || role==='manager'}
                               viewOnly={registrarViewOnly}
+                              hideFacultyName={registrarViewOnly}
                             />
                           </Box>
                         );
@@ -5529,6 +5951,7 @@ const prefill = hit ? {
                                           isAdmin={role==='admin' || role==='manager'}
                                           variant="tile"
                                           viewOnly={registrarViewOnly}
+                                          hideFacultyName={registrarViewOnly}
                                         />
                                       </Box>
                                     );
