@@ -667,8 +667,7 @@ ${ve}`}])}finally{M(!1)}},[D,G,V,I,L,q,O]);return s.jsxs(de,{position:"fixed",bo
           <tr><th>${Rr(yn)}</th><td>${Rr(String(rr))} units (${Rr(mr(rr))} hrs)</td>
           <th>${Rr(Bn)}</th><td>${Rr(String(Vt))} units (${Rr(mr(Vt))} hrs)</td></tr>
         </tbody></table>`:"",ks="Regular Schedule",yr=`
-      <p class='prt-fac-name'>${Rr(K.name||K.faculty||"")}</p>
-      ${K.department||K.dept?`<p class='prt-fac-sub'>${Rr(K.department||K.dept||"")}</p>`:""}`,Sr=`<table class="prt-table"><tbody>
+      <p class='prt-fac-name'>${Rr(K.name||K.faculty||"")}</p>`,Sr=`<table class="prt-table"><tbody>
       <tr><th>Department</th><td>${Rr(K.department||K.dept||"")}</td><th>Employment</th><td>${Rr(K.employment||"")}</td></tr>
       <tr><th>Designation</th><td colspan="3">${Rr(K.designation||K.rank||"")}</td></tr>
       <tr><th>Load Release Units</th><td>${Rr(String(Ge))}</td><th>Total Load Units</th><td>${Rr(String(Ne))}</td></tr>

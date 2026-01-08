@@ -1759,8 +1759,7 @@ export default function CourseLoading() {
 
     const scheduleType = 'Regular Schedule';
     const headingHtml = `
-      <p class='prt-fac-name'>${esc(f.name || f.faculty || '')}</p>
-      ${f.department || f.dept ? `<p class='prt-fac-sub'>${esc(f.department || f.dept || '')}</p>` : ''}`;
+      <p class='prt-fac-name'>${esc(f.name || f.faculty || '')}</p>`;
     const metaHtml = `<table class="prt-table"><tbody>
       <tr><th>Department</th><td>${esc(f.department || f.dept || '')}</td><th>Employment</th><td>${esc(f.employment || '')}</td></tr>
       <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
