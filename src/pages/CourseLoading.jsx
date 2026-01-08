@@ -1548,7 +1548,7 @@ export default function CourseLoading() {
       } catch { return 'Academic Head'; }
     })();
     // Faculty view: print in portrait for better per-faculty listing
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
+    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
   };
 
   const onPrintProgram = () => {
