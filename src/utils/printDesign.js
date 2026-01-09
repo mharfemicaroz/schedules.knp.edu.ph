@@ -157,6 +157,12 @@ export function printContent(
     .prt-page:last-child { page-break-after: auto; break-after: auto; }
     .prt-page .prt-body { flex: 1 1 auto; }
     .prt-page .prt-footer { margin-top: auto; }
+    /* Poster-friendly sizing (opt-in via wrapper class) */
+    .prt-poster .prt-title { font-size: 24px; }
+    .prt-poster .prt-sub { font-size: 15px; }
+    .prt-poster .prt-meta { font-size: 13px; }
+    .prt-poster .prt-table th, .prt-poster .prt-table td { font-size: 13px; line-height: 1.25; padding: 4px 7px; }
+    .prt-poster .prt-role { font-size: 13px; }
   `;
   const nowDate = new Date();
   const now = nowDate.toLocaleString();

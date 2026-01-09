@@ -1954,7 +1954,7 @@ export default function CourseLoading() {
 
     const title = 'Blocks: All';
     printContent(
-      { title, subtitle, bodyHtml: blocksHtml },
+      { title, subtitle, bodyHtml: `<div class='prt-poster'>${blocksHtml}</div>` },
       { pageSize: 'A4', orientation: 'landscape', compact: true, hideHero: true, hideHeader: true, hideFooter: true, hideBodyWrapper: true }
     );
   };
