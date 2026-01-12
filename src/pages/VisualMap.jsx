@@ -17,7 +17,7 @@ import { getExamDateSet } from '../utils/scheduleUtils';
 import { encodeShareBlock, encodeShareRoom } from '../utils/share';
 
 const SESSIONS = ['Morning','Afternoon','Evening'];
-const ROOM_SPLIT_THRESHOLD = 10; // split rooms into two parts when exceeding this count
+const ROOM_SPLIT_THRESHOLD = 10; // split rooms into up to three parts when exceeding this count
 
 function schemeForBlockCode(code) {
   const s = String(code || '').toUpperCase();
@@ -443,11 +443,11 @@ export default function VisualMap() {
     };
   }, [filteredTabs, blocks]);
 
-  // Helper to split rooms list into two halves for large counts
+  // Helper to split rooms list into up to three parts for large counts
   const splitRooms = (rooms) => {
     if (!rooms || rooms.length <= ROOM_SPLIT_THRESHOLD) return [rooms];
-    const half = Math.ceil(rooms.length / 2);
-    return [rooms.slice(0, half), rooms.slice(half)];
+    const chunk = Math.ceil(rooms.length / 3);
+    return [rooms.slice(0, chunk), rooms.slice(chunk, chunk * 2), rooms.slice(chunk * 2)];
   };
 
   function onPrint(day) {

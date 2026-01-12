@@ -43,7 +43,7 @@ function schemeForBlockCode(code) {
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAYS_FULL = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const SESSIONS = ['Morning', 'Afternoon', 'Evening'];
-const ROOM_SPLIT_THRESHOLD = 10; // auto-split when a day has more than this many rooms
+const ROOM_SPLIT_THRESHOLD = 10; // auto-split into up to three parts when a day has more than this many rooms
 
 function getWeekStartDate(weekStartISO) {
   if (weekStartISO) {
@@ -234,7 +234,9 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
     const colWidth = clamp(Math.round(longest * CHAR_W + 32), MIN_COL_W, MAX_COL_W);
 
     const maxRooms = out.reduce((m, s) => Math.max(m, s.rooms.length), 0);
-    const splitWidthRooms = maxRooms > ROOM_SPLIT_THRESHOLD ? Math.ceil(maxRooms/2) : maxRooms;
+    const needsSplit = maxRooms > ROOM_SPLIT_THRESHOLD;
+    const splitParts = needsSplit ? 3 : 1;
+    const splitWidthRooms = Math.ceil(maxRooms / splitParts);
     const computedPageWidth = SESSION_COL_W + (splitWidthRooms * colWidth);
     setPageWidth(Math.max(1200, computedPageWidth));
 
@@ -246,11 +248,11 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
 
   // ZoomControls removed
 
-  // Utility to split rooms into two halves
+  // Utility to split rooms into up to three parts
   const splitRooms = (rooms) => {
     if (!rooms || rooms.length <= ROOM_SPLIT_THRESHOLD) return [rooms];
-    const half = Math.ceil(rooms.length / 2);
-    return [rooms.slice(0, half), rooms.slice(half)];
+    const chunk = Math.ceil(rooms.length / 3);
+    return [rooms.slice(0, chunk), rooms.slice(chunk, chunk * 2), rooms.slice(chunk * 2)];
   };
 
   const TableForRooms = ({ day, rooms, matrix, indexLabel }) => (
