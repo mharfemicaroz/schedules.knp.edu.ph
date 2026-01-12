@@ -720,13 +720,13 @@ export default function VisualMap() {
                           <Box as="table" w="100%" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                             <Box as="thead">
                               <Box as="tr" bg={headerRowBg}>
-                                <Box as="th" position="sticky" left={0} zIndex={1} bg={cellBg} p="10px 12px" textAlign="left" borderRightWidth="1px" borderColor={border} width="150px">Session</Box>
+                                <Box as="th" position="sticky" left={0} zIndex={1} bg={cellBg} p="8px 10px" textAlign="left" borderRightWidth="1px" borderColor={border} width="120px">Session</Box>
                                 {roomsSlice.map((r) => {
                                   const to = isAdmin
                                     ? `/views/rooms/${encodeURIComponent(r)}?day=${encodeURIComponent(t.day)}`
                                     : `/share/rooms/${encodeURIComponent(encodeShareRoom(r))}?day=${encodeURIComponent(t.day)}`;
                                   return (
-                                    <Box as="th" key={r} p="10px 12px" textAlign="left" borderLeftWidth="1px" borderColor={border}>
+                                    <Box as="th" key={r} p="8px 10px" textAlign="left" borderLeftWidth="1px" borderColor={border}>
                                       <HStack>
                                         <Box w="10px" h="10px" rounded="full" bg={roomAccent(r)}></Box>
                                         <ChakraLink as={RouterLink} to={to} _hover={{ textDecoration: 'none' }} cursor="pointer">
@@ -741,9 +741,9 @@ export default function VisualMap() {
                             <Box as="tbody">
                               {SESSIONS.map((sess) => (
                                 <Box as="tr" key={`${t.day}-${sess}-${partIdx}`} _hover={{ bg: rowHoverBg }}>
-                                  <Box as="td" position="sticky" left={0} zIndex={1} bg={cellBg} p="10px 12px" borderTopWidth="1px" borderColor={border} fontWeight="700">{sess}</Box>
+                                  <Box as="td" position="sticky" left={0} zIndex={1} bg={cellBg} p="8px 10px" borderTopWidth="1px" borderColor={border} fontWeight="700">{sess}</Box>
                                   {roomsSlice.length === 0 && (
-                                    <Box as="td" p="10px 12px" borderTopWidth="1px" borderColor={border} colSpan={999}>
+                                    <Box as="td" p="8px 10px" borderTopWidth="1px" borderColor={border} colSpan={999}>
                                       <Text fontSize="xs" color={subtle}>—</Text>
                                     </Box>
                                   )}
@@ -751,7 +751,7 @@ export default function VisualMap() {
                                     const map = t.matrix[sess]?.get(r) || new Map();
                                     const arr = Array.from(map.keys()).sort();
                                     return (
-                                      <Box as="td" key={`${sess}-${r}-${partIdx}`} p="8px 10px" borderTopWidth="1px" borderLeftWidth={cIdx===0? '1px':'1px'} borderColor={border}>
+                                      <Box as="td" key={`${sess}-${r}-${partIdx}`} p="6px 8px" borderTopWidth="1px" borderLeftWidth={cIdx===0? '1px':'1px'} borderColor={border}>
                                         {arr.length === 0 ? (
                                           <Text fontSize="xs" color={subtle}>—</Text>
                                         ) : (

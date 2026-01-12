@@ -227,10 +227,10 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
     setSections(out);
 
     const longest = Math.max(4, ...((blocks || []).map(b => String(b.blockCode || b.block_code || '').length)));
-    const SESSION_COL_W = 160;
-    const MIN_COL_W = 140;
-    const MAX_COL_W = 360;
-    const CHAR_W = 8;
+    const SESSION_COL_W = 130;
+    const MIN_COL_W = 120;
+    const MAX_COL_W = 320;
+    const CHAR_W = 7;
     const colWidth = clamp(Math.round(longest * CHAR_W + 32), MIN_COL_W, MAX_COL_W);
 
     const maxRooms = out.reduce((m, s) => Math.max(m, s.rooms.length), 0);
@@ -238,7 +238,7 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
     const splitParts = needsSplit ? 3 : 1;
     const splitWidthRooms = Math.ceil(maxRooms / splitParts);
     const computedPageWidth = SESSION_COL_W + (splitWidthRooms * colWidth);
-    setPageWidth(Math.max(1200, computedPageWidth));
+    setPageWidth(Math.max(1000, computedPageWidth));
 
   }, [blocks, weekDays, autoExamDays, daysWithExams]);
 
@@ -259,11 +259,11 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
     <Box as="table" w="100%" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'auto' }}>
       <Box as="thead">
         <Box as="tr" bg={useColorModeValue('gray.100','gray.800')}>
-          <Box as="th" position="sticky" left={0} zIndex={1} bg={stickyBg} p="10px 12px" textAlign="left" borderRightWidth="1px" borderColor={border} width="160px">
+          <Box as="th" position="sticky" left={0} zIndex={1} bg={stickyBg} p="8px 10px" textAlign="left" borderRightWidth="1px" borderColor={border} width="130px">
             Session
           </Box>
           {rooms.map((r) => (
-            <Box as="th" key={`${day}-${indexLabel}-${r}`} p="10px 12px" textAlign="left" borderLeftWidth="1px" borderColor={border} style={{ minWidth: '140px' }}>
+            <Box as="th" key={`${day}-${indexLabel}-${r}`} p="8px 10px" textAlign="left" borderLeftWidth="1px" borderColor={border} style={{ minWidth: '120px' }}>
               <Text fontWeight="700" noOfLines={1}>{r}</Text>
             </Box>
           ))}
@@ -272,9 +272,9 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
       <Box as="tbody">
         {SESSIONS.map((sess) => (
           <Box as="tr" key={`${day}-${indexLabel}-${sess}`} _hover={{ bg: useColorModeValue('gray.50','gray.800') }}>
-            <Box as="td" position="sticky" left={0} zIndex={1} bg={stickyBg} p="10px 12px" borderTopWidth="1px" borderColor={border} fontWeight="700">{sess}</Box>
+            <Box as="td" position="sticky" left={0} zIndex={1} bg={stickyBg} p="8px 10px" borderTopWidth="1px" borderColor={border} fontWeight="700">{sess}</Box>
             {rooms.length === 0 && (
-              <Box as="td" p="10px 12px" borderTopWidth="1px" borderColor={border} colSpan={999}>
+              <Box as="td" p="8px 10px" borderTopWidth="1px" borderColor={border} colSpan={999}>
                 {isLoading ? <Skeleton height="16px" /> : <Text fontSize="xs" color={subtle}>—</Text>}
               </Box>
             )}
@@ -282,7 +282,7 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
               const map = matrix[sess]?.get(r) || new Map();
               const arr = Array.from(map.keys()).sort();
               return (
-                <Box as="td" key={`${day}-${indexLabel}-${sess}-${r}`} p="8px 10px" borderTopWidth="1px" borderLeftWidth={cIdx===0? '1px':'1px'} borderColor={border} overflow="visible">
+                <Box as="td" key={`${day}-${indexLabel}-${sess}-${r}`} p="6px 8px" borderTopWidth="1px" borderLeftWidth={cIdx===0? '1px':'1px'} borderColor={border} overflow="visible">
                   {arr.length === 0 ? (
                     <Text fontSize="xs" color={subtle}>—</Text>
                   ) : (
