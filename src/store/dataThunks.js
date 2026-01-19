@@ -235,8 +235,8 @@ export const applyApiFiltersThunk = createAsyncThunk(
 
 export const loadAcademicCalendar = createAsyncThunk(
   "data/loadAcad",
-  async () => {
-    const response = await apiService.getAcademicCalendar();
+  async (params = {}) => {
+    const response = await apiService.getAcademicCalendar(params || {});
     return response.data || response;
   }
 );

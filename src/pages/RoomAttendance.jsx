@@ -110,64 +110,7 @@ export default function RoomAttendance() {
     if (!acadData) { try { dispatch(loadAcademicCalendar()); } catch {} }
   }, [acadData, dispatch]);
 
-  // Determine current term from academic calendar, based on selected date
-  const autoTerm = React.useMemo(() => {
-    try {
-      const cal = Array.isArray(acadData) ? acadData[0]?.academic_calendar : acadData?.academic_calendar;
-      if (!cal) return null;
-      const base = new Date(selectedDate); base.setHours(0,0,0,0);
-      const parseDateVal = (val) => {
-        if (!val) return null;
-        const d = new Date(val);
-        return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      };
-      const expandDateRange = (token) => {
-        const m = String(token || '').match(/^([A-Za-z]+)\s+(\d+)-(\d+),\s*(\d{4})$/);
-        if (!m) return [];
-        const month = m[1]; const startD = parseInt(m[2], 10); const endD = parseInt(m[3], 10); const year = parseInt(m[4], 10);
-        const out = [];
-        for (let d = startD; d <= endD; d++) {
-          const dt = new Date(`${month} ${d}, ${year}`);
-          if (!isNaN(dt.getTime())) out.push(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()));
-        }
-        return out;
-      };
-      const endFromActivities = (acts = []) => {
-        let max = null;
-        acts.forEach(a => {
-          if (a.date_range) {
-            expandDateRange(a.date_range).forEach(dt => { if (!max || dt > max) max = dt; });
-          }
-          const dates = Array.isArray(a.date) ? a.date : [a.date].filter(Boolean);
-          dates.forEach(v => {
-            const dt = parseDateVal(v);
-            if (dt && (!max || dt > max)) max = dt;
-          });
-        });
-        return max;
-      };
-      const first = cal.first_semester || {};
-      const terms = [
-        { key: '1st', data: first.first_term || {} },
-        { key: '2nd', data: first.second_term || {} },
-      ];
-      const windows = terms.map(t => {
-        const start = parseDateVal(t.data.start) || (t.data.date_range ? expandDateRange(t.data.date_range)[0] : null);
-        let end = parseDateVal(t.data.end) || (t.data.date_range ? expandDateRange(t.data.date_range).pop() : null);
-        const actEnd = endFromActivities(t.data.activities);
-        if (!end || (actEnd && actEnd > end)) end = actEnd;
-        return { key: t.key, start, end };
-      }).filter(w => w.start && w.end);
-      if (!windows.length) return null;
-      const hit = windows.find(w => w.start <= base && base <= w.end);
-      if (hit) return hit.key;
-      const sorted = windows.slice().sort((a,b)=>a.start - b.start);
-      if (base < sorted[0].start) return sorted[0].key;
-      return sorted[sorted.length - 1].key;
-    } catch { return null; }
-  }, [acadData, selectedDate]);
-
-  // Term filter (UI). If autoTerm is available, enforce it while always including Sem schedules.
+  // Term filter (UI). If autoTerm is available, enforce it and ignore semestral schedules.
   const [termFilter, setTermFilter] = React.useState('all');
   function termMatches(t) {
     const norm = normalizeSem(t);
@@ -210,21 +153,92 @@ export default function RoomAttendance() {
   const [slotIndex, setSlotIndex] = React.useState(defaultSlotIndex);
 
   const prefSy = React.useMemo(() => {
-    return String(settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || '').trim();
+    return String(settings?.schedulesView?.school_year || '').trim();
   }, [settings]);
 
   const prefSem = React.useMemo(() => {
-    const raw = settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || '';
+    const raw = settings?.schedulesView?.semester || '';
     return normalizeSem(raw);
   }, [settings]);
+
+  const resolvedCalendar = React.useMemo(() => {
+    if (!acadData) return null;
+    if (acadData?.school_year && !acadData.academic_calendar) return acadData;
+    const list = Array.isArray(acadData) ? acadData : (acadData?.academic_calendar ? [acadData] : []);
+    if (!list.length) return null;
+    if (prefSy) {
+      const hit = list.find((item) => String(item?.academic_calendar?.school_year || '').trim() === prefSy);
+      if (hit?.academic_calendar) return hit.academic_calendar;
+    }
+    return list[0]?.academic_calendar || null;
+  }, [acadData, prefSy]);
+
+  // Determine current term from academic calendar, based on today's date
+  const autoTerm = React.useMemo(() => {
+    try {
+      const cal = resolvedCalendar;
+      if (!cal) return null;
+      const base = new Date(); base.setHours(0,0,0,0);
+      const parseDateVal = (val) => {
+        if (!val) return null;
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      };
+      const expandDateRange = (token) => {
+        const m = String(token || '').match(/^([A-Za-z]+)\s+(\d+)-(\d+),\s*(\d{4})$/);
+        if (!m) return [];
+        const month = m[1]; const startD = parseInt(m[2], 10); const endD = parseInt(m[3], 10); const year = parseInt(m[4], 10);
+        const out = [];
+        for (let d = startD; d <= endD; d++) {
+          const dt = new Date(`${month} ${d}, ${year}`);
+          if (!isNaN(dt.getTime())) out.push(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()));
+        }
+        return out;
+      };
+      const endFromActivities = (acts = []) => {
+        let max = null;
+        acts.forEach(a => {
+          if (a.date_range) {
+            expandDateRange(a.date_range).forEach(dt => { if (!max || dt > max) max = dt; });
+          }
+          const dates = Array.isArray(a.date) ? a.date : [a.date].filter(Boolean);
+          dates.forEach(v => {
+            const dt = parseDateVal(v);
+            if (dt && (!max || dt > max)) max = dt;
+          });
+        });
+        return max;
+      };
+      const semKey = prefSem === '2nd' ? 'second_semester' : prefSem === '1st' ? 'first_semester' : null;
+      const semData = semKey ? cal?.[semKey] : (cal?.first_semester || cal?.second_semester);
+      if (!semData) return null;
+      const terms = [
+        { key: '1st', data: semData.first_term || {} },
+        { key: '2nd', data: semData.second_term || {} },
+      ];
+      const windows = terms.map(t => {
+        const start = parseDateVal(t.data.start) || (t.data.date_range ? expandDateRange(t.data.date_range)[0] : null);
+        let end = parseDateVal(t.data.end) || (t.data.date_range ? expandDateRange(t.data.date_range).pop() : null);
+        const actEnd = endFromActivities(t.data.activities);
+        if (!end || (actEnd && actEnd > end)) end = actEnd;
+        return { key: t.key, start, end };
+      }).filter(w => w.start && w.end);
+      if (!windows.length) return null;
+      const hit = windows.find(w => w.start <= base && base <= w.end);
+      if (hit) return hit.key;
+      const sorted = windows.slice().sort((a,b)=>a.start - b.start);
+      if (base < sorted[0].start) return sorted[0].key;
+      return sorted[sorted.length - 1].key;
+    } catch { return null; }
+  }, [resolvedCalendar, prefSem]);
 
   const filteredSchedules = React.useMemo(() => {
     return (all || []).filter(c => {
       const syVal = String(c.school_year || c.schoolYear || c.sy || '').trim();
-      if (prefSy && syVal && syVal !== prefSy) return false;
+      if (prefSy && (!syVal || syVal !== prefSy)) return false;
       const semVal = normalizeSem(c.semester || c.sem || c.term);
       if (semVal === 'Sem') return false; // exclude semestral for this view
-      if (prefSem && semVal && semVal !== prefSem) return false;
+      if (prefSem && (!semVal || semVal !== prefSem)) return false;
       return true;
     });
   }, [all, prefSy, prefSem]);
@@ -272,7 +286,7 @@ export default function RoomAttendance() {
       });
     });
     return { rooms, matrix: m };
-  }, [filteredSchedules, selectedDayCode, getRoomsForDay, termFilter]);
+  }, [filteredSchedules, selectedDayCode, getRoomsForDay, termFilter, autoTerm]);
 
   // Attendance mapping for today
   const presentPulse = keyframes`
