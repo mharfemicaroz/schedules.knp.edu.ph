@@ -15,6 +15,8 @@ const TARGET_TERMS = ['1st', 'Sem'];
 const CODE_RE = /^[a-z0-9]{6}$/i;
 
 const normalizeSy = (val) => String(val || '').toUpperCase().replace(/[^0-9-]/g, '').trim();
+const normalizeDeptLabel = (val) => String(val || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+const normalizeProgramLabel = (val) => String(val || '').toUpperCase().replace(/[^A-Z0-9-]+/g, '-').replace(/-+/g, '-').trim();
 const normalizeTermLabel = (val) => {
   const v = String(val || '').trim().toLowerCase();
   if (!v) return '';
@@ -23,6 +25,41 @@ const normalizeTermLabel = (val) => {
   if (v.startsWith('2') || /\bsecond\b/.test(v)) return '2nd';
   if (v.startsWith('1') || /\bfirst\b/.test(v)) return '1st';
   return '';
+};
+const isDeptExempt = (dept) => {
+  const d = normalizeDeptLabel(dept);
+  if (!d) return false;
+  const compact = d.replace(/\s+/g, '');
+  if (compact.includes('KNPPARTTIME') || compact.includes('PARTTIME')) return true;
+  if (compact.includes('GENED')) return true;
+  if (compact === 'PE') return true;
+  const tokens = d.split(' ').filter(Boolean);
+  return tokens.includes('PE');
+};
+const deptGroupKey = (dept) => {
+  const d = normalizeDeptLabel(dept);
+  if (!d || isDeptExempt(d)) return '';
+  if (d.includes('BSED') || d.includes('BTLED')) return 'BSED';
+  if (d.includes('BSBA')) return 'BSBA';
+  if (d.includes('BSCRIM')) return 'BSCRIM';
+  if (d.includes('BSTM')) return 'BSTM';
+  if (d.includes('BSAB')) return 'BSAB';
+  if (d.includes('BSENTREP') || d.includes('BSENT')) return 'BSENTREP';
+  const token = d.split(' ').filter(Boolean)[0] || '';
+  return token;
+};
+const programGroupKey = (programcode) => {
+  const raw = normalizeProgramLabel(programcode);
+  if (!raw) return '';
+  const base = raw.split('-')[0] || '';
+  if (base.startsWith('BTLED')) return 'BSED';
+  if (base.startsWith('BSED')) return 'BSED';
+  if (base.startsWith('BSBA')) return 'BSBA';
+  if (base.startsWith('BSCRIM')) return 'BSCRIM';
+  if (base.startsWith('BSTM')) return 'BSTM';
+  if (base.startsWith('BSAB')) return 'BSAB';
+  if (base.startsWith('BSENTREP') || base.startsWith('BSENT')) return 'BSENTREP';
+  return base;
 };
 
 const termOrder = (t) => {
@@ -42,6 +79,8 @@ const normalizeRemoteCourse = (row) => {
   const term = row.term ?? row.term_name ?? row.termName ?? row.term_value ?? '';
   const semester = row.semester ?? row.sem ?? row.semester_name ?? row.semesterName ?? '';
   const schoolyear = row.sy ?? row.schoolyear ?? row.school_year ?? row.schoolYear ?? '';
+  const programcode = row.programcode ?? row.program_code ?? row.programCode ?? row.program ?? '';
+  const department = row.department ?? row.dept ?? '';
   const schedule = String(row.schedule ?? row.time ?? '').trim();
   const tr = parseTimeBlockToMinutes(schedule);
   const f2fSched = row.f2fSched ?? row.f2fsched ?? row.f2f_sched ?? row.f2f ?? '';
@@ -55,6 +94,8 @@ const normalizeRemoteCourse = (row) => {
     term,
     semester,
     schoolyear,
+    programcode,
+    department,
     schedule,
     time: row.time ?? row.schedule ?? schedule,
     day: row.day ?? '',
@@ -280,15 +321,79 @@ export default function FacultyPublicCode() {
   }, [code, localFiltered.length, localMatch.facultyId, localMatch.facultyName]);
 
   const baseCourses = remoteCourses != null ? remoteCourses : localMatch.courses;
+  const [facultyMeta, setFacultyMeta] = React.useState({ dept: '' });
+
+  React.useEffect(() => {
+    const fid = localMatch.facultyId;
+    if (fid == null || String(fid).trim() === '') {
+      setFacultyMeta({ dept: '' });
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.getFaculty(fid);
+        const info = res?.data || res || {};
+        if (!alive) return;
+        setFacultyMeta({
+          dept: info.dept ?? info.department ?? '',
+        });
+      } catch {
+        if (!alive) return;
+        setFacultyMeta({ dept: '' });
+      }
+    })();
+    return () => { alive = false; };
+  }, [localMatch.facultyId]);
+
+  const facultyDept = React.useMemo(() => {
+    if (facultyMeta.dept) return facultyMeta.dept;
+    if (localMatch.department) return localMatch.department;
+    const list = Array.isArray(baseCourses) ? baseCourses : [];
+    const counts = new Map();
+    list.forEach((row) => {
+      const d = row?.department ?? row?.dept ?? '';
+      if (!d) return;
+      counts.set(d, (counts.get(d) || 0) + 1);
+    });
+    let best = '';
+    let bestCount = 0;
+    counts.forEach((count, name) => {
+      if (count > bestCount) {
+        bestCount = count;
+        best = name;
+      }
+    });
+    return best;
+  }, [facultyMeta.dept, localMatch.department, baseCourses]);
+  const deptKey = React.useMemo(() => {
+    if (isDeptExempt(facultyDept)) return '';
+    return deptGroupKey(facultyDept);
+  }, [facultyDept]);
+  const matchesDeptProgram = React.useCallback((row) => {
+    if (!deptKey) return true;
+    const progKey = programGroupKey(
+      row?.programcode
+        ?? row?.program
+        ?? row?.program_code
+        ?? row?.programCode
+        ?? row?.prospectus?.programcode
+        ?? ''
+    );
+    if (progKey) return progKey === deptKey;
+    const rowDeptKey = deptGroupKey(row?.dept ?? '');
+    if (rowDeptKey) return rowDeptKey === deptKey;
+    return false;
+  }, [deptKey]);
   const filteredCourses = React.useMemo(() => {
-    return (baseCourses || []).filter(matchesTarget);
-  }, [baseCourses, matchesTarget]);
+    return (baseCourses || []).filter(c => matchesTarget(c) && matchesDeptProgram(c));
+  }, [baseCourses, matchesTarget, matchesDeptProgram]);
 
   const sortedCourses = React.useMemo(() => mergeCourses(filteredCourses), [filteredCourses]);
 
   const sample = sortedCourses[0] || {};
   const facultyName = localMatch.facultyName || sample.facultyName || sample.faculty || sample.instructor || '';
-  const department = localMatch.department || sample.department || sample.dept || '';
+  const department = facultyDept || sample.department || sample.dept || '';
 
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
