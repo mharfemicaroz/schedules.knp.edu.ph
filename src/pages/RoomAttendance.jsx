@@ -235,10 +235,10 @@ export default function RoomAttendance() {
   const filteredSchedules = React.useMemo(() => {
     return (all || []).filter(c => {
       const syVal = String(c.school_year || c.schoolYear || c.sy || '').trim();
-      if (prefSy && (!syVal || syVal !== prefSy)) return false;
-      const semVal = normalizeSem(c.semester || c.sem || c.term);
+      if (prefSy && syVal && syVal !== prefSy) return false;
+      const semVal = normalizeSem(c.semester || c.sem);
       if (semVal === 'Sem') return false; // exclude semestral for this view
-      if (prefSem && (!semVal || semVal !== prefSem)) return false;
+      if (prefSem && semVal && semVal !== prefSem) return false;
       return true;
     });
   }, [all, prefSy, prefSem]);
