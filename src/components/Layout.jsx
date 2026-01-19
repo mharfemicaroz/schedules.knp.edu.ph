@@ -169,7 +169,8 @@ export default function Layout({ children }) {
   const isPublicRoomAuto = /^\/views\/rooms\/[^/]+\/auto$/.test(loc.pathname || '');
   const isRoomAttendance = /^\/admin\/room-attendance$/.test(loc.pathname || '');
   const isEvaluationPublic = /^\/evaluation(\/|$)/.test(loc.pathname || '');
-  const isSharePublic = /^\/share\//.test(loc.pathname || '');
+  const isPublicFacultyCode = /^\/faculty\/[a-z0-9]{6}$/i.test(loc.pathname || '');
+  const isSharePublic = /^\/share\//.test(loc.pathname || '') || isPublicFacultyCode;
   const currentPath = `${loc.pathname || ''}${loc.hash || ''}`;
   const isUnauthorizedRoute = /(?:^|#)\/unauthorized$/.test(currentPath);
   const isShareVisualMap = isSharePublic && /^\/share\/visual-map/.test(loc.pathname || '');

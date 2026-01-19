@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import VisualMap from './pages/VisualMap';
 import AcademicCalendar from './pages/AcademicCalendar';
 import FacultyDetail from './pages/FacultyDetail';
+import FacultyAccess from './pages/FacultyAccess';
 import ViewsDepartments from './pages/ViewsDepartments';
 import ViewsRooms from './pages/ViewsRooms';
 import ViewsCourses from './pages/ViewsCourses';
@@ -73,7 +74,7 @@ function App() {
               <Route path="/evaluation" element={<Evaluation />} />
               <Route path="/evaluation/:token" element={<EvaluationView />} />
               <Route path="/overview/calendar" element={<AcademicCalendar />} />
-              <Route path="/faculty/:id" element={<RequireAuth><FacultyDetail /></RequireAuth>} />
+              <Route path="/faculty/:id" element={<FacultyAccess />} />
               <Route path="/views/faculty" element={<RequireAuth><Dashboard /></RequireAuth>} />
               <Route path="/views/courses" element={<RequireAuth><ViewsCourses /></RequireAuth>} />
               <Route path="/views/departments" element={<ViewsDepartments />} />

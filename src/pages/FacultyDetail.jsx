@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Box, Heading, HStack, Avatar, Text, Badge, VStack, Divider, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, Switch, FormControl, FormLabel, IconButton, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
-import { FiPrinter, FiArrowLeft, FiShare2 } from 'react-icons/fi';
+import { FiPrinter, FiArrowLeft, FiShare2, FiExternalLink } from 'react-icons/fi';
 import { buildTable, printContent } from '../utils/printDesign';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectFilteredFaculties, selectAllCourses } from '../store/dataSlice';
@@ -18,7 +18,7 @@ import AssignFacultyModal from '../components/AssignFacultyModal';
 import { buildConflicts, buildCrossFacultyOverlaps, parseTimeBlockToMinutes } from '../utils/conflicts';
 import Pagination from '../components/Pagination';
 import { Tag, TagLabel, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Wrap, WrapItem } from '@chakra-ui/react';
-import { encodeShareFacultyName, decodeShareFacultyToken } from '../utils/share';
+import { encodeShareFacultyName, decodeShareFacultyToken, encodeFacultyPublicCode } from '../utils/share';
 import { usePublicView } from '../utils/uiFlags';
 import { normalizeSem } from '../utils/facultyScoring';
 import api from '../services/apiService';
@@ -90,6 +90,27 @@ export default function FacultyDetail() {
   const confDisc = _confDisc;
   const [selected, setSelected] = [_selected, _setSelected];
   const cancelRef = _cancelRef;
+  const publicCode = React.useMemo(() => {
+    if (!f) return '';
+    const isNumericId = (v) => (typeof v === 'number')
+      || (typeof v === 'string' && v.trim() !== '' && /^\d+$/.test(v.trim()));
+    const toId = (v) => (isNumericId(v) ? String(v).trim() : '');
+    const direct = toId(f.facultyId ?? f.faculty_id ?? f.id);
+    if (direct) return encodeFacultyPublicCode(direct);
+    const fromCourse = (f.courses || []).find(c => toId(c.facultyId ?? c.faculty_id));
+    const courseId = fromCourse ? toId(fromCourse.facultyId ?? fromCourse.faculty_id) : '';
+    if (courseId) return encodeFacultyPublicCode(courseId);
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const target = norm(f.name || f.faculty || f.full_name || f.id || '');
+    if (!target) return '';
+    const match = (allCourses || []).find(c => {
+      const name = norm(c.facultyName || c.faculty || c.instructor || c.instructorName || '');
+      const fid = toId(c.facultyId ?? c.faculty_id);
+      return fid && name === target;
+    });
+    const allId = match ? toId(match.facultyId ?? match.faculty_id) : '';
+    return allId ? encodeFacultyPublicCode(allId) : '';
+  }, [f, allCourses]);
 
   const matchesShareCourse = React.useCallback((row) => {
     if (!shareFilterActive) return true;
@@ -718,8 +739,9 @@ export default function FacultyDetail() {
             )}
             <VStack align="start" spacing={1} mt={2}>
               <HStack spacing={2}>
-                <Badge colorScheme="blue">{f.department || '—'}</Badge>
+                <Badge colorScheme="blue">{f.department || '-'}</Badge>
                 {Boolean(f.employment) && <Badge colorScheme="green">{f.employment}</Badge>}
+                {!isPublic && publicCode && <Badge colorScheme="teal">Public Code: {publicCode}</Badge>}
               </HStack>
               {(f.designation || f.rank) && (
                 <Text fontSize="sm" color="gray.600">{f.designation || f.rank}</Text>
@@ -746,6 +768,20 @@ export default function FacultyDetail() {
           </FormControl>
           )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">Print</Button>
+          {!isPublic && publicCode && (
+            <Button
+              as={RouterLink}
+              to={`/faculty/${encodeURIComponent(publicCode)}`}
+              leftIcon={<FiExternalLink />}
+              size="sm"
+              variant="outline"
+              colorScheme="blue"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Public Link
+            </Button>
+          )}
           {isAdmin && !isPublic && (
             <Button
               as={RouterLink}

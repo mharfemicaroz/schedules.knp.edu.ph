@@ -3,6 +3,8 @@
 
 const PEPPER = 'knp-share-v1';
 const FACULTY_PREFIX = `${PEPPER}:F:`;
+const FACULTY_CODE_PREFIX = `${PEPPER}:FCODE:`;
+const FACULTY_CODE_MOD = Math.pow(36, 6);
 
 function toBase64Url(str) {
   try {
@@ -68,6 +70,23 @@ export function decodeShareFacultyToken(token) {
 
 export function decodeShareFacultyName(token) {
   return decodeShareFacultyToken(token).name;
+}
+
+function hash32(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+export function encodeFacultyPublicCode(facultyId) {
+  const raw = String(facultyId ?? '').trim();
+  if (!raw) return '';
+  const hashed = hash32(`${FACULTY_CODE_PREFIX}${raw}`);
+  const num = hashed % FACULTY_CODE_MOD;
+  return num.toString(36).toUpperCase().padStart(6, '0');
 }
 
 export function encodeShareRoom(room) {
