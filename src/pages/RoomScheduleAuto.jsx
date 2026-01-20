@@ -139,49 +139,31 @@ export default function RoomScheduleAuto() {
   }, [tokens]);
 
   const prefSy = useMemo(() => {
-    return String(settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || settings?.school_year || '').trim();
+    return String(settings?.schedulesView?.school_year || '').trim();
   }, [settings]);
 
   const prefSem = useMemo(() => {
-    const raw = settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || settings?.semester || '';
+    const raw = settings?.schedulesView?.semester || '';
     return normalizeSem(raw);
   }, [settings]);
 
-  const rows = useMemo(() => {
-    const key = normRoom(room);
-    const list = (all || []).filter(c => {
-      const syVal = String(c.school_year || c.schoolYear || c.schoolyear || c.sy || '').trim();
-      if (prefSy && syVal && syVal !== prefSy) return false;
-      const semVal = normalizeSem(c.semester || c.sem || c.term);
-      const isSemestral = semVal === 'Sem';
-      if (prefSem && semVal && semVal !== prefSem && !isSemestral) return false;
-      const roomsForToday = getRoomsForDay(c, day);
-      if (!roomsForToday || roomsForToday.length === 0) return false;
-      return roomsForToday.some(r => normRoom(r) === key);
-    });
-    const withStart = (r) => (Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : 1e9);
-    list.sort((a,b)=> withStart(a) - withStart(b));
-    // Deduplicate by schedule id to avoid double-rendering the same schedule
-    const seen = new Set();
-    const uniq = [];
-    for (const it of list) {
-      const k = String(it.id);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      uniq.push(it);
+  const resolvedCalendar = useMemo(() => {
+    if (!acadData) return null;
+    if (acadData?.school_year && !acadData.academic_calendar) return acadData;
+    const list = Array.isArray(acadData) ? acadData : (acadData?.academic_calendar ? [acadData] : []);
+    if (!list.length) return null;
+    if (prefSy) {
+      const hit = list.find((item) => String(item?.academic_calendar?.school_year || '').trim() === prefSy);
+      if (hit?.academic_calendar) return hit.academic_calendar;
     }
-    return uniq;
-  }, [all, room, day, getRoomsForDay]);
+    return list[0]?.academic_calendar || null;
+  }, [acadData, prefSy]);
 
-  // Determine current term from academic calendar
-  const currentTermKey = useMemo(() => {
+  const autoTerm = useMemo(() => {
     try {
-      const cal = Array.isArray(acadData) ? acadData[0]?.academic_calendar : acadData?.academic_calendar;
-      const first = cal?.first_semester || {};
-      const terms = [
-        { key: '1st', data: first.first_term || {} },
-        { key: '2nd', data: first.second_term || {} },
-      ];
+      const cal = resolvedCalendar;
+      if (!cal) return null;
+      const base = new Date(); base.setHours(0,0,0,0);
       const parseDateVal = (val) => {
         if (!val) return null;
         const d = new Date(val);
@@ -212,6 +194,13 @@ export default function RoomScheduleAuto() {
         });
         return max;
       };
+      const semKey = prefSem === '2nd' ? 'second_semester' : prefSem === '1st' ? 'first_semester' : null;
+      const semData = semKey ? cal?.[semKey] : (cal?.first_semester || cal?.second_semester);
+      if (!semData) return null;
+      const terms = [
+        { key: '1st', data: semData.first_term || {} },
+        { key: '2nd', data: semData.second_term || {} },
+      ];
       const windows = terms.map(t => {
         const start = parseDateVal(t.data.start) || (t.data.date_range ? expandDateRange(t.data.date_range)[0] : null);
         let end = parseDateVal(t.data.end) || (t.data.date_range ? expandDateRange(t.data.date_range).pop() : null);
@@ -219,27 +208,59 @@ export default function RoomScheduleAuto() {
         if (!end || (actEnd && actEnd > end)) end = actEnd;
         return { key: t.key, start, end };
       }).filter(w => w.start && w.end);
-      if (windows.length === 0) return null;
-      const now = new Date(); now.setHours(0,0,0,0);
-      const hit = windows.find(w => w.start <= now && now <= w.end);
+      if (!windows.length) return null;
+      const hit = windows.find(w => w.start <= base && base <= w.end);
       if (hit) return hit.key;
       const sorted = windows.slice().sort((a,b)=>a.start - b.start);
-      if (now < sorted[0].start) return sorted[0].key;
+      if (base < sorted[0].start) return sorted[0].key;
       return sorted[sorted.length - 1].key;
     } catch { return null; }
-  }, [acadData]);
+  }, [resolvedCalendar, prefSem]);
 
-  // Filter rows to current term if known
-  const rowsTerm = useMemo(() => {
-    const curr = currentTermKey || prefSem || null;
-    if (!curr) return rows;
-    return rows.filter(r => {
-      const t = termLabelOf(r.term);
-      if (t === 'Sem') return true; // always include semestral
-      if (!t || t === 'Other') return true; // keep untagged to avoid hiding data
-      return t === curr;
+  const termMatches = React.useCallback((t) => {
+    const norm = normalizeSem(t);
+    if (!norm) return true;
+    if (norm === 'Sem') return false;
+    if (autoTerm) return norm === autoTerm;
+    return true;
+  }, [autoTerm]);
+
+  const filteredSchedules = useMemo(() => {
+    return (all || []).filter(c => {
+      const syVal = String(c.school_year || c.schoolYear || c.schoolyear || c.sy || '').trim();
+      if (prefSy && syVal && syVal !== prefSy) return false;
+      const semVal = normalizeSem(c.semester || c.sem);
+      if (semVal === 'Sem') return false;
+      if (prefSem && semVal && semVal !== prefSem) return false;
+      return true;
     });
-  }, [rows, currentTermKey, prefSem]);
+  }, [all, prefSy, prefSem]);
+
+  const rows = useMemo(() => {
+    const key = normRoom(room);
+    const list = (filteredSchedules || []).filter(c => {
+      const roomsForToday = getRoomsForDay(c, day);
+      if (!roomsForToday || roomsForToday.length === 0) return false;
+      return roomsForToday.some(r => normRoom(r) === key);
+    });
+    const withStart = (r) => (Number.isFinite(r.timeStartMinutes) ? r.timeStartMinutes : 1e9);
+    list.sort((a,b)=> withStart(a) - withStart(b));
+    // Deduplicate by schedule id to avoid double-rendering the same schedule
+    const seen = new Set();
+    const uniq = [];
+    for (const it of list) {
+      const k = String(it.id);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      uniq.push(it);
+    }
+    return uniq;
+  }, [filteredSchedules, room, day, getRoomsForDay]);
+
+  // Filter rows to the active term based on academic calendar
+  const rowsTerm = useMemo(() => {
+    return rows.filter(r => termMatches(r.term));
+  }, [rows, termMatches]);
 
   const byTerm = useMemo(() => {
     const m = new Map();
@@ -253,13 +274,13 @@ export default function RoomScheduleAuto() {
     keys.forEach(k => { if (!order.includes(k)) order.push(k); });
     // If current term is known and not Sem, prefer that first but still keep Sem afterwards
     const finalOrder = (() => {
-      if (!currentTermKey || currentTermKey === 'Sem') return order;
-      const o = order.filter(k => k === currentTermKey || k === 'Sem');
+      if (!autoTerm || autoTerm === 'Sem') return order;
+      const o = order.filter(k => k === autoTerm || k === 'Sem');
       keys.forEach(k => { if (!o.includes(k)) o.push(k); });
       return o;
     })();
     return { order: finalOrder, map: m };
-  }, [rowsTerm, currentTermKey]);
+  }, [rowsTerm, autoTerm]);
 
   const bucketTime = (start) => {
     if (!Number.isFinite(start)) return null;
@@ -298,7 +319,7 @@ export default function RoomScheduleAuto() {
 
   function onPrint() {
     const headers = ['Time','Program','Code','Title','Section','Units','Faculty'];
-    const data = rows.map(c => [
+    const data = rowsTerm.map(c => [
       c.schedule || '-', c.program || '-', c.code, c.title, c.section, String(c.unit ?? c.hours ?? ''), c.facultyName
     ]);
     const table = buildTable(headers, data);
@@ -338,7 +359,8 @@ export default function RoomScheduleAuto() {
   // Build unique room list (display strings), sorted
   const uniqueRooms = useMemo(() => {
     const map = new Map();
-    (all || []).forEach(c => {
+    (filteredSchedules || []).forEach(c => {
+      if (!termMatches(c.term)) return;
       const roomsForToday = getRoomsForDay(c, day);
       roomsForToday.forEach((r) => {
         const disp = String(r || '').trim(); if (!disp) return;
@@ -347,7 +369,7 @@ export default function RoomScheduleAuto() {
       });
     });
     return Array.from(map.values()).sort((a,b)=>String(a).localeCompare(String(b)));
-  }, [all, day, getRoomsForDay]);
+  }, [filteredSchedules, day, getRoomsForDay, termMatches]);
   const currentIndex = useMemo(() => uniqueRooms.findIndex(r => normRoom(r) === normRoom(room)), [uniqueRooms, room]);
   const [roomQuery, setRoomQuery] = useState('');
   const filteredRooms = useMemo(() => {
