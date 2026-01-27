@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, VStack, Text, useColorModeValue, HStack, Icon, Image, Badge } from '@chakra-ui/react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar, FiUserX, FiFileText, FiBook, FiUser, FiActivity, FiSettings, FiCheckSquare, FiBarChart2, FiCpu } from 'react-icons/fi';
+import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar, FiUserX, FiFileText, FiBook, FiUser, FiActivity, FiSettings, FiCheckSquare, FiBarChart2, FiCpu, FiVideo } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { FiAlertTriangle } from 'react-icons/fi';
 import { selectAllCourses } from '../store/dataSlice';
@@ -191,6 +191,9 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             <Text fontSize="sm" fontWeight="700" color={sectionHeaderColor} px={2} mt={4} mb={1}>Admin</Text>
             {(isAdmin || isChecker) && (
               <NavItem to="/admin/attendance" icon={FiCheckSquare} onClick={onNavigate} chipLabel={chip}>Attendance</NavItem>
+            )}
+            {isAdmin && (
+              <NavItem to="/admin/meet-classes" icon={FiVideo} onClick={onNavigate}>Meet Classes</NavItem>
             )}
             {(isAdmin || isRegistrar || hasDeptMapping) && (
               <NavItem to="/admin/grades-submission" icon={FiFileText} onClick={onNavigate} chipLabel={chip}>Grades Submission</NavItem>

@@ -39,6 +39,7 @@ import RequireRole from './components/RequireRole';
 import Attendance from './pages/Attendance';
 import AttendancePrint from './pages/AttendancePrint';
 import RoomAttendance from './pages/RoomAttendance';
+import MeetClasses from './pages/MeetClasses';
 import Evaluation from './pages/Evaluation';
 import EvaluationView from './pages/EvaluationView';
 // DataProvider removed; using Redux directly
@@ -89,6 +90,7 @@ function App() {
               <Route path="/admin/attendance" element={<RequireRole roles={['admin','manager','checker']}><Attendance /></RequireRole>} />
               <Route path="/admin/attendance/print" element={<RequireRole roles={['admin','manager','checker']}><AttendancePrint /></RequireRole>} />
               <Route path="/admin/room-attendance" element={<RequireRole roles={['admin','manager','checker']}><RoomAttendance /></RequireRole>} />
+              <Route path="/admin/meet-classes" element={<RequireAdmin><MeetClasses /></RequireAdmin>} />
               <Route path="/admin/faculty" element={<RequireAdmin><AdminFaculty /></RequireAdmin>} />
               <Route path="/admin/prospectus" element={<RequireAdmin><AdminProspectus /></RequireAdmin>} />
               <Route path="/admin/evaluations" element={<RequireAdmin extraRoles={['osas']}><AdminEvaluations /></RequireAdmin>} />
