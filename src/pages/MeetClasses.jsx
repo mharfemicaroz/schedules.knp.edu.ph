@@ -17,7 +17,8 @@ import MeetTimelineDrawer from '../components/MeetTimelineDrawer';
 import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
 import useDebounce from '../hooks/useDebounce';
-import { listMeetClasses, getMeetTimeline } from '../services/meetService';
+import useFaculties from '../hooks/useFaculties';
+import { listMeetClasses, getMeetTimeline, upsertMeetMapping } from '../services/meetService';
 
 function getMeetUrl(code) {
   if (!code) return null;
@@ -26,10 +27,15 @@ function getMeetUrl(code) {
   return `https://meet.google.com/${clean}`;
 }
 
+function normalizeMeetCode(code) {
+  return String(code || '').trim().toLowerCase();
+}
+
 export default function MeetClasses() {
   const toast = useToast();
   const border = useColorModeValue('gray.200', 'gray.700');
   const subtle = useColorModeValue('gray.600', 'gray.400');
+  const { data: facultyOptions, loading: facultyLoading } = useFaculties();
 
   const [items, setItems] = React.useState([]);
   const [stats, setStats] = React.useState({ totalEvents: 0, totalMeetings: 0 });
@@ -257,6 +263,36 @@ export default function MeetClasses() {
     window.open(url, '_blank', 'noopener');
   }, []);
 
+  const handleAssignMeetCode = React.useCallback(async (meeting, facultyId) => {
+    const meetCode = meeting?.meetingCode;
+    if (!meetCode) {
+      toast({ title: 'Missing meeting code', status: 'warning', duration: 2000, isClosable: true });
+      return;
+    }
+    try {
+      const payload = { meetCode, facultyId: facultyId ?? null };
+      const response = await upsertMeetMapping(payload);
+      const mapped = response?.item || {};
+      setItems((prev) =>
+        prev.map((row) => {
+          if (normalizeMeetCode(row.meetingCode) !== normalizeMeetCode(meetCode)) return row;
+          if (mapped.deleted) {
+            return { ...row, mappedFacultyId: null, mappedFacultyName: '', mappedFacultyEmail: '' };
+          }
+          return {
+            ...row,
+            mappedFacultyId: mapped.facultyId ?? facultyId ?? null,
+            mappedFacultyName: mapped.facultyName || row.mappedFacultyName || '',
+            mappedFacultyEmail: mapped.facultyEmail || row.mappedFacultyEmail || '',
+          };
+        })
+      );
+      toast({ title: mapped.deleted ? 'Mapping removed' : 'Mapping saved', status: 'success', duration: 2000, isClosable: true });
+    } catch (err) {
+      toast({ title: 'Failed to save mapping', description: err?.message || '', status: 'error', duration: 2500, isClosable: true });
+    }
+  }, [toast]);
+
   const handleOrgUnitChange = React.useCallback((value) => {
     setOrgUnit(value);
     if (value !== '__custom') setCustomOrgUnit('');
@@ -323,6 +359,9 @@ export default function MeetClasses() {
             onViewTimeline={handleViewTimeline}
             onCopyMeetingCode={(row) => handleCopy(row.meetingCode, 'Meeting code')}
             onOpenMeet={handleOpenMeet}
+            onAssignMeetCode={handleAssignMeetCode}
+            facultyOptions={facultyOptions}
+            facultyLoading={facultyLoading}
             pagination={pagination}
             onPageChange={handlePageChange}
           />

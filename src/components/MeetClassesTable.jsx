@@ -8,14 +8,17 @@ import {
   Th,
   Td,
   Badge,
+  Button,
   HStack,
+  VStack,
   Text,
   IconButton,
   Tooltip,
   useColorModeValue,
 } from '@chakra-ui/react';
-import { FiCopy, FiExternalLink, FiEye } from 'react-icons/fi';
+import { FiCopy, FiEdit2, FiExternalLink, FiEye, FiX } from 'react-icons/fi';
 import MeetPaginationBar from './MeetPaginationBar';
+import FacultySelect from './FacultySelect';
 
 function formatStatusColor(status) {
   if (status === 'LIVE') return 'green';
@@ -27,16 +30,26 @@ export default function MeetClassesTable({
   onViewTimeline,
   onCopyMeetingCode,
   onOpenMeet,
+  onAssignMeetCode,
+  facultyOptions,
+  facultyLoading,
   pagination,
   onPageChange,
 }) {
   const border = useColorModeValue('gray.200', 'gray.700');
   const subtle = useColorModeValue('gray.600', 'gray.400');
   const [expanded, setExpanded] = React.useState({});
+  const [editing, setEditing] = React.useState({});
 
   const toggleExpanded = React.useCallback((key) => {
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
+
+  const setEditingState = React.useCallback((key, value) => {
+    setEditing((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const rowKeyOf = (row) => row.meetingKey || row.meetingCode || row.conferenceId;
 
   return (
     <Box borderWidth="1px" borderColor={border} rounded="xl" overflowX="auto" bg={useColorModeValue('white','gray.800')}>
@@ -49,12 +62,17 @@ export default function MeetClassesTable({
             <Th>Org Unit</Th>
             <Th>Last activity</Th>
             <Th>Meeting code</Th>
+            <Th>Mapped faculty</Th>
             <Th>Actions</Th>
           </Tr>
         </Thead>
         <Tbody>
-          {items.map((row) => (
-            <Tr key={`${row.meetingKey}-${row.lastActivityAt}`}>
+          {items.map((row) => {
+            const rowKey = rowKeyOf(row);
+            const isEditing = editing[rowKey];
+            const hasMapping = Boolean(row.mappedFacultyName || row.mappedFacultyEmail);
+            return (
+              <Tr key={`${rowKey}-${row.lastActivityAt}`}>
               <Td>
                 <HStack spacing={2}>
                   <Badge colorScheme={formatStatusColor(row.status)} variant="solid">{row.status}</Badge>
@@ -102,6 +120,60 @@ export default function MeetClassesTable({
                 <Text>{row.meetingCode || '-'}</Text>
               </Td>
               <Td>
+                <VStack align="start" spacing={2} minW="220px">
+                  <HStack spacing={2} flexWrap="wrap">
+                    {row.mappedFacultyName ? (
+                      <Badge colorScheme="blue" variant="subtle">{row.mappedFacultyName}</Badge>
+                    ) : (
+                      <Text fontSize="xs" color={subtle}>Unassigned</Text>
+                    )}
+                    {row.mappedFacultyEmail ? (
+                      <Text fontSize="xs" color={subtle}>{row.mappedFacultyEmail}</Text>
+                    ) : null}
+                    {hasMapping && !isEditing && (
+                      <Tooltip label="Edit mapping">
+                        <IconButton
+                          size="xs"
+                          aria-label="Edit mapping"
+                          icon={<FiEdit2 />}
+                          variant="ghost"
+                          onClick={() => setEditingState(rowKey, true)}
+                          isDisabled={!row.meetingCode}
+                        />
+                      </Tooltip>
+                    )}
+                  </HStack>
+                  {(!hasMapping || isEditing) && (
+                    <HStack w="full" spacing={2}>
+                      <Box flex="1">
+                        <FacultySelect
+                          value={row.mappedFacultyName || ''}
+                          onChangeId={(id) => {
+                            onAssignMeetCode?.(row, id);
+                            setEditingState(rowKey, false);
+                          }}
+                          allowClear
+                          placeholder="Assign faculty..."
+                          options={facultyOptions}
+                          loading={facultyLoading}
+                          disabled={!row.meetingCode}
+                          maxHeight="220px"
+                        />
+                      </Box>
+                      {hasMapping && (
+                        <IconButton
+                          size="sm"
+                          aria-label="Cancel edit"
+                          icon={<FiX />}
+                          variant="ghost"
+                          onClick={() => setEditingState(rowKey, false)}
+                        />
+                      )}
+                    </HStack>
+                  )}
+                </VStack>
+              </Td>
+              <Td>
                 <HStack spacing={1}>
                   <Tooltip label="View timeline">
                     <IconButton size="sm" aria-label="View timeline" icon={<FiEye />} onClick={() => onViewTimeline(row)} />
@@ -116,8 +188,9 @@ export default function MeetClassesTable({
                   )}
                 </HStack>
               </Td>
-            </Tr>
-          ))}
+              </Tr>
+            );
+          })}
         </Tbody>
       </Table>
       <MeetPaginationBar pagination={pagination} onPageChange={onPageChange} />

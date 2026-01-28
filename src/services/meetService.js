@@ -28,6 +28,9 @@
  * @property {string} orgUnit
  * @property {string} recentEvent
  * @property {number} eventCount
+ * @property {number|null} mappedFacultyId
+ * @property {string} mappedFacultyName
+ * @property {string} mappedFacultyEmail
  */
 
 /**
@@ -83,5 +86,16 @@ export async function getMeetTimeline(params) {
   const { conferenceId, ...rest } = params || {};
   const query = buildQuery(rest);
   return apiService.requestAbs(`/meet/classes/${encodeURIComponent(conferenceId)}${query}`, { method: 'GET' });
+}
+
+/**
+ * @param {{ meetCode: string, facultyId: number|null }} payload
+ * @returns {Promise<{ item: { meetCode: string, facultyId?: number, facultyName?: string, facultyEmail?: string, deleted?: boolean } }>}
+ */
+export async function upsertMeetMapping(payload) {
+  return apiService.requestAbs('/meet/mappings', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  });
 }
 
