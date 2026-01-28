@@ -36,6 +36,7 @@
  * @property {string|null} nextPageToken
  * @property {string} generatedAt
  * @property {{ totalEvents: number, totalMeetings: number }} [stats]
+ * @property {{ page: number, perPage: number, totalItems: number, totalPages: number, startItem: number, endItem: number, hasPrevPage: boolean, hasNextPage: boolean }} [pagination]
  * @property {string} [cacheStatus]
  */
 
@@ -57,7 +58,7 @@ function buildQuery(params = {}) {
 }
 
 /**
- * @param {{ from?: string, to?: string, ou?: string, status?: 'live'|'all', pageToken?: string, pageSize?: number }} params
+ * @param {{ from?: string, to?: string, ou?: string, status?: 'live'|'all', pageToken?: string, pageSize?: number, page?: number, perPage?: number }} params
  * @returns {Promise<MeetClassesResponse>}
  */
 export async function listMeetClasses(params = {}) {
@@ -66,7 +67,7 @@ export async function listMeetClasses(params = {}) {
 }
 
 /**
- * @param {{ ou?: string }} params
+ * @param {{ ou?: string, from?: string, to?: string, page?: number, perPage?: number }} params
  * @returns {Promise<MeetClassesResponse>}
  */
 export async function listMeetLiveClasses(params = {}) {

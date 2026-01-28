@@ -9,7 +9,6 @@ import {
   InputLeftElement,
   Select,
   Button,
-  ButtonGroup,
   Switch,
   FormControl,
   FormLabel,
@@ -25,14 +24,6 @@ export default function MeetFilterBar({
   isCustomOrgUnit,
   customOrgUnit,
   onCustomOrgUnitChange,
-  windowPreset,
-  onWindowPresetChange,
-  fromValue,
-  toValue,
-  onFromChange,
-  onToChange,
-  status,
-  onStatusChange,
   search,
   onSearchChange,
   showUnique,
@@ -68,35 +59,8 @@ export default function MeetFilterBar({
                 <Input size="sm" placeholder="/Faculty/Science" value={customOrgUnit} onChange={(e) => onCustomOrgUnitChange(e.target.value)} />
               </Box>
             )}
-            <Box>
-              <Text fontSize="xs" color={subtle} mb={1}>Time window</Text>
-              <Select size="sm" value={windowPreset} onChange={(e) => onWindowPresetChange(e.target.value)} w={{ base: '160px', md: '180px' }}>
-                <option value="1">Last 1 hour</option>
-                <option value="2">Last 2 hours</option>
-                <option value="4">Last 4 hours</option>
-                <option value="8">Last 8 hours</option>
-                <option value="168">Last 7 days</option>
-                <option value="custom">Custom</option>
-              </Select>
-            </Box>
-            {windowPreset === 'custom' && (
-              <HStack spacing={2} flexWrap="wrap">
-                <Box>
-                  <Text fontSize="xs" color={subtle} mb={1}>From</Text>
-                  <Input size="sm" type="datetime-local" value={fromValue} onChange={(e) => onFromChange(e.target.value)} />
-                </Box>
-                <Box>
-                  <Text fontSize="xs" color={subtle} mb={1}>To</Text>
-                  <Input size="sm" type="datetime-local" value={toValue} onChange={(e) => onToChange(e.target.value)} />
-                </Box>
-              </HStack>
-            )}
           </HStack>
           <HStack spacing={3} flexWrap="wrap">
-            <ButtonGroup isAttached size="sm" variant="outline">
-              <Button onClick={() => onStatusChange('live')} variant={status === 'live' ? 'solid' : 'outline'} colorScheme="green">Live</Button>
-              <Button onClick={() => onStatusChange('all')} variant={status === 'all' ? 'solid' : 'outline'} colorScheme="gray">All</Button>
-            </ButtonGroup>
             <Button size="sm" leftIcon={<FiRefreshCw />} onClick={onRefresh} isLoading={isRefreshing}>Refresh</Button>
           </HStack>
         </HStack>
@@ -113,6 +77,7 @@ export default function MeetFilterBar({
                 onChange={(e) => onSearchChange(e.target.value)}
               />
             </InputGroup>
+            <Badge colorScheme="blue" rounded="full" px={3}>Last 1 hour</Badge>
             {isStale && (
               <Badge colorScheme="orange" rounded="full" px={3}>Stale data</Badge>
             )}

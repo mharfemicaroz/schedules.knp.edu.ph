@@ -17,30 +17,7 @@ import MeetTimelineDrawer from '../components/MeetTimelineDrawer';
 import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
 import useDebounce from '../hooks/useDebounce';
-import { listMeetClasses, listMeetLiveClasses, getMeetTimeline } from '../services/meetService';
-
-function toDateInputValue(date) {
-  const d = new Date(date);
-  const pad = (v) => String(v).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  const hh = pad(d.getHours());
-  const min = pad(d.getMinutes());
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
-}
-
-function parseDateInput(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function isRecentNow(date) {
-  if (!date) return false;
-  const diff = Math.abs(Date.now() - date.getTime());
-  return diff < 2 * 60 * 1000;
-}
+import { listMeetClasses, getMeetTimeline } from '../services/meetService';
 
 function getMeetUrl(code) {
   if (!code) return null;
@@ -56,19 +33,25 @@ export default function MeetClasses() {
 
   const [items, setItems] = React.useState([]);
   const [stats, setStats] = React.useState({ totalEvents: 0, totalMeetings: 0 });
-  const [nextPageToken, setNextPageToken] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
-  const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState(null);
   const [lastRefreshAt, setLastRefreshAt] = React.useState(null);
   const [stale, setStale] = React.useState(false);
+  const [page, setPage] = React.useState(1);
+  const [perPage] = React.useState(10);
+  const [pagination, setPagination] = React.useState({
+    page: 1,
+    perPage: 10,
+    totalItems: 0,
+    totalPages: 1,
+    startItem: 0,
+    endItem: 0,
+    hasPrevPage: false,
+    hasNextPage: false,
+  });
 
-  const [status, setStatus] = React.useState('all');
   const [orgUnit, setOrgUnit] = React.useState('');
   const [customOrgUnit, setCustomOrgUnit] = React.useState('');
-  const [windowPreset, setWindowPreset] = React.useState('2');
-  const [fromValue, setFromValue] = React.useState('');
-  const [toValue, setToValue] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [autoRefresh, setAutoRefresh] = React.useState(true);
   const [refreshInterval, setRefreshInterval] = React.useState(30000);
@@ -95,57 +78,82 @@ export default function MeetClasses() {
 
   const isCustomOrgUnit = orgUnit === '__custom';
 
-  React.useEffect(() => {
-    if (windowPreset === 'custom') return;
-    const hours = Number(windowPreset || 2);
+  const getWindowRange = React.useCallback(() => {
     const now = new Date();
-    const from = new Date(now.getTime() - hours * 60 * 60 * 1000);
-    setFromValue(toDateInputValue(from));
-    setToValue(toDateInputValue(now));
-  }, [windowPreset]);
+    const from = new Date(now.getTime() - 60 * 60 * 1000);
+    return {
+      fromIso: from.toISOString(),
+      toIso: now.toISOString(),
+    };
+  }, []);
 
-  const fromIso = React.useMemo(() => {
-    const d = parseDateInput(fromValue);
-    return d ? d.toISOString() : undefined;
-  }, [fromValue]);
-  const toIso = React.useMemo(() => {
-    const d = parseDateInput(toValue);
-    return d ? d.toISOString() : undefined;
-  }, [toValue]);
-  const toDate = React.useMemo(() => parseDateInput(toValue), [toValue]);
-  const useLiveEndpoint = status === 'live' && windowPreset !== 'custom' && isRecentNow(toDate);
-
-  const fetchClasses = React.useCallback(async ({ append = false, pageTokenOverride } = {}) => {
+  const fetchClasses = React.useCallback(async () => {
     try {
-      if (append) setLoadingMore(true); else setLoading(true);
+      setLoading(true);
       setError(null);
+      const windowRange = getWindowRange();
       const params = {
-        from: fromIso,
-        to: toIso,
+        from: windowRange.fromIso,
+        to: windowRange.toIso,
         ou: orgUnit === '__custom' ? customOrgUnit : orgUnit,
-        status,
-        pageToken: pageTokenOverride || undefined,
-        pageSize: 50,
+        status: 'all',
+        page,
+        perPage,
       };
-      const response = useLiveEndpoint && !append
-        ? await listMeetLiveClasses({ ou: params.ou, from: params.from, to: params.to })
-        : await listMeetClasses(params);
+      const response = await listMeetClasses(params);
 
       const newItems = response.items || [];
-      const nextToken = response.nextPageToken || null;
       const nextStats = response.stats || { totalEvents: newItems.reduce((sum, row) => sum + (row.eventCount || 0), 0), totalMeetings: newItems.length };
       const signature = newItems.map((row) => `${row.meetingKey}|${row.lastActivityAt}|${row.status}`).join(';');
-      if (!append && signature === lastSignatureRef.current) {
+      if (signature === lastSignatureRef.current) {
+        const fallbackPagination = (() => {
+          const totalItems = newItems.length;
+          const totalPages = totalItems ? Math.ceil(totalItems / perPage) : 1;
+          const safePage = Math.min(Math.max(page, 1), totalPages);
+          const startItem = totalItems ? (safePage - 1) * perPage + 1 : 0;
+          const endItem = totalItems ? Math.min(safePage * perPage, totalItems) : 0;
+          return {
+            page: safePage,
+            perPage,
+            totalItems,
+            totalPages,
+            startItem,
+            endItem,
+            hasPrevPage: safePage > 1,
+            hasNextPage: safePage < totalPages,
+          };
+        })();
+        const nextPagination = response.pagination || fallbackPagination;
         setStats(nextStats);
-        setNextPageToken(nextToken);
         setLastRefreshAt(response.generatedAt || new Date().toISOString());
         setStale(response.cacheStatus === 'stale');
+        setPagination(nextPagination);
+        if (nextPagination.page !== page) setPage(nextPagination.page);
         return;
       }
-      if (!append) lastSignatureRef.current = signature;
-      setItems((prev) => append ? [...prev, ...newItems] : newItems);
+      lastSignatureRef.current = signature;
+      setItems(newItems);
       setStats(nextStats);
-      setNextPageToken(nextToken);
+      const fallbackPagination = (() => {
+        const totalItems = newItems.length;
+        const totalPages = totalItems ? Math.ceil(totalItems / perPage) : 1;
+        const safePage = Math.min(Math.max(page, 1), totalPages);
+        const startItem = totalItems ? (safePage - 1) * perPage + 1 : 0;
+        const endItem = totalItems ? Math.min(safePage * perPage, totalItems) : 0;
+        return {
+          page: safePage,
+          perPage,
+          totalItems,
+          totalPages,
+          startItem,
+          endItem,
+          hasPrevPage: safePage > 1,
+          hasNextPage: safePage < totalPages,
+        };
+      })();
+      const nextPagination = response.pagination || fallbackPagination;
+      setPagination(nextPagination);
+      if (nextPagination.page !== page) setPage(nextPagination.page);
       setLastRefreshAt(response.generatedAt || new Date().toISOString());
       setStale(response.cacheStatus === 'stale');
     } catch (err) {
@@ -153,13 +161,16 @@ export default function MeetClasses() {
       if (autoRefresh) setStale(true);
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
-  }, [fromIso, toIso, orgUnit, customOrgUnit, status, useLiveEndpoint, autoRefresh]);
+  }, [orgUnit, customOrgUnit, autoRefresh, page, perPage, getWindowRange]);
 
   React.useEffect(() => {
     fetchClasses();
   }, [fetchClasses]);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [orgUnit, customOrgUnit]);
 
   React.useEffect(() => {
     if (!autoRefresh) return undefined;
@@ -204,10 +215,9 @@ export default function MeetClasses() {
   const totalEvents = stats?.totalEvents ?? visibleItems.reduce((sum, row) => sum + (row.eventCount || 0), 0);
   const lastRefreshLabel = lastRefreshAt ? new Date(lastRefreshAt).toLocaleTimeString() : '-';
 
-  const handleLoadMore = React.useCallback(() => {
-    if (!nextPageToken) return;
-    fetchClasses({ append: true, pageTokenOverride: nextPageToken });
-  }, [nextPageToken, fetchClasses]);
+  const handlePageChange = React.useCallback((value) => {
+    setPage(value);
+  }, []);
 
   const handleCopy = React.useCallback(async (value, label) => {
     if (!value) return;
@@ -226,10 +236,11 @@ export default function MeetClasses() {
     setTimelineError(null);
     try {
       const id = meeting.conferenceId || meeting.meetingCode;
+      const windowRange = getWindowRange();
       const response = await getMeetTimeline({
         conferenceId: id,
-        from: fromIso,
-        to: toIso,
+        from: windowRange.fromIso,
+        to: windowRange.toIso,
       });
       setTimelineEvents(response.items || []);
     } catch (err) {
@@ -238,7 +249,7 @@ export default function MeetClasses() {
     } finally {
       setTimelineLoading(false);
     }
-  }, [fromIso, toIso]);
+  }, [getWindowRange]);
 
   const handleOpenMeet = React.useCallback((meeting) => {
     const url = getMeetUrl(meeting.meetingCode);
@@ -288,14 +299,6 @@ export default function MeetClasses() {
           isCustomOrgUnit={isCustomOrgUnit}
           customOrgUnit={customOrgUnit}
           onCustomOrgUnitChange={setCustomOrgUnit}
-          windowPreset={windowPreset}
-          onWindowPresetChange={setWindowPreset}
-          fromValue={fromValue}
-          toValue={toValue}
-          onFromChange={setFromValue}
-          onToChange={setToValue}
-          status={status}
-          onStatusChange={setStatus}
           search={search}
           onSearchChange={setSearch}
           showUnique={showUnique}
@@ -320,9 +323,8 @@ export default function MeetClasses() {
             onViewTimeline={handleViewTimeline}
             onCopyMeetingCode={(row) => handleCopy(row.meetingCode, 'Meeting code')}
             onOpenMeet={handleOpenMeet}
-            hasMore={Boolean(nextPageToken)}
-            onLoadMore={handleLoadMore}
-            loadingMore={loadingMore}
+            pagination={pagination}
+            onPageChange={handlePageChange}
           />
         )}
       </VStack>

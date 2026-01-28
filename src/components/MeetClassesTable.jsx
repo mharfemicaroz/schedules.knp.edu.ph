@@ -12,10 +12,10 @@ import {
   Text,
   IconButton,
   Tooltip,
-  Button,
   useColorModeValue,
 } from '@chakra-ui/react';
 import { FiCopy, FiExternalLink, FiEye } from 'react-icons/fi';
+import MeetPaginationBar from './MeetPaginationBar';
 
 function formatStatusColor(status) {
   if (status === 'LIVE') return 'green';
@@ -27,9 +27,8 @@ export default function MeetClassesTable({
   onViewTimeline,
   onCopyMeetingCode,
   onOpenMeet,
-  hasMore,
-  onLoadMore,
-  loadingMore,
+  pagination,
+  onPageChange,
 }) {
   const border = useColorModeValue('gray.200', 'gray.700');
   const subtle = useColorModeValue('gray.600', 'gray.400');
@@ -121,13 +120,7 @@ export default function MeetClassesTable({
           ))}
         </Tbody>
       </Table>
-      {hasMore && (
-        <Box p={3} textAlign="center" borderTopWidth="1px" borderColor={border}>
-          <Button size="sm" onClick={onLoadMore} isLoading={loadingMore} variant="outline" colorScheme="blue">
-            Load more
-          </Button>
-        </Box>
-      )}
+      <MeetPaginationBar pagination={pagination} onPageChange={onPageChange} />
     </Box>
   );
 }
