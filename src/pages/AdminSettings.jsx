@@ -12,6 +12,7 @@ const SEM_OPTS = [
 ];
 
 function PairCard({ title, value, onChange, syOptions }) {
+  const safeValue = value || { school_year: '', semester: '' };
   const border = useColorModeValue('gray.200','gray.700');
   const bg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.300');
@@ -23,7 +24,7 @@ function PairCard({ title, value, onChange, syOptions }) {
       <SimpleGrid columns={{ base: 1, sm: 2 }} gap={3} alignItems="center">
         <VStack align="stretch" spacing={1}>
           <Text fontSize="sm" color={subtle}>School Year</Text>
-          <Select placeholder="Select school year" value={value.school_year || ''} onChange={(e)=>onChange({ ...value, school_year: e.target.value })}>
+          <Select placeholder="Select school year" value={safeValue.school_year || ''} onChange={(e)=>onChange({ ...safeValue, school_year: e.target.value })}>
             {(syOptions || []).map(opt => (
               <option key={opt} value={opt}>{opt}</option>
             ))}
@@ -31,7 +32,7 @@ function PairCard({ title, value, onChange, syOptions }) {
         </VStack>
         <VStack align="stretch" spacing={1}>
           <Text fontSize="sm" color={subtle}>Semester</Text>
-          <Select placeholder="Select semester" value={value.semester || ''} onChange={(e)=>onChange({ ...value, semester: e.target.value })}>
+          <Select placeholder="Select semester" value={safeValue.semester || ''} onChange={(e)=>onChange({ ...safeValue, semester: e.target.value })}>
             {SEM_OPTS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
           </Select>
         </VStack>
@@ -71,19 +72,23 @@ export default function AdminSettings() {
     );
   }, [form, orig]);
 
+  const normalizeSettings = React.useCallback((data) => {
+    const base = {
+      schedulesView: { school_year: '', semester: '' },
+      schedulesLoad: { school_year: '', semester: '' },
+      gradesSubmission: { school_year: '', semester: '' },
+      attendance: { school_year: '', semester: '' },
+      evaluations: { school_year: '', semester: '' },
+      updatedAt: null,
+    };
+    return { ...base, ...(data || {}) };
+  }, []);
+
   const refresh = React.useCallback(async () => {
     try {
       setLoading(true);
       const data = await dispatch(loadSettingsThunk()).unwrap();
-      const base = {
-        schedulesView: { school_year: '', semester: '' },
-        schedulesLoad: { school_year: '', semester: '' },
-        gradesSubmission: { school_year: '', semester: '' },
-        attendance: { school_year: '', semester: '' },
-        evaluations: { school_year: '', semester: '' },
-        updatedAt: null,
-      };
-      const merged = { ...base, ...(data || {}) };
+      const merged = normalizeSettings(data);
       setOrig(merged);
       setForm(merged);
     } catch (e) {
@@ -91,7 +96,7 @@ export default function AdminSettings() {
     } finally {
       setLoading(false);
     }
-  }, [dispatch, toast]);
+  }, [dispatch, toast, normalizeSettings]);
 
   React.useEffect(() => { refresh(); }, [refresh]);
 
@@ -116,8 +121,9 @@ export default function AdminSettings() {
         evaluations: form.evaluations,
       };
       const data = await dispatch(updateSettingsThunk(payload)).unwrap();
-      setOrig(data);
-      setForm(data);
+      const merged = normalizeSettings(data);
+      setOrig(merged);
+      setForm(merged);
       toast({ title: 'Settings saved', status: 'success' });
       // Refresh schedules across the app with new view filters
       dispatch(loadAllSchedules());
