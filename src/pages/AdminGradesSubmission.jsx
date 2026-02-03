@@ -147,8 +147,6 @@ export default function AdminGradesSubmission() {
   const [deptFilter, setDeptFilter] = React.useState(ALL_DEPT);
   const [empFilter, setEmpFilter] = React.useState('');
   const [termFilter, setTermFilter] = React.useState('');
-  const [filterSy, setFilterSy] = React.useState(defaultSy);
-  const [filterSem, setFilterSem] = React.useState(defaultSem);
   const confirmDisc = useDisclosure();
   const [confirmMode, setConfirmMode] = React.useState(null); // 'submit' | 'save'
   const [pendingCourse, setPendingCourse] = React.useState(null);
@@ -173,6 +171,8 @@ export default function AdminGradesSubmission() {
 
   const defaultSy = settings?.gradesSubmission?.school_year || settings?.schedulesView?.school_year || '';
   const defaultSem = normalizeSemLabel(settings?.gradesSubmission?.semester || settings?.schedulesView?.semester || '');
+  const [filterSy, setFilterSy] = React.useState(defaultSy);
+  const [filterSem, setFilterSem] = React.useState(defaultSem);
   const [summarySy, setSummarySy] = React.useState(defaultSy);
   const [summarySem, setSummarySem] = React.useState(defaultSem);
   const [summaryDept, setSummaryDept] = React.useState('');
