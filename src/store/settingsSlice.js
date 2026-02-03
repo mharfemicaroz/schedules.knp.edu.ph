@@ -2,7 +2,14 @@ import { createSlice } from '@reduxjs/toolkit';
 import { loadSettingsThunk, updateSettingsThunk } from './settingsThunks';
 
 const initialState = {
-  data: { schedulesView: { school_year: '', semester: '' }, schedulesLoad: { school_year: '', semester: '' }, updatedAt: null },
+  data: {
+    schedulesView: { school_year: '', semester: '' },
+    schedulesLoad: { school_year: '', semester: '' },
+    gradesSubmission: { school_year: '', semester: '' },
+    attendance: { school_year: '', semester: '' },
+    evaluations: { school_year: '', semester: '' },
+    updatedAt: null,
+  },
   loading: false,
   error: null,
 };
@@ -25,4 +32,3 @@ const settingsSlice = createSlice({
 export const { setSettings } = settingsSlice.actions;
 export const selectSettings = (s) => s.settings?.data || initialState.data;
 export default settingsSlice.reducer;
-

@@ -51,16 +51,38 @@ export default function AdminSettings() {
 
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
-  const [orig, setOrig] = React.useState({ schedulesView: { school_year: '', semester: '' }, schedulesLoad: { school_year: '', semester: '' }, updatedAt: null });
+  const [orig, setOrig] = React.useState({
+    schedulesView: { school_year: '', semester: '' },
+    schedulesLoad: { school_year: '', semester: '' },
+    gradesSubmission: { school_year: '', semester: '' },
+    attendance: { school_year: '', semester: '' },
+    evaluations: { school_year: '', semester: '' },
+    updatedAt: null,
+  });
   const [form, setForm] = React.useState(orig);
 
-  const dirty = React.useMemo(() => JSON.stringify(form.schedulesView) !== JSON.stringify(orig.schedulesView) || JSON.stringify(form.schedulesLoad) !== JSON.stringify(orig.schedulesLoad), [form, orig]);
+  const dirty = React.useMemo(() => {
+    return (
+      JSON.stringify(form.schedulesView) !== JSON.stringify(orig.schedulesView) ||
+      JSON.stringify(form.schedulesLoad) !== JSON.stringify(orig.schedulesLoad) ||
+      JSON.stringify(form.gradesSubmission) !== JSON.stringify(orig.gradesSubmission) ||
+      JSON.stringify(form.attendance) !== JSON.stringify(orig.attendance) ||
+      JSON.stringify(form.evaluations) !== JSON.stringify(orig.evaluations)
+    );
+  }, [form, orig]);
 
   const refresh = React.useCallback(async () => {
     try {
       setLoading(true);
       const data = await dispatch(loadSettingsThunk()).unwrap();
-      const base = { schedulesView: { school_year: '', semester: '' }, schedulesLoad: { school_year: '', semester: '' }, updatedAt: null };
+      const base = {
+        schedulesView: { school_year: '', semester: '' },
+        schedulesLoad: { school_year: '', semester: '' },
+        gradesSubmission: { school_year: '', semester: '' },
+        attendance: { school_year: '', semester: '' },
+        evaluations: { school_year: '', semester: '' },
+        updatedAt: null,
+      };
       const merged = { ...base, ...(data || {}) };
       setOrig(merged);
       setForm(merged);
@@ -86,7 +108,13 @@ export default function AdminSettings() {
   const save = async () => {
     try {
       setSaving(true);
-      const payload = { schedulesView: form.schedulesView, schedulesLoad: form.schedulesLoad };
+      const payload = {
+        schedulesView: form.schedulesView,
+        schedulesLoad: form.schedulesLoad,
+        gradesSubmission: form.gradesSubmission,
+        attendance: form.attendance,
+        evaluations: form.evaluations,
+      };
       const data = await dispatch(updateSettingsThunk(payload)).unwrap();
       setOrig(data);
       setForm(data);
@@ -110,7 +138,7 @@ export default function AdminSettings() {
         </HStack>
       </HStack>
 
-      <Text fontSize="sm" color={subtle} mb={2}>Set default School Year and Semester used by schedules views and data loading.</Text>
+      <Text fontSize="sm" color={subtle} mb={2}>Set default School Year and Semester used by schedules and admin modules.</Text>
       {orig.updatedAt && (
         <HStack mb={3}><Badge colorScheme="purple">Last Updated: {new Date(orig.updatedAt).toLocaleString()}</Badge></HStack>
       )}
@@ -118,6 +146,9 @@ export default function AdminSettings() {
       <SimpleGrid columns={{ base: 1, md: 2 }} gap={4}>
         <PairCard title="Schedules View Defaults" value={form.schedulesView} onChange={(v)=>setForm({ ...form, schedulesView: v })} syOptions={syOptions} />
         <PairCard title="Schedules Load Defaults" value={form.schedulesLoad} onChange={(v)=>setForm({ ...form, schedulesLoad: v })} syOptions={syOptions} />
+        <PairCard title="Grades Submission Defaults" value={form.gradesSubmission} onChange={(v)=>setForm({ ...form, gradesSubmission: v })} syOptions={syOptions} />
+        <PairCard title="Attendance Defaults" value={form.attendance} onChange={(v)=>setForm({ ...form, attendance: v })} syOptions={syOptions} />
+        <PairCard title="Evaluations Defaults" value={form.evaluations} onChange={(v)=>setForm({ ...form, evaluations: v })} syOptions={syOptions} />
       </SimpleGrid>
 
       <Divider my={4} />

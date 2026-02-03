@@ -14,6 +14,7 @@ import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { buildTable, printContent } from '../utils/printDesign';
 import useFaculties from '../hooks/useFaculties';
+import { selectSettings } from '../store/settingsSlice';
 
 const STATUS_OPTIONS = [
   { value: 'present', label: 'Present' },
@@ -34,7 +35,28 @@ export default function Attendance() {
   const [page, setPage] = React.useState(1);
   // default to 10 rows per page; 'all' will show everything
   const [limit, setLimit] = React.useState(10);
-  const [filters, setFilters] = React.useState({ startDate: '', endDate: '', status: '', faculty: '', facultyId: '', term: '' });
+  const settings = useSelector(selectSettings);
+  const normalizeSem = React.useCallback((val) => {
+    const s = String(val || '').trim().toLowerCase();
+    if (!s) return '';
+    if (s.startsWith('1')) return '1st';
+    if (s.startsWith('2')) return '2nd';
+    if (s.startsWith('s')) return 'Summer';
+    if (s.includes('summer')) return 'Summer';
+    return val;
+  }, []);
+  const defaultSy = settings?.attendance?.school_year || settings?.schedulesView?.school_year || '';
+  const defaultSem = normalizeSem(settings?.attendance?.semester || settings?.schedulesView?.semester || '');
+  const [filters, setFilters] = React.useState({
+    startDate: '',
+    endDate: '',
+    status: '',
+    faculty: '',
+    facultyId: '',
+    term: '',
+    school_year: defaultSy,
+    semester: defaultSem,
+  });
   const schedules = useSelector(selectAllCourses);
   const { data, loading, error, refresh } = useAttendance({ page, limit, ...filters, schedules });
   const [stats, setStats] = React.useState({ total: 0, byStatus: {} });
@@ -43,6 +65,14 @@ export default function Attendance() {
   const toast = useToast();
   const [sortKey, setSortKey] = React.useState('date'); // 'date' | 'status' | 'course' | 'instructor' | 'schedule'
   const [sortOrder, setSortOrder] = React.useState('desc'); // 'asc' | 'desc'
+
+  React.useEffect(() => {
+    setFilters((prev) => ({
+      ...prev,
+      school_year: prev.school_year || defaultSy,
+      semester: prev.semester || defaultSem,
+    }));
+  }, [defaultSy, defaultSem]);
 
   // Faculty lookup for displaying instructor names by facultyId
   const { data: facultyOptions } = useFaculties();
@@ -69,6 +99,19 @@ export default function Attendance() {
 
   const onApply = () => { setPage(1); refresh(true); loadStats(); };
   const clearStatus = () => setFilters((f) => ({ ...f, status: '' }));
+  const resetFilters = React.useCallback(() => {
+    setFilters({
+      startDate: '',
+      endDate: '',
+      status: '',
+      faculty: '',
+      facultyId: '',
+      term: '',
+      school_year: defaultSy,
+      semester: defaultSem,
+    });
+    setPage(1);
+  }, [defaultSy, defaultSem]);
 
   const onDelete = async (row) => {
     try {
@@ -91,6 +134,8 @@ export default function Attendance() {
     if (filters.startDate || filters.endDate) {
       subParts.push(`Dates: ${filters.startDate || '…'} to ${filters.endDate || '…'}`);
     }
+    if (filters.school_year) subParts.push(`SY: ${filters.school_year}`);
+    if (filters.semester) subParts.push(`Sem: ${filters.semester}`);
     if (filters.status) subParts.push(`Status: ${filters.status}`);
     if (filters.term) subParts.push(`Term: ${filters.term}`);
     const subtitle = subParts.join('  |  ');
@@ -107,6 +152,8 @@ export default function Attendance() {
     if (filters.startDate) q.set('startDate', filters.startDate);
     if (filters.endDate) q.set('endDate', filters.endDate);
     if (filters.term) q.set('term', filters.term);
+    if (filters.school_year) q.set('school_year', filters.school_year);
+    if (filters.semester) q.set('semester', filters.semester);
     if (filters.facultyId) q.set('facultyId', filters.facultyId);
     if (filters.faculty) q.set('faculty', filters.faculty);
     q.set('type', 'all');
@@ -152,6 +199,8 @@ export default function Attendance() {
     const titleBits = [`${label} Summary (Per Faculty)`];
     const sub = [];
     if (filters.startDate || filters.endDate) sub.push(`Dates: ${filters.startDate || '-'} to ${filters.endDate || '-'}`);
+    if (filters.school_year) sub.push(`SY: ${filters.school_year}`);
+    if (filters.semester) sub.push(`Sem: ${filters.semester}`);
     if (filters.term) sub.push(`Term: ${filters.term}`);
     const title = titleBits.join('');
     const subtitle = sub.join('  |  ');
@@ -177,6 +226,8 @@ export default function Attendance() {
     if (filters.startDate) q.set('startDate', filters.startDate);
     if (filters.endDate) q.set('endDate', filters.endDate);
     if (filters.term) q.set('term', filters.term);
+    if (filters.school_year) q.set('school_year', filters.school_year);
+    if (filters.semester) q.set('semester', filters.semester);
     if (filters.facultyId) q.set('facultyId', filters.facultyId);
     if (filters.faculty) q.set('faculty', filters.faculty);
     q.set('type', status || 'all');
@@ -190,10 +241,30 @@ export default function Attendance() {
     facNames.forEach((name) => {
       const rows = absentGroups.get(name) || [];
       const bodyHtml = buildTable(['Date', 'Subject', 'Time', 'Term'], rows.map(r => [r.date, r.subject, r.time, r.term]));
-      const subtitle = [filters.startDate || filters.endDate ? `Dates: ${filters.startDate || '—'} to ${filters.endDate || '—'}` : '', filters.term ? `Term: ${filters.term}` : ''].filter(Boolean).join('  |  ');
+      const subtitle = [
+        filters.startDate || filters.endDate ? `Dates: ${filters.startDate || '-'} to ${filters.endDate || '-'}` : '',
+        filters.school_year ? `SY: ${filters.school_year}` : '',
+        filters.semester ? `Sem: ${filters.semester}` : '',
+        filters.term ? `Term: ${filters.term}` : '',
+      ].filter(Boolean).join('  |  ');
       printContent({ title: `Faculty: ${name}`, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, margin: '10mm' });
     });
   }, [absentGroups, filters]);
+
+  const syOptions = React.useMemo(() => {
+    const set = new Set();
+    (schedules || []).forEach((s) => {
+      const sy = String(s.sy || s.schoolyear || s.schoolYear || '').trim();
+      if (sy) set.add(sy);
+    });
+    if (defaultSy) set.add(defaultSy);
+    return Array.from(set).sort();
+  }, [schedules, defaultSy]);
+  const semOptions = [
+    { value: '1st', label: '1st Semester' },
+    { value: '2nd', label: '2nd Semester' },
+    { value: 'Summer', label: 'Summer' },
+  ];
 
   const sortedItems = React.useMemo(() => {
     const items = Array.isArray(data)
@@ -345,6 +416,18 @@ export default function Attendance() {
             </Select>
           </Box>
           <Box>
+            <Text fontSize="xs" color="gray.500" mb={1}>School Year</Text>
+            <Select placeholder="All" value={filters.school_year} onChange={(e) => setFilters(f => ({ ...f, school_year: e.target.value }))}>
+              {syOptions.map(y => <option key={y} value={y}>{y}</option>)}
+            </Select>
+          </Box>
+          <Box>
+            <Text fontSize="xs" color="gray.500" mb={1}>Semester</Text>
+            <Select placeholder="All" value={filters.semester} onChange={(e) => setFilters(f => ({ ...f, semester: e.target.value }))}>
+              {semOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+          </Box>
+          <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>Term</Text>
             <Select placeholder="All" value={filters.term} onChange={(e) => setFilters(f => ({ ...f, term: e.target.value }))}>
               <option value="1st">1st</option>
@@ -371,14 +454,26 @@ export default function Attendance() {
         </SimpleGrid>
         <HStack spacing={3} mt={3} justify="flex-end" flexWrap="wrap">
           <Button leftIcon={<FiFilter />} onClick={onApply} colorScheme="blue">Apply</Button>
-          <Button variant="ghost" onClick={() => { setFilters({ startDate: '', endDate: '', status: '', faculty: '', facultyId: '', term: '' }); setPage(1); }}>Reset</Button>
+          <Button variant="ghost" onClick={resetFilters}>Reset</Button>
         </HStack>
-        {(filters.status || filters.term) && (
+        {(filters.status || filters.term || filters.school_year || filters.semester) && (
           <HStack spacing={2} mt={3}>
             {filters.status ? (
               <Tag size="sm" colorScheme="blue">
                 <TagLabel>Status: {filters.status}</TagLabel>
                 <TagCloseButton onClick={clearStatus} />
+              </Tag>
+            ) : null}
+            {filters.school_year ? (
+              <Tag size="sm" colorScheme="gray">
+                <TagLabel>SY: {filters.school_year}</TagLabel>
+                <TagCloseButton onClick={() => setFilters(f => ({ ...f, school_year: '' }))} />
+              </Tag>
+            ) : null}
+            {filters.semester ? (
+              <Tag size="sm" colorScheme="gray">
+                <TagLabel>Sem: {filters.semester}</TagLabel>
+                <TagCloseButton onClick={() => setFilters(f => ({ ...f, semester: '' }))} />
               </Tag>
             ) : null}
             {filters.term ? (

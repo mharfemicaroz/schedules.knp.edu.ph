@@ -67,6 +67,17 @@ export default function useAttendance(params = {}) {
     let filtered = arr;
     // Optional term filter (1st, 2nd, Sem) by schedule.term when available
     const termFilter = String(p?.term || '').trim();
+    const syFilter = String(p?.school_year || p?.schoolYear || p?.sy || '').trim();
+    const semFilter = String(p?.semester || p?.sem || '').trim();
+    const normalizeSem = (val) => {
+      const s = String(val || '').trim().toLowerCase();
+      if (!s) return '';
+      if (s.startsWith('1')) return '1st';
+      if (s.startsWith('2')) return '2nd';
+      if (s.startsWith('s')) return 'summer';
+      if (s.includes('summer')) return 'summer';
+      return s;
+    };
     if (termFilter) {
       const tf = termFilter.toLowerCase();
       const matchTerm = (t) => {
@@ -80,6 +91,21 @@ export default function useAttendance(params = {}) {
       filtered = filtered.filter((r) => {
         const schFull = resolveSchedule(r);
         return matchTerm(schFull?.term || schFull?.semester);
+      });
+    }
+    if (syFilter) {
+      filtered = filtered.filter((r) => {
+        const schFull = resolveSchedule(r);
+        const sy = String(schFull?.sy || schFull?.schoolyear || schFull?.schoolYear || '').trim();
+        return sy === syFilter;
+      });
+    }
+    if (semFilter) {
+      const targetSem = normalizeSem(semFilter);
+      filtered = filtered.filter((r) => {
+        const schFull = resolveSchedule(r);
+        const sem = normalizeSem(schFull?.sem || schFull?.semester);
+        return sem && sem === targetSem;
       });
     }
     if (facId) {

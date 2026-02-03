@@ -13,6 +13,8 @@ export default function AttendancePrint() {
   const startDate = search.get('startDate') || '';
   const endDate = search.get('endDate') || '';
   const term = search.get('term') || '';
+  const schoolYear = search.get('school_year') || '';
+  const semester = search.get('semester') || '';
   const facultyId = search.get('facultyId') || '';
   const faculty = search.get('faculty') || '';
   const status = normalizeStatus(search.get('status') || '');
@@ -32,11 +34,13 @@ export default function AttendancePrint() {
     : '';
   const statusFilter = isSummary ? type : status;
 
-  const { data, loading } = useAttendance({ page: 1, limit: '', startDate, endDate, term, facultyId, faculty, status: statusFilter, schedules });
+  const { data, loading } = useAttendance({ page: 1, limit: '', startDate, endDate, term, school_year: schoolYear, semester, facultyId, faculty, status: statusFilter, schedules });
 
   const title = isSummary ? `${summaryLabel} Summary (Per Faculty)` : 'Attendance Report';
   const subBits = [];
   if (startDate || endDate) subBits.push(`Dates: ${startDate || '—'} to ${endDate || '—'}`);
+  if (schoolYear) subBits.push(`SY: ${schoolYear}`);
+  if (semester) subBits.push(`Sem: ${semester}`);
   if (term) subBits.push(`Term: ${term}`);
   if (faculty) subBits.push(`Faculty: ${faculty}`);
   const subtitle = subBits.join('  |  ');

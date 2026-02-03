@@ -169,8 +169,8 @@ export default function AdminGradesSubmission() {
     return v;
   };
 
-  const defaultSy = settings?.schedulesView?.school_year || '';
-  const defaultSem = normalizeSemLabel(settings?.schedulesView?.semester || '');
+  const defaultSy = settings?.gradesSubmission?.school_year || settings?.schedulesView?.school_year || '';
+  const defaultSem = normalizeSemLabel(settings?.gradesSubmission?.semester || settings?.schedulesView?.semester || '');
   const [summarySy, setSummarySy] = React.useState(defaultSy);
   const [summarySem, setSummarySem] = React.useState(defaultSem);
   const [summaryDept, setSummaryDept] = React.useState('');
@@ -284,6 +284,11 @@ export default function AdminGradesSubmission() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  React.useEffect(() => {
+    setSummarySy((prev) => prev || defaultSy);
+    setSummarySem((prev) => prev || defaultSem);
+  }, [defaultSy, defaultSem]);
 
   React.useEffect(() => {
     if (!isPrivileged && viewDeptOptions.length > 0) {

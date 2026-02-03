@@ -68,8 +68,8 @@ export default function AdminEvaluations() {
   const isOsas = roleStr === 'osas';
   const settings = useSelector(selectSettings);
   const defaultFilters = React.useMemo(() => {
-    const defaultSy = settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || '';
-    const defaultSem = settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || '';
+    const defaultSy = settings?.evaluations?.school_year || settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || '';
+    const defaultSem = settings?.evaluations?.semester || settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || '';
     return { programcode: '', coursecode: '', faculty: '', dept: '', employment: '', term: '', student: '', sy: defaultSy, sem: defaultSem };
   }, [settings]);
   const [view, setView] = React.useState(isOsas ? 'student' : 'course'); // 'course' | 'faculty' | 'student'
