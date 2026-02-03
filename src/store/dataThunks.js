@@ -186,24 +186,31 @@ function transformSchedulesToFacultyDataset(schedules) {
   };
 }
 
-export const loadAllSchedules = createAsyncThunk("data/loadAll", async (_, { getState, dispatch }) => {
+export const loadAllSchedules = createAsyncThunk("data/loadAll", async (opts = {}, { getState, dispatch }) => {
   // View mode must respect System Settings: Schedules View Defaults (schedulesView)
   let sy, sem;
-  try {
-    const st = getState()?.settings?.data?.schedulesView || {};
-    sy = st.school_year || undefined;
-    sem = st.semester || undefined;
-    if (!sy || !sem) {
-      // Fallback: fetch settings directly if store not yet populated
-      const s = await apiService.getSettings();
-      sy = s?.schedulesView?.school_year || sy;
-      sem = s?.schedulesView?.semester || sem;
-      // Persist fetched settings so shared/public views can reuse the values
-      if (s) {
-        try { dispatch(setSettings(s)); } catch {}
+  const overrideSy = opts?.school_year || opts?.schoolyear || opts?.sy;
+  const overrideSem = opts?.semester || opts?.sem;
+  if (overrideSy || overrideSem) {
+    sy = overrideSy || undefined;
+    sem = overrideSem || undefined;
+  } else {
+    try {
+      const st = getState()?.settings?.data?.schedulesView || {};
+      sy = st.school_year || undefined;
+      sem = st.semester || undefined;
+      if (!sy || !sem) {
+        // Fallback: fetch settings directly if store not yet populated
+        const s = await apiService.getSettings();
+        sy = s?.schedulesView?.school_year || sy;
+        sem = s?.schedulesView?.semester || sem;
+        // Persist fetched settings so shared/public views can reuse the values
+        if (s) {
+          try { dispatch(setSettings(s)); } catch {}
+        }
       }
-    }
-  } catch {}
+    } catch {}
+  }
   const params = {};
   if (sy) { params.sy = sy; params.schoolyear = sy; }
   if (sem) { params.sem = sem; params.semester = sem; }

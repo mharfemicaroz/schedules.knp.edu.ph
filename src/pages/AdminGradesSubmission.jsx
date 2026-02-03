@@ -170,9 +170,16 @@ export default function AdminGradesSubmission() {
   };
 
   const defaultSy = settings?.gradesSubmission?.school_year || settings?.schedulesView?.school_year || '';
-  const defaultSem = normalizeSemLabel(settings?.gradesSubmission?.semester || settings?.schedulesView?.semester || '');
+  const defaultSem = settings?.gradesSubmission?.semester || settings?.schedulesView?.semester || '';
   const [filterSy, setFilterSy] = React.useState(defaultSy);
   const [filterSem, setFilterSem] = React.useState(defaultSem);
+  const refreshSchedules = React.useCallback(() => {
+    const hasOverride = !!(filterSy || filterSem);
+    if (hasOverride) {
+      return dispatch(loadAllSchedules({ schoolyear: filterSy, semester: filterSem }));
+    }
+    return dispatch(loadAllSchedules());
+  }, [dispatch, filterSy, filterSem]);
   const [summarySy, setSummarySy] = React.useState(defaultSy);
   const [summarySem, setSummarySem] = React.useState(defaultSem);
   const [summaryDept, setSummaryDept] = React.useState('');
@@ -274,8 +281,6 @@ export default function AdminGradesSubmission() {
 
   React.useEffect(() => {
     if (!acadData) dispatch(loadAcademicCalendar());
-    // schedules are loaded in App, but safe to refresh lightweight
-    if (!allCourses || allCourses.length === 0) dispatch(loadAllSchedules());
     // ensure we have up-to-date faculty profiles for dept/employment filters
     dispatch(loadFacultiesThunk({ limit: 100000 }));
     // seed summary filters from settings when available
@@ -286,6 +291,16 @@ export default function AdminGradesSubmission() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  React.useEffect(() => {
+    refreshSchedules();
+  }, [refreshSchedules]);
+
+  React.useEffect(() => {
+    return () => {
+      dispatch(loadAllSchedules());
+    };
+  }, [dispatch]);
 
   React.useEffect(() => {
     setSummarySy((prev) => prev || defaultSy);
@@ -342,22 +357,12 @@ const filteredCoursesAll = React.useMemo(() => {
     const list = Array.isArray(filteredCoursesAll) ? filteredCoursesAll : [];
     const norm = (s) => String(s || '').toLowerCase().trim();
     const targetTerm = canonicalTerm(termFilter);
-    const targetSy = String(filterSy || '').trim();
-    const targetSem = normalizeSemLabel(filterSem);
     return list.filter(c => {
-      if (targetSy) {
-        const sy = String(c.sy || c.schoolyear || c.schoolYear || '').trim();
-        if (sy !== targetSy) return false;
-      }
-      if (targetSem) {
-        const sem = normalizeSemLabel(c.sem || c.semester);
-        if (sem !== targetSem) return false;
-      }
       if (selectedFaculty && norm(c.facultyName || c.faculty || '') !== norm(selectedFaculty)) return false;
       if (targetTerm && canonicalTerm(c.term) !== targetTerm) return false;
       return true;
     });
-  }, [filteredCoursesAll, selectedFaculty, termFilter, canonicalTerm, filterSy, filterSem, normalizeSemLabel]);
+  }, [filteredCoursesAll, selectedFaculty, termFilter, canonicalTerm]);
 
   // Smooth large updates without blocking UI
   const rows = React.useDeferredValue(rowsBase);
@@ -452,7 +457,11 @@ const filteredCoursesAll = React.useMemo(() => {
     if (defaultSy) set.add(defaultSy);
     return Array.from(set).sort();
   }, [allCourses, defaultSy]);
-  const semOptions = ['1st Semester', '2nd Semester', 'Summer'];
+  const semOptions = [
+    { value: '1st', label: '1st Semester' },
+    { value: '2nd', label: '2nd Semester' },
+    { value: 'Summer', label: 'Summer' },
+  ];
 
   const filteredFacultyGroups = React.useMemo(() => {
     const norm = (s) => String(s || '').toLowerCase();
@@ -690,7 +699,7 @@ const filteredCoursesAll = React.useMemo(() => {
       } else if (confirmMode === 'clear') {
         await dispatch(updateScheduleThunk({ id: c.id, changes: { gradesSubmitted: null, gradesStatus: null } }));
       }
-      dispatch(loadAllSchedules());
+      refreshSchedules();
     } finally {
       confirmDisc.onClose();
       setPendingCourse(null);
@@ -725,13 +734,13 @@ const filteredCoursesAll = React.useMemo(() => {
   const confirmSubmit = async (c) => {
     const now = new Date(); const due = findGradesDueDate(acadData, c.term); const status = computeStatus(now, due);
     await dispatch(updateScheduleThunk({ id: c.id, changes: { gradesSubmitted: now.toISOString(), gradesStatus: status } }));
-    dispatch(loadAllSchedules());
+    refreshSchedules();
   };
   const saveEditedDate = async (c) => {
     const d = fromDateInput(tempDate); const due = findGradesDueDate(acadData, c.term); const status = computeStatus(d, due);
     await dispatch(updateScheduleThunk({ id: c.id, changes: { gradesSubmitted: d ? d.toISOString() : null, gradesStatus: d ? status : null } }));
     setEditingId(null); setTempDate('');
-    dispatch(loadAllSchedules());
+    refreshSchedules();
   };
 
   if (!isPrivileged && allowedDeptSet.size === 0) {
@@ -791,7 +800,7 @@ const filteredCoursesAll = React.useMemo(() => {
             maxW="170px"
           >
             <option value="">All Sem</option>
-            {semOptions.map(sem => <option key={sem} value={sem}>{sem}</option>)}
+            {semOptions.map(sem => <option key={sem.value} value={sem.value}>{sem.label}</option>)}
           </Select>
           {isPrivileged && (
             <Select
@@ -1008,7 +1017,7 @@ const filteredCoursesAll = React.useMemo(() => {
                   maxW="200px"
                   size="sm"
                 >
-                  {semOptions.map(sem => <option key={sem} value={sem}>{sem}</option>)}
+                  {semOptions.map(sem => <option key={sem.value} value={sem.value}>{sem.label}</option>)}
                 </Select>
                 <Select
               placeholder={isPrivileged ? "Department (All)" : undefined}
