@@ -34,6 +34,7 @@ import {
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import apiService from '../services/apiService';
+import useEvaluationEnabled from '../hooks/useEvaluationEnabled';
 
 function decodeToken(token) {
   try {
@@ -63,6 +64,7 @@ function EvaluationView() {
   const { token } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { enabled: evaluationsEnabled, loading: evalLoading } = useEvaluationEnabled();
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
   const [schedule, setSchedule] = React.useState(null);
@@ -81,6 +83,13 @@ function EvaluationView() {
     (async () => {
       setLoading(true);
       setError('');
+      if (evalLoading) {
+        return;
+      }
+      if (!evaluationsEnabled) {
+        setLoading(false);
+        return;
+      }
       if (malformed) {
         // Skip any network calls for malformed/invalid codes
         setLoading(false);
@@ -102,7 +111,7 @@ function EvaluationView() {
         setLoading(false);
       }
     })();
-  }, [token, malformed, decoded]);
+  }, [token, malformed, decoded, evaluationsEnabled, evalLoading]);
 
   // Load student from sessionStorage
   React.useEffect(() => {
@@ -153,6 +162,37 @@ function EvaluationView() {
       setSubmitting(false);
     }
   };
+
+  if (evalLoading) {
+    return (
+      <Box bg={useColorModeValue('gray.50', 'gray.900')} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 6, md: 10 }}>
+        <Container maxW="lg">
+          <Center minH="60vh">
+            <VStack spacing={4} align="center" textAlign="center" bg={paper} borderWidth="1px" borderColor={border} rounded="xl" boxShadow={{ base: 'md', md: 'lg' }} px={{ base: 6, md: 10 }} py={{ base: 10, md: 12 }}>
+              <Heading size="md">Checking Evaluation Access</Heading>
+              <Text fontSize="sm" color={subtle}>Please wait a moment...</Text>
+            </VStack>
+          </Center>
+        </Container>
+      </Box>
+    );
+  }
+
+  if (!evaluationsEnabled) {
+    return (
+      <Box bg={useColorModeValue('gray.50', 'gray.900')} minH="100vh" px={{ base: 3, md: 6 }} py={{ base: 6, md: 10 }}>
+        <Container maxW="lg">
+          <Center minH="60vh">
+            <VStack spacing={5} align="center" textAlign="center" bg={paper} borderWidth="1px" borderColor={border} rounded="xl" boxShadow={{ base: 'md', md: 'lg' }} px={{ base: 6, md: 10 }} py={{ base: 10, md: 12 }}>
+              <Heading size="md">Unauthorized Access</Heading>
+              <Text fontSize="sm" color={subtle}>The evaluation portal is currently turned off. Please contact your program chair.</Text>
+              <Button colorScheme="blue" onClick={() => navigate('/evaluation')}>Back to Evaluation</Button>
+            </VStack>
+          </Center>
+        </Container>
+      </Box>
+    );
+  }
 
   if (malformed) {
     return (

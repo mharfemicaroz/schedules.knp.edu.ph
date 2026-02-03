@@ -8,6 +8,7 @@ const initialState = {
     gradesSubmission: { school_year: '', semester: '' },
     attendance: { school_year: '', semester: '' },
     evaluations: { school_year: '', semester: '' },
+    evaluationsEnabled: true,
     updatedAt: null,
   },
   loading: false,

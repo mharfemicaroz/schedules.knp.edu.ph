@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Heading, Text, HStack, VStack, SimpleGrid, Select, Button, useToast, useColorModeValue, Badge, Divider } from '@chakra-ui/react';
+import { Box, Heading, Text, HStack, VStack, SimpleGrid, Select, Button, useToast, useColorModeValue, Badge, Divider, Switch, FormControl, FormLabel } from '@chakra-ui/react';
 import apiService from '../services/apiService';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadAllSchedules } from '../store/dataThunks';
@@ -58,6 +58,7 @@ export default function AdminSettings() {
     gradesSubmission: { school_year: '', semester: '' },
     attendance: { school_year: '', semester: '' },
     evaluations: { school_year: '', semester: '' },
+    evaluationsEnabled: true,
     updatedAt: null,
   });
   const [form, setForm] = React.useState(orig);
@@ -68,7 +69,8 @@ export default function AdminSettings() {
       JSON.stringify(form.schedulesLoad) !== JSON.stringify(orig.schedulesLoad) ||
       JSON.stringify(form.gradesSubmission) !== JSON.stringify(orig.gradesSubmission) ||
       JSON.stringify(form.attendance) !== JSON.stringify(orig.attendance) ||
-      JSON.stringify(form.evaluations) !== JSON.stringify(orig.evaluations)
+      JSON.stringify(form.evaluations) !== JSON.stringify(orig.evaluations) ||
+      form.evaluationsEnabled !== orig.evaluationsEnabled
     );
   }, [form, orig]);
 
@@ -79,6 +81,7 @@ export default function AdminSettings() {
       gradesSubmission: { school_year: '', semester: '' },
       attendance: { school_year: '', semester: '' },
       evaluations: { school_year: '', semester: '' },
+      evaluationsEnabled: true,
       updatedAt: null,
     };
     return { ...base, ...(data || {}) };
@@ -119,6 +122,7 @@ export default function AdminSettings() {
         gradesSubmission: form.gradesSubmission,
         attendance: form.attendance,
         evaluations: form.evaluations,
+        evaluationsEnabled: form.evaluationsEnabled,
       };
       const data = await dispatch(updateSettingsThunk(payload)).unwrap();
       const merged = normalizeSettings(data);
@@ -156,6 +160,29 @@ export default function AdminSettings() {
         <PairCard title="Attendance Defaults" value={form.attendance} onChange={(v)=>setForm({ ...form, attendance: v })} syOptions={syOptions} />
         <PairCard title="Evaluations Defaults" value={form.evaluations} onChange={(v)=>setForm({ ...form, evaluations: v })} syOptions={syOptions} />
       </SimpleGrid>
+
+      <Box borderWidth="1px" borderColor={border} rounded="lg" p={4} mt={4} bg={useColorModeValue('white','gray.800')}>
+        <HStack justify="space-between" align="center" spacing={4}>
+          <VStack align="start" spacing={1}>
+            <Heading size="sm">Evaluation Access</Heading>
+            <Text fontSize="sm" color={subtle}>
+              Turn on to allow student evaluations and show access codes in department views.
+            </Text>
+          </VStack>
+          <FormControl display="flex" alignItems="center" w="auto">
+            <FormLabel htmlFor="toggle-evaluation" mb="0" fontSize="sm" fontWeight="600">
+              Turn on Evaluation
+            </FormLabel>
+            <Switch
+              id="toggle-evaluation"
+              colorScheme="blue"
+              isChecked={!!form.evaluationsEnabled}
+              onChange={(e) => setForm({ ...form, evaluationsEnabled: !!e.target.checked })}
+              isDisabled={!isAdmin}
+            />
+          </FormControl>
+        </HStack>
+      </Box>
 
       <Divider my={4} />
       <HStack justify="flex-end">

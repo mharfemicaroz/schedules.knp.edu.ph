@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useParams, Link as RouterLink } from 'react-router-dom';
 import {
   Box,
@@ -25,6 +25,7 @@ import { selectAllCourses } from '../store/dataSlice';
 import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
 import { usePublicView } from '../utils/uiFlags';
 import { encodeShareDepartment, decodeShareDepartment } from '../utils/share';
+import useEvaluationEnabled from '../hooks/useEvaluationEnabled';
 
 function yearOrder(y) {
   const s = String(y || '').toLowerCase();
@@ -53,22 +54,27 @@ export default function DepartmentSchedule() {
     'departmentScheduleViewMode',
     getInitialToggleState(acadData, 'departmentScheduleViewMode', 'regular')
   );
-  const [showAccessCodes, setShowAccessCodes] = useLocalStorage(
-    'departmentScheduleShowAccessCodes',
-    true
-  );
+  const { enabled: evaluationsEnabled } = useEvaluationEnabled();
+  const effectiveShowAccessCodes = !!evaluationsEnabled;
+  const termAllowsAccess = React.useCallback((t) => {
+    if (!evaluationsEnabled) return false;
+    const v = String(t || '').trim().toLowerCase();
+    if (!v) return false;
+    if (v.startsWith('1')) return true;
+    if (v.startsWith('2')) return true;
+    if (v.startsWith('s')) return true;
+    if (v.includes('summer')) return true;
+    return false;
+  }, [evaluationsEnabled]);
 
   const border = useColorModeValue('gray.200', 'gray.700');
   const tableBg = useColorModeValue('white', 'gray.800');
 
+  useEffect(() => {
+    try { localStorage.removeItem('departmentScheduleShowAccessCodes'); } catch {}
+  }, []);
+
   const groups = useMemo(() => {
-    const termAllowsAccess = (t) => {
-      const v = String(t || '').trim().toLowerCase();
-      if (!v) return false;
-      if (v.startsWith('2')) return true; // 2nd
-      if (v.startsWith('s')) return true; // Sem / Summer
-      return false; // hide for 1st and unknown
-    };
     const m = new Map();
     (allCourses || []).forEach((c) => {
       if (String(c.program || '') !== dept) return;
@@ -145,10 +151,10 @@ export default function DepartmentSchedule() {
 
   function onPrint() {
     const baseHeadersRegular = ['Year Level', 'Block', 'Term', 'Time', 'Code'];
-    if (showAccessCodes) baseHeadersRegular.push('Access Code');
+    if (effectiveShowAccessCodes) baseHeadersRegular.push('Access Code');
     baseHeadersRegular.push('Title', 'Units', 'Room', 'Faculty');
     const baseHeadersExam = ['Year Level', 'Block', 'Term', 'Time', 'Code'];
-    if (showAccessCodes) baseHeadersExam.push('Access Code');
+    if (effectiveShowAccessCodes) baseHeadersExam.push('Access Code');
     baseHeadersExam.push('Title', 'Units', 'Room', 'Faculty', 'Exam Day', 'Exam Session', 'Exam Room');
     const headers = viewMode === 'examination' ? baseHeadersExam : baseHeadersRegular;
     const rows = [];
@@ -163,7 +169,7 @@ export default function DepartmentSchedule() {
               c.schedule || '',
               c.code,
             ];
-            if (showAccessCodes) row.push(termAllowsAccess(c.term) ? (c.accessCode || '') : '');
+            if (effectiveShowAccessCodes) row.push(termAllowsAccess(c.term) ? (c.accessCode || '') : '');
             row.push(
               c.title,
               String(c.unit ?? c.hours ?? ''),
@@ -182,7 +188,7 @@ export default function DepartmentSchedule() {
               c.schedule || '',
               c.code,
             ];
-            if (showAccessCodes) row.push(termAllowsAccess(c.term) ? (c.accessCode || '') : '');
+            if (effectiveShowAccessCodes) row.push(termAllowsAccess(c.term) ? (c.accessCode || '') : '');
             row.push(
               c.title,
               String(c.unit ?? c.hours ?? ''),
@@ -225,18 +231,6 @@ export default function DepartmentSchedule() {
               </FormLabel>
             </FormControl>
           )}
-          <FormControl display="flex" alignItems="center" w="auto">
-            <FormLabel htmlFor="toggle-accesscodes" mb="0" fontSize="sm" fontWeight="medium">
-              Access Codes
-            </FormLabel>
-            <Switch
-              id="toggle-accesscodes"
-              colorScheme="blue"
-              size="lg"
-              isChecked={!!showAccessCodes}
-              onChange={(e) => setShowAccessCodes(!!e.target.checked)}
-            />
-          </FormControl>
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="sm">
             Print
           </Button>
@@ -292,7 +286,7 @@ export default function DepartmentSchedule() {
                       <Th>Term</Th>
                       <Th>Time</Th>
                       <Th>Code</Th>
-                      {showAccessCodes && <Th>Access Code</Th>}
+                      {effectiveShowAccessCodes && <Th>Access Code</Th>}
                       <Th>Title</Th>
                       <Th>Units</Th>
                       <Th>Room</Th>
@@ -318,8 +312,8 @@ export default function DepartmentSchedule() {
                         <Td>{c.term}</Td>
                         <Td>{c.schedule || ''}</Td>
                         <Td>{c.code}</Td>
-                        {showAccessCodes && (
-                          <Td>{(String(c.term||'').toLowerCase().startsWith('2') || String(c.term||'').toLowerCase().startsWith('s')) ? (c.accessCode || '') : ''}</Td>
+                        {effectiveShowAccessCodes && (
+                          <Td>{termAllowsAccess(c.term) ? (c.accessCode || '') : ''}</Td>
                         )}
                         <Td maxW={{ base: '220px', md: '420px' }}>
                           <Text noOfLines={{ base: 2, md: 1 }}>{c.title}</Text>

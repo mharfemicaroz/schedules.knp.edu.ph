@@ -970,6 +970,13 @@ class ApiService {
     return await res.json();
   }
 
+  async getPublicSettings() {
+    const url = `${this.baseURL}/settings/public`;
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   // AUTH API
   async login(identifier, password) {
     return this.requestAbs(`${this.authPath}/login`, {

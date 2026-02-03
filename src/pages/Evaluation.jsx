@@ -35,6 +35,7 @@ import {
 } from '@chakra-ui/react';
 import apiService from '../services/apiService';
 import { FiCalendar } from 'react-icons/fi';
+import useEvaluationEnabled from '../hooks/useEvaluationEnabled';
 
 function Evaluation() {
   const [code, setCode] = React.useState('');
@@ -45,6 +46,7 @@ function Evaluation() {
   const dateInputRef = React.useRef(null);
   const toast = useToast();
   const navigate = useNavigate();
+  const { enabled: evaluationsEnabled, loading: evalLoading } = useEvaluationEnabled();
 
   const isValid = /^[A-Za-z0-9]{6}$/.test(code);
   const showError = touched && !isValid && code.length > 0;
@@ -86,9 +88,10 @@ function Evaluation() {
 
   // Always show the policy modals on load (sequential)
   React.useEffect(() => {
+    if (evalLoading || !evaluationsEnabled) return;
     onGuideOpen();
     // Privacy opens after acknowledging guidelines
-  }, []);
+  }, [evalLoading, evaluationsEnabled]);
 
   const handleDontAgree = () => {
     try { window.location.reload(); } catch {}
@@ -208,6 +211,10 @@ function Evaluation() {
   };
 
   const handleProceed = async () => {
+    if (evalLoading || !evaluationsEnabled) {
+      toast({ title: 'Evaluations are currently disabled.', status: 'warning', duration: 2200 });
+      return;
+    }
     setTouched(true);
     if (!isValid) return;
     if (!studentOk) {
@@ -274,6 +281,33 @@ function Evaluation() {
     e.preventDefault();
     handleProceed();
   };
+
+  if (evalLoading) {
+    return (
+      <Box bg={pageBg} minH="100vh" display="flex" alignItems="center">
+        <Container maxW="lg" py={{ base: 10, md: 16 }}>
+          <VStack spacing={4} textAlign="center" bg={cardBg} borderRadius="2xl" borderWidth="1px" borderColor={cardBorder} p={{ base: 6, md: 8 }}>
+            <Heading size="md">Checking Evaluation Access</Heading>
+            <Text color={textSubtle}>Please wait a moment...</Text>
+          </VStack>
+        </Container>
+      </Box>
+    );
+  }
+
+  if (!evaluationsEnabled) {
+    return (
+      <Box bg={pageBg} minH="100vh" display="flex" alignItems="center">
+        <Container maxW="lg" py={{ base: 10, md: 16 }}>
+          <VStack spacing={4} textAlign="center" bg={cardBg} borderRadius="2xl" borderWidth="1px" borderColor={cardBorder} p={{ base: 6, md: 8 }}>
+            <Heading size="md">Unauthorized Access</Heading>
+            <Text color={textSubtle}>The evaluation portal is currently turned off. Please contact your program chair.</Text>
+            <Button colorScheme="blue" onClick={() => navigate('/')}>Back to Home</Button>
+          </VStack>
+        </Container>
+      </Box>
+    );
+  }
 
   return (
     <Box position="relative" minH="100vh" bg={pageBg}>
@@ -462,14 +496,14 @@ function Evaluation() {
                 </FormControl>
 
                 <VStack align="stretch" spacing={3}>
-                  <Button
-                    type="submit"
-                    colorScheme="blue"
-                    size="lg"
-                    isDisabled={!isValid || !studentOk || submitting}
-                    borderRadius="lg"
-                    fontWeight="semibold"
-                    w="full"
+                <Button
+                  type="submit"
+                  colorScheme="blue"
+                  size="lg"
+                  isDisabled={!isValid || !studentOk || submitting || evalLoading || !evaluationsEnabled}
+                  borderRadius="lg"
+                  fontWeight="semibold"
+                  w="full"
                     _hover={{ transform: 'translateY(-1px)', boxShadow: 'md' }}
                     _active={{ transform: 'translateY(0)' }}
                     transition="all 0.15s ease"
