@@ -147,6 +147,8 @@ export default function AdminGradesSubmission() {
   const [deptFilter, setDeptFilter] = React.useState(ALL_DEPT);
   const [empFilter, setEmpFilter] = React.useState('');
   const [termFilter, setTermFilter] = React.useState('');
+  const [filterSy, setFilterSy] = React.useState(defaultSy);
+  const [filterSem, setFilterSem] = React.useState(defaultSem);
   const confirmDisc = useDisclosure();
   const [confirmMode, setConfirmMode] = React.useState(null); // 'submit' | 'save'
   const [pendingCourse, setPendingCourse] = React.useState(null);
@@ -296,6 +298,10 @@ export default function AdminGradesSubmission() {
       setSummaryDept((prev) => prev || ALL_DEPT);
     }
   }, [isPrivileged, viewDeptOptions]);
+  React.useEffect(() => {
+    setFilterSy((prev) => prev || defaultSy);
+    setFilterSem((prev) => prev || defaultSem);
+  }, [defaultSy, defaultSem]);
 
   const courseVisibleToUser = React.useCallback((c) => {
   if (isPrivileged) return true;
@@ -336,12 +342,22 @@ const filteredCoursesAll = React.useMemo(() => {
     const list = Array.isArray(filteredCoursesAll) ? filteredCoursesAll : [];
     const norm = (s) => String(s || '').toLowerCase().trim();
     const targetTerm = canonicalTerm(termFilter);
+    const targetSy = String(filterSy || '').trim();
+    const targetSem = normalizeSemLabel(filterSem);
     return list.filter(c => {
+      if (targetSy) {
+        const sy = String(c.sy || c.schoolyear || c.schoolYear || '').trim();
+        if (sy !== targetSy) return false;
+      }
+      if (targetSem) {
+        const sem = normalizeSemLabel(c.sem || c.semester);
+        if (sem !== targetSem) return false;
+      }
       if (selectedFaculty && norm(c.facultyName || c.faculty || '') !== norm(selectedFaculty)) return false;
       if (targetTerm && canonicalTerm(c.term) !== targetTerm) return false;
       return true;
     });
-  }, [filteredCoursesAll, selectedFaculty, termFilter, canonicalTerm]);
+  }, [filteredCoursesAll, selectedFaculty, termFilter, canonicalTerm, filterSy, filterSem, normalizeSemLabel]);
 
   // Smooth large updates without blocking UI
   const rows = React.useDeferredValue(rowsBase);
@@ -578,7 +594,7 @@ const filteredCoursesAll = React.useMemo(() => {
 
   const displayedFacultyGroups = React.useMemo(() => pagedFacultyGroups, [pagedFacultyGroups]);
   React.useEffect(() => { setPage((prev) => Math.min(prev, pageCount)); }, [pageCount]);
-  React.useEffect(() => { setPage(1); setExpanded([]); }, [groupSortBy, groupSortOrder, deptFilter, empFilter, termFilter]);
+  React.useEffect(() => { setPage(1); setExpanded([]); }, [groupSortBy, groupSortOrder, deptFilter, empFilter, termFilter, filterSy, filterSem]);
   React.useEffect(() => { setExpanded([]); }, [page, pageSize]);
   const allIdx = React.useMemo(() => displayedFacultyGroups.map((_, i) => i), [displayedFacultyGroups]);
   const allExpanded = expanded.length === displayedFacultyGroups.length && displayedFacultyGroups.length > 0;
@@ -758,6 +774,24 @@ const filteredCoursesAll = React.useMemo(() => {
             <option value="1st">1st</option>
             <option value="2nd">2nd</option>
             <option value="Sem">Sem</option>
+          </Select>
+          <Select
+            size="sm"
+            value={filterSy}
+            onChange={(e)=>setFilterSy(e.target.value)}
+            maxW="170px"
+          >
+            <option value="">All SY</option>
+            {syOptions.map(sy => <option key={sy} value={sy}>{sy}</option>)}
+          </Select>
+          <Select
+            size="sm"
+            value={filterSem}
+            onChange={(e)=>setFilterSem(e.target.value)}
+            maxW="170px"
+          >
+            <option value="">All Sem</option>
+            {semOptions.map(sem => <option key={sem} value={sem}>{sem}</option>)}
           </Select>
           {isPrivileged && (
             <Select

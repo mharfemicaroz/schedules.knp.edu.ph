@@ -152,7 +152,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
   }, [settings]);
   const formatChip = React.useCallback((sy, sem) => {
     if (!sy && !sem) return '';
-    return `${sy || '-'} > ${sem || '-'}`;
+    return `${sy || '-'} • ${sem || '-'}`;
   }, []);
   const viewChip = chip;
   const gradesChip = React.useMemo(() => {
