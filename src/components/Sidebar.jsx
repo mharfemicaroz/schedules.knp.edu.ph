@@ -197,7 +197,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
         <NavItem to="/views/departments" icon={FiLayers} onClick={onNavigate}>By Department</NavItem>
         {!isOsas && <NavItem to="/views/rooms" icon={FiMapPin} onClick={onNavigate}>By Rooms</NavItem>}
         {(isAdmin || isUser) && <NavItem to="/views/session" icon={FiSun} onClick={onNavigate}>By Session</NavItem>}
-        {(isAdmin || isUser) && (
+        {/* {(isAdmin || isUser) && (
           <>
             <HStack px={2} mt={4} mb={1} spacing={2}>
               <Text fontSize="sm" fontWeight="700" color={sectionHeaderColor}>Reports</Text>
@@ -205,7 +205,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             </HStack>
             <NavItem to="/reports/faculty-summary" icon={FiFileText} onClick={onNavigate}>Faculty Summary</NavItem>
           </>
-        )}
+        )} */}
         {(isAdmin || isChecker || isRegistrar || hasDeptMapping || isOsas) && (
           <>
             <Text fontSize="sm" fontWeight="700" color={sectionHeaderColor} px={2} mt={4} mb={1}>Admin</Text>
@@ -248,8 +248,8 @@ export default function Sidebar({ mobile = false, onNavigate }) {
                 <NavItem to="/admin/ai-labs" icon={FiCpu} onClick={onNavigate}>AI Labs</NavItem>
                 <NavItem to="/admin/users" icon={FiUser} onClick={onNavigate}>User Management</NavItem>
                 <NavItem to="/admin/guest-logs" icon={FiActivity} onClick={onNavigate}>Guest Logs</NavItem>
-                <NavItem to="/admin/conflicts" icon={FiAlertTriangle} onClick={onNavigate} badgeCount={conflictCount} chipLabel={viewChip}>Conflict Schedules</NavItem>
-                <NavItem to="/admin/unassigned" icon={FiUserX} onClick={onNavigate} badgeCount={unassignedCount} chipLabel={viewChip}>Unassigned Schedules</NavItem>
+                {/* <NavItem to="/admin/conflicts" icon={FiAlertTriangle} onClick={onNavigate} badgeCount={conflictCount} chipLabel={viewChip}>Conflict Schedules</NavItem>
+                <NavItem to="/admin/unassigned" icon={FiUserX} onClick={onNavigate} badgeCount={unassignedCount} chipLabel={viewChip}>Unassigned Schedules</NavItem> */}
               </>
             )}
           </>
