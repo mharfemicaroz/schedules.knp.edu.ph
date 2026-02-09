@@ -27,28 +27,34 @@ export default function ViewsCourses() {
   const [q, setQ] = useState('');
   const [program, setProgram] = useState('');
   const [term, setTerm] = useState('');
+  const [courseType, setCourseType] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [sortKey, setSortKey] = useState('code'); // code | title | program | faculty | term | time
+  const [sortKey, setSortKey] = useState('code'); // code | title | program | faculty | term | time | type
   const [sortDir, setSortDir] = useState('asc');
   const [selected, setSelected] = useState(null);
+  const courseTypeOptions = ['GENED', 'MANDATED', 'MAJOR'];
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir(key === 'code' || key === 'title' ? 'asc' : 'desc'); }
+    else { setSortKey(key); setSortDir(key === 'code' || key === 'title' || key === 'type' ? 'asc' : 'desc'); }
     setPage(1);
   };
 
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const normType = (s) => String(s || '').trim().toUpperCase().replace(/[^A-Z]/g, '');
   const filtered = useMemo(() => {
     const ql = norm(q);
+    const typeKey = normType(courseType);
     const list = (allCourses || []).filter(c => {
       const prog = String(c.program || c.programcode || '').trim();
       const trm = String(c.term || '').trim();
+      const ctype = normType(c.courseType || c.coursetype || '');
       if (program && prog !== program) return false;
       if (term && trm !== term) return false;
+      if (typeKey && ctype !== typeKey) return false;
       if (!ql) return true;
-      const hay = [c.code, c.title, c.courseName, c.courseTitle, c.section, c.facultyName, c.program, c.programcode]
+      const hay = [c.code, c.title, c.courseName, c.courseTitle, c.section, c.facultyName, c.program, c.programcode, c.courseType, c.coursetype]
         .map(v => norm(v))
         .join(' ');
       return hay.includes(ql);
@@ -63,12 +69,13 @@ export default function ViewsCourses() {
         case 'faculty': return String(c.facultyName || c.faculty || '');
         case 'term': return String(c.term || '');
         case 'time': return String(c.schedule || c.time || '');
+        case 'type': return String(c.courseType || c.coursetype || '');
         default: return String(c.code || c.courseName || '');
       }
     };
     list.sort((a,b) => val(a,sortKey).localeCompare(val(b,sortKey)) * dir);
     return list;
-  }, [allCourses, q, program, term, sortKey, sortDir]);
+  }, [allCourses, q, program, term, courseType, sortKey, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page-1)*pageSize, (page-1)*pageSize + pageSize);
@@ -96,13 +103,14 @@ export default function ViewsCourses() {
   }, [allCourses]);
 
   const onPrint = () => {
-    const headers = ['Code','Title','Section','Units','Program','Faculty','Term','Time','Room'];
+    const headers = ['Code','Title','Section','Units','Program','Type','Faculty','Term','Time','Room'];
     const rows = filtered.map(c => [
       c.code || c.courseName || '-',
       c.title || c.courseTitle || '-',
       c.section || '-',
       String(c.unit ?? c.hours ?? ''),
       c.program || c.programcode || '-',
+      c.courseType || c.coursetype || '-',
       c.facultyName || c.faculty || '-',
       c.term || '-',
       c.schedule || c.time || '-',
@@ -130,6 +138,9 @@ export default function ViewsCourses() {
               </Select>
               <Select placeholder="Term" value={term} onChange={(e)=>{ setTerm(e.target.value); setPage(1); }} maxW="140px">
                 {opts.terms.map(t => <option key={t} value={t}>{t}</option>)}
+              </Select>
+              <Select placeholder="Type" value={courseType} onChange={(e)=>{ setCourseType(e.target.value); setPage(1); }} maxW="160px">
+                {courseTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
               </Select>
               <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)||15); setPage(1); }} maxW="110px">
                 {[10,15,20,30,50].map(n => <option key={n} value={n}>{n}/page</option>)}
@@ -159,6 +170,7 @@ export default function ViewsCourses() {
               <Th>Section</Th>
               <Th isNumeric>Units</Th>
               <Th onClick={()=>toggleSort('program')} cursor="pointer" userSelect="none">Program</Th>
+              <Th onClick={()=>toggleSort('type')} cursor="pointer" userSelect="none">Type</Th>
               <Th onClick={()=>toggleSort('faculty')} cursor="pointer" userSelect="none">Faculty</Th>
               <Th onClick={()=>toggleSort('term')} cursor="pointer" userSelect="none">Term</Th>
               <Th onClick={()=>toggleSort('time')} cursor="pointer" userSelect="none">Time</Th>
@@ -173,6 +185,7 @@ export default function ViewsCourses() {
                 <Td>{c.section || '-'}</Td>
                 <Td isNumeric>{String(c.unit ?? c.hours ?? '')}</Td>
                 <Td>{c.program || c.programcode || '-'}</Td>
+                <Td>{c.courseType || c.coursetype || '-'}</Td>
                 <Td>{c.facultyName || c.faculty || '-'}</Td>
                 <Td>{c.term || '-'}</Td>
                 <Td>{c.schedule || c.time || '-'}</Td>

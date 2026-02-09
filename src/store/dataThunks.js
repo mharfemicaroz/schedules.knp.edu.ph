@@ -116,6 +116,7 @@ function transformSchedulesToFacultyDataset(schedules) {
       accessCode: schedule.accessCode || schedule.accesscode || '',
       courseName: p.courseName || schedule.courseName,
       courseTitle: p.courseTitle || schedule.courseTitle,
+      courseType: p.courseType || p.coursetype || null,
       unit: (p.unit != null ? p.unit : schedule.unit),
       day: schedule.day,
       time: schedule.time,
