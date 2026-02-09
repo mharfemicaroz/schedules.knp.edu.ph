@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Box, Heading, HStack, VStack, Button, Grid, GridItem, Input, Select, Text, Table, Thead, Tr, Th, Tbody, Td, useColorModeValue } from '@chakra-ui/react';
-import { FiBookOpen, FiClock, FiTrendingUp, FiUsers, FiPrinter, FiShare2 } from 'react-icons/fi';
+import { FiBookOpen, FiClock, FiTrendingUp, FiUsers, FiPrinter, FiShare2, FiDownload } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import StatCard from '../components/StatCard';
@@ -120,6 +120,38 @@ export default function ViewsCourses() {
     printContent({ title: 'Courses', subtitle: 'Alphabetical view of courses', bodyHtml: table });
   };
 
+  const onDownloadCsv = () => {
+    const headers = ['Code','Title','Section','Units','Program','Type','Faculty','Term','Time','Room'];
+    const rows = filtered.map(c => [
+      c.code || c.courseName || '',
+      c.title || c.courseTitle || '',
+      c.section || '',
+      String(c.unit ?? c.hours ?? ''),
+      c.program || c.programcode || '',
+      c.courseType || c.coursetype || '',
+      c.facultyName || c.faculty || '',
+      c.term || '',
+      c.schedule || c.time || '',
+      c.room || '',
+    ]);
+    const toCsv = (val) => {
+      const s = String(val ?? '');
+      const escaped = s.replace(/"/g, '""');
+      return /[",\n]/.test(escaped) ? `"${escaped}"` : escaped;
+    };
+    const lines = [headers, ...rows].map(row => row.map(toCsv).join(','));
+    const csv = `${lines.join('\n')}\n`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `courses-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Edit/Delete removed here; handled in Course Loading
 
   if (loading) return <LoadingState />;
@@ -148,6 +180,7 @@ export default function ViewsCourses() {
             </>
           )}
           <Button leftIcon={<FiPrinter />} onClick={onPrint} variant="outline" size="md" px={4}>Print</Button>
+          <Button leftIcon={<FiDownload />} onClick={onDownloadCsv} variant="outline" size="md" px={4}>CSV</Button>
           {isAdmin && !isPublic && (
             <Button as={RouterLink} to="/share/courses" leftIcon={<FiShare2 />} size="md" px={4} colorScheme="blue" variant="solid">Share</Button>
           )}
