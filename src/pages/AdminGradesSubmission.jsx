@@ -691,10 +691,15 @@ const filteredCoursesAll = React.useMemo(() => {
       const seen = new Set();
       const pendingTitles = [];
       pending.forEach((it) => {
-        const name = String(it.title || it.courseTitle || it.code || it.courseName || '').trim();
-        if (!name || seen.has(name)) return;
-        seen.add(name);
-        pendingTitles.push(name);
+        const baseName = String(it.courseName || it.courseTitle || it.title || it.code || '').trim();
+        if (!baseName) return;
+        const termLabel = String(it.term || '').trim();
+        const blockLabel = String(it.blockCode || it.section || it.block || '').trim();
+        const parts = [termLabel, blockLabel].filter(Boolean).join(', ');
+        const label = parts ? `${baseName} (${parts})` : baseName;
+        if (seen.has(label)) return;
+        seen.add(label);
+        pendingTitles.push(label);
       });
       return {
         no: idx + 1,
@@ -828,7 +833,7 @@ const filteredCoursesAll = React.useMemo(() => {
     `;
     printContent(
       { title: 'Grades Submission Summary', subtitle, bodyHtml },
-      { pageSize: 'A4', orientation: 'landscape', compact: true }
+      { pageSize: 'A4', orientation: 'portrait', compact: true }
     );
   }, [summaryRows, filterSy, filterSem, termFilter, selectedFaculty, deptFilter, empFilter, normalizeSemLabel, renderDeptLabel]);
 
