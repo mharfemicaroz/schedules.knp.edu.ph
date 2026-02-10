@@ -10,6 +10,7 @@ import { loadAllSchedules, loadAcademicCalendar } from '../store/dataThunks';
 import { FiEdit, FiChevronUp, FiChevronDown, FiX, FiPrinter, FiDownload } from 'react-icons/fi';
 import { updateScheduleThunk } from '../store/dataThunks';
 import GradesSummaryCharts from '../components/GradesSummaryCharts';
+import { printContent } from '../utils/printDesign';
 import { selectSettings } from '../store/settingsSlice';
 import { getUserDepartmentsByUserThunk } from '../store/userDeptThunks';
 import { selectUserDeptItems } from '../store/userDeptSlice';
@@ -44,67 +45,6 @@ function fileToken(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-}
-function buildPrintHtml({ title, generatedAt, filters, rows }) {
-  const filterHtml = (filters || [])
-    .map((f) => `<div><span class="meta-label">${escapeHtml(f.label)}:</span> ${escapeHtml(f.value)}</div>`)
-    .join('');
-  const bodyRows = (rows || [])
-    .map((r) => `<tr>
-      <td>${escapeHtml(r.faculty)}</td>
-      <td>${escapeHtml(r.facultyDepartment)}</td>
-      <td>${escapeHtml(r.term)}</td>
-      <td>${escapeHtml(r.code)}</td>
-      <td>${escapeHtml(r.title)}</td>
-      <td>${escapeHtml(r.section)}</td>
-      <td>${escapeHtml(r.day)}</td>
-      <td>${escapeHtml(r.time)}</td>
-      <td>${escapeHtml(r.submittedLabel || r.submittedDate)}</td>
-      <td>${escapeHtml(r.status)}</td>
-    </tr>`)
-    .join('');
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(title)}</title>
-    <style>
-      @page { size: landscape; margin: 12mm; }
-      body { font-family: Arial, sans-serif; color: #1a1a1a; margin: 24px; }
-      h1 { font-size: 18px; margin: 0 0 6px; }
-      .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 12px; font-size: 12px; margin-bottom: 12px; }
-      .meta-label { font-weight: 600; }
-      .stamp { font-size: 11px; color: #555; margin-bottom: 12px; }
-      table { width: 100%; border-collapse: collapse; font-size: 11px; }
-      th, td { border: 1px solid #d0d0d0; padding: 4px 6px; vertical-align: top; }
-      th { background: #f2f2f2; text-align: left; }
-    </style>
-  </head>
-  <body>
-    <h1>${escapeHtml(title)}</h1>
-    <div class="stamp">Generated: ${escapeHtml(generatedAt)}</div>
-    <div class="meta">${filterHtml}</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Faculty</th>
-          <th>Faculty Dept</th>
-          <th>Term</th>
-          <th>Code</th>
-          <th>Title</th>
-          <th>Section</th>
-          <th>Day</th>
-          <th>Time</th>
-          <th>Submitted</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${bodyRows}
-      </tbody>
-    </table>
-  </body>
-</html>`;
 }
 function findGradesDueDate(acadData, termLabel) {
   try {
@@ -741,42 +681,32 @@ const filteredCoursesAll = React.useMemo(() => {
     return list;
   }, [sortBy, sortOrder, acadData]);
 
-  const exportRows = React.useMemo(() => {
-    const rowsOut = [];
-    groupsWithItems.forEach((g) => {
-      const termGroups = Array.isArray(g.terms) ? g.terms : [];
-      termGroups.forEach((tg) => {
-        const items = sortItems(tg.items || []);
-        items.forEach((c) => {
-          const submitted = parseDate(c.gradesSubmitted);
-          const due = findGradesDueDate(acadData, c.term);
-          const computed = computeStatus(submitted, due);
-          const effective = c.gradesStatus || computed || null;
-          rowsOut.push({
-            schoolYear: String(c.sy || c.schoolyear || c.schoolYear || '').trim(),
-            semester: normalizeSemLabel(c.sem || c.semester || ''),
-            term: tg.term || c.term || '',
-            faculty: g.faculty || '',
-            facultyDepartment: g.department || '',
-            courseDepartment: c.dept || '',
-            employment: g.employment || '',
-            program: c.programcode || c.program || '',
-            code: c.code || c.courseName || '',
-            title: c.title || c.courseTitle || '',
-            section: c.section || c.blockCode || '',
-            day: c.day || '',
-            time: c.schedule || c.time || '',
-            submittedDate: submitted ? toDateInput(submitted) : '',
-            submittedLabel: submitted ? formatDate(submitted) : '',
-            status: statusLabel(effective),
-          });
-        });
+  const summaryRows = React.useMemo(() => {
+    return groupsWithItems.map((g, idx) => {
+      const items = Array.isArray(g.items) ? g.items : [];
+      const total = items.length;
+      const submitted = items.reduce((acc, it) => acc + (parseDate(it.gradesSubmitted) ? 1 : 0), 0);
+      const pct = total > 0 ? Math.round((submitted / total) * 100) : 0;
+      const pending = items.filter((it) => !parseDate(it.gradesSubmitted));
+      const seen = new Set();
+      const pendingTitles = [];
+      pending.forEach((it) => {
+        const name = String(it.title || it.courseTitle || it.code || it.courseName || '').trim();
+        if (!name || seen.has(name)) return;
+        seen.add(name);
+        pendingTitles.push(name);
       });
+      return {
+        no: idx + 1,
+        faculty: g.faculty || '',
+        pct,
+        total,
+        pendingTitles,
+      };
     });
-    return rowsOut;
-  }, [groupsWithItems, sortItems, acadData, normalizeSemLabel]);
+  }, [groupsWithItems]);
 
-  const hasExportRows = exportRows.length > 0;
+  const hasExportRows = summaryRows.length > 0;
 
   const exportFilename = React.useMemo(() => {
     const stamp = new Date().toISOString().slice(0, 10);
@@ -797,42 +727,25 @@ const filteredCoursesAll = React.useMemo(() => {
   }, [filterSy, filterSem, termFilter, deptFilter, selectedFaculty]);
 
   const downloadCsv = React.useCallback(() => {
-    if (!exportRows.length) return;
+    if (!summaryRows.length) return;
     const headers = [
-      'School Year',
-      'Semester',
-      'Term',
+      'No.',
       'Faculty',
-      'Faculty Department',
-      'Course Department',
-      'Employment',
-      'Program',
-      'Course Code',
-      'Course Title',
-      'Section',
-      'Day',
-      'Time',
-      'Grade Submitted',
-      'Grade Status',
+      'Submission %',
+      'Remarks',
     ];
     const lines = [headers.map(csvEscape).join(',')];
-    exportRows.forEach((r) => {
+    summaryRows.forEach((r) => {
+      const remarks = r.total === 0
+        ? 'No schedules'
+        : (r.pct === 100
+          ? 'Completed'
+          : (r.pendingTitles.length ? r.pendingTitles.join('; ') : 'Pending'));
       const row = [
-        r.schoolYear,
-        r.semester,
-        r.term,
+        r.no,
         r.faculty,
-        r.facultyDepartment,
-        r.courseDepartment,
-        r.employment,
-        r.program,
-        r.code,
-        r.title,
-        r.section,
-        r.day,
-        r.time,
-        r.submittedDate,
-        r.status,
+        `${r.pct}%`,
+        remarks,
       ];
       lines.push(row.map(csvEscape).join(','));
     });
@@ -845,41 +758,79 @@ const filteredCoursesAll = React.useMemo(() => {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-  }, [exportRows, exportFilename]);
+  }, [summaryRows, exportFilename]);
 
   const handlePrint = React.useCallback(() => {
-    if (!exportRows.length) return;
+    if (!summaryRows.length) return;
     const deptLabel = deptFilter && deptFilter !== ALL_DEPT
       ? renderDeptLabel(deptFilter)
       : renderDeptLabel(ALL_DEPT);
-    const filters = [
-      { label: 'School Year', value: filterSy || 'All' },
-      { label: 'Semester', value: filterSem ? normalizeSemLabel(filterSem) : 'All' },
-      { label: 'Term', value: termFilter || 'All' },
-      { label: 'Faculty', value: selectedFaculty || 'All' },
-      { label: 'Department', value: deptLabel },
-      { label: 'Employment', value: empFilter || 'All' },
-      { label: 'Rows', value: String(exportRows.length) },
-    ];
-    const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    const html = buildPrintHtml({
-      title: 'Grades Submission',
-      generatedAt,
-      filters,
-      rows: exportRows,
-    });
-    const win = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=720');
-    if (!win) {
-      window.print();
-      return;
-    }
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    win.print();
-    win.onafterprint = () => win.close();
-  }, [exportRows, filterSy, filterSem, termFilter, selectedFaculty, deptFilter, empFilter, normalizeSemLabel, renderDeptLabel]);
+    const subtitle = [
+      `SY: ${filterSy || 'All'}`,
+      `Sem: ${filterSem ? normalizeSemLabel(filterSem) : 'All'}`,
+      `Term: ${termFilter || 'All'}`,
+      `Dept: ${deptLabel}`,
+      `Employment: ${empFilter || 'All'}`,
+    ].join(' | ');
+    const bannerText = [
+      `Faculty: ${selectedFaculty || 'All'}`,
+      `Rows: ${summaryRows.length}`,
+    ].join(' | ');
+    const rowsHtml = summaryRows.map((r) => {
+      const status = r.total === 0
+        ? 'none'
+        : (r.pct === 100 ? 'complete' : 'pending');
+      const remarkHead = status === 'complete'
+        ? `<span class="prt-badge complete">Completed</span>`
+        : (status === 'pending'
+          ? `<span class="prt-badge pending">Pending</span>`
+          : `<span class="prt-badge neutral">No schedules</span>`);
+      const listItems = status === 'pending'
+        ? (r.pendingTitles.length
+          ? `<ul class="prt-remarks-list">${r.pendingTitles.map((t) => `<li>${escapeHtml(t)}</li>`).join('')}</ul>`
+          : `<div class="prt-remarks-empty">Pending schedules not found.</div>`)
+        : '';
+      return `<tr>
+        <td class="col-tight">${r.no}</td>
+        <td class="col-faculty">${escapeHtml(r.faculty)}</td>
+        <td class="col-tight">${escapeHtml(`${r.pct}%`)}</td>
+        <td class="col-remarks">${remarkHead}${listItems}</td>
+      </tr>`;
+    }).join('');
+    const bodyHtml = `
+      <style>
+        .prt-grades-table .col-remarks { white-space: normal; min-width: 320px; }
+        .prt-grades-table .col-faculty { white-space: normal; min-width: 200px; }
+        .prt-grades-table .col-tight { white-space: nowrap; }
+        .prt-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+        .prt-badge.complete { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .prt-badge.pending { background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }
+        .prt-badge.neutral { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+        .prt-remarks-list { margin: 6px 0 0; padding-left: 16px; }
+        .prt-remarks-list li { margin: 2px 0; }
+        .prt-remarks-empty { margin-top: 4px; color: #6b7280; font-size: 11px; }
+      </style>
+      <div class="prt-banner">
+        <p class="prt-banner-title">Submission Overview</p>
+        <p class="prt-banner-text">${escapeHtml(bannerText)}</p>
+      </div>
+      <table class="prt-table prt-grades-table">
+        <thead>
+          <tr>
+            <th class="col-tight">No.</th>
+            <th class="col-faculty">Faculty</th>
+            <th class="col-tight">Submission %</th>
+            <th class="col-remarks">Remarks</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    `;
+    printContent(
+      { title: 'Grades Submission Summary', subtitle, bodyHtml },
+      { pageSize: 'A4', orientation: 'landscape', compact: true }
+    );
+  }, [summaryRows, filterSy, filterSem, termFilter, selectedFaculty, deptFilter, empFilter, normalizeSemLabel, renderDeptLabel]);
 
   // Confirmation helpers
   const askConfirmSubmit = (c) => {
