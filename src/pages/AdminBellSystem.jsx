@@ -518,19 +518,30 @@ export default function AdminBellSystem() {
         }
         audio.volume = volume;
         try {
-          await audio.play();
+          const playedNow = await Promise.race([
+            audio.play().then(() => true).catch(() => false),
+            new Promise((resolve) => setTimeout(() => resolve(false), 3000)),
+          ]);
+          if (!playedNow) break;
           played = true;
         } catch {
           break;
         }
+        const maxWaitMs = Number.isFinite(audio.duration) && audio.duration > 0
+          ? Math.ceil(audio.duration * 1000) + 500
+          : 8000;
         await new Promise((resolve) => {
-          const onEnd = () => {
-            audio.removeEventListener('ended', onEnd);
-            audio.removeEventListener('error', onEnd);
+          let done = false;
+          const finalize = () => {
+            if (done) return;
+            done = true;
+            audio.removeEventListener('ended', finalize);
+            audio.removeEventListener('error', finalize);
             resolve();
           };
-          audio.addEventListener('ended', onEnd);
-          audio.addEventListener('error', onEnd);
+          audio.addEventListener('ended', finalize);
+          audio.addEventListener('error', finalize);
+          setTimeout(finalize, maxWaitMs);
         });
         if (gapMs && i < loops - 1) {
           await new Promise((resolve) => setTimeout(resolve, gapMs));
@@ -613,8 +624,7 @@ export default function AdminBellSystem() {
       : 0;
     setForm((prev) => ({ ...prev, delayBeforeSeconds: overrideDelay }));
     try {
-      const playPromise = triggerBell(`override-${Date.now()}`, ringUrl, { force: true });
-      const played = await playPromise;
+      const played = await triggerBell(`override-${Date.now()}`, ringUrl, { force: true });
       if (played) {
         setAudioUnlocked(true);
       } else {
