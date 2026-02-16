@@ -305,15 +305,19 @@ export default function AdminBellSystem() {
 
   const resolveSoundUrl = React.useCallback((sound) => {
     if (!sound) return '';
-    const raw = sound.dataUrl || sound.url || '';
-    if (!raw) return '';
-    if (raw.startsWith('data:') || raw.startsWith('http')) return raw;
+    const raw = typeof sound === 'string'
+      ? sound
+      : (sound.dataUrl || sound.url || sound.path || '');
+    const trimmed = String(raw || '').trim();
+    if (!trimmed) return '';
+    if (trimmed.startsWith('data:') || trimmed.startsWith('http')) return trimmed;
+    const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
     try {
       const base = apiService.baseURL || window.location.origin;
       const baseUrl = /^https?:\/\//i.test(base) ? base : `${window.location.origin}${base}`;
-      return new URL(raw, baseUrl).toString();
+      return new URL(normalized, baseUrl).toString();
     } catch {
-      return raw;
+      return trimmed;
     }
   }, []);
   const sounds = form.sounds || {};
@@ -640,7 +644,6 @@ export default function AdminBellSystem() {
       <audio
         ref={audioRef}
         preload="auto"
-        crossOrigin="anonymous"
         style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
         aria-hidden="true"
       />
@@ -885,7 +888,6 @@ export default function AdminBellSystem() {
                             style={{ width: '100%' }}
                             src={url}
                             preload="auto"
-                            crossOrigin="anonymous"
                           />
                         </Box>
                       )}
