@@ -206,7 +206,7 @@ function buildEventsAround(now, bell) {
   return all;
 }
 
-function NumberField({ label, value, onChange, min = 0, max, step = 1, helper }) {
+function NumberField({ label, value, onChange, min = 0, max, step = 1, helper, isDisabled = false }) {
   const muted = useColorModeValue('gray.600', 'gray.300');
   return (
     <FormControl>
@@ -216,6 +216,7 @@ function NumberField({ label, value, onChange, min = 0, max, step = 1, helper })
         min={min}
         max={max}
         step={step}
+        isDisabled={isDisabled}
         onChange={(_, val) => onChange(Number.isFinite(val) ? val : min)}
       >
         <NumberInputField />
@@ -231,7 +232,7 @@ function NumberField({ label, value, onChange, min = 0, max, step = 1, helper })
   );
 }
 
-function SessionCard({ title, value, onChange }) {
+function SessionCard({ title, value, onChange, isDisabled = false }) {
   const border = useColorModeValue('gray.200', 'gray.700');
   const bg = useColorModeValue('white', 'gray.800');
   const muted = useColorModeValue('gray.600', 'gray.300');
@@ -247,6 +248,7 @@ function SessionCard({ title, value, onChange }) {
           isChecked={!!session.enabled}
           onChange={(e) => onChange({ ...session, enabled: e.target.checked })}
           colorScheme="blue"
+          isDisabled={isDisabled}
         />
       </HStack>
       <SimpleGrid columns={{ base: 1, sm: 2 }} gap={3}>
@@ -256,6 +258,7 @@ function SessionCard({ title, value, onChange }) {
             type="time"
             value={session.start || ''}
             onChange={(e) => onChange({ ...session, start: e.target.value })}
+            isDisabled={isDisabled}
           />
         </FormControl>
         <FormControl>
@@ -264,6 +267,7 @@ function SessionCard({ title, value, onChange }) {
             type="time"
             value={session.end || ''}
             onChange={(e) => onChange({ ...session, end: e.target.value })}
+            isDisabled={isDisabled}
           />
         </FormControl>
       </SimpleGrid>
@@ -295,13 +299,16 @@ export default function AdminBellSystem() {
   const [now, setNow] = React.useState(() => new Date());
   const [audioUnlocked, setAudioUnlocked] = React.useState(false);
   const [unlocking, setUnlocking] = React.useState(false);
+  const [overrideActive, setOverrideActive] = React.useState(false);
   const audioRef = React.useRef(null);
   const [previewing, setPreviewing] = React.useState('');
   const slotAudioRefs = React.useRef({});
   const ringLockRef = React.useRef(false);
   const lastEventRef = React.useRef(null);
+  const overrideDelayRef = React.useRef(null);
 
   const dirty = React.useMemo(() => JSON.stringify(form) !== JSON.stringify(orig), [form, orig]);
+  const controlsDisabled = overrideActive;
 
   const resolveSoundUrl = React.useCallback((sound) => {
     if (!sound) return '';
@@ -490,8 +497,8 @@ export default function AdminBellSystem() {
     };
   }, [primarySoundUrl, audioUnlocked, unlockAudio]);
 
-  const triggerBell = React.useCallback(async (eventKey, ringUrl) => {
-    if (!audioUnlocked || !ringUrl) return;
+  const triggerBell = React.useCallback(async (eventKey, ringUrl, { force = false } = {}) => {
+    if ((!audioUnlocked && !force) || !ringUrl) return;
     if (ringLockRef.current) return;
     const audio = audioRef.current;
     if (!audio) return;
@@ -533,6 +540,7 @@ export default function AdminBellSystem() {
   }, [audioUnlocked, form.loopCount, form.loopGapSeconds, form.volumePercent]);
 
   const previewSound = React.useCallback(async (kind) => {
+    if (overrideActive) return;
     const sound = sounds[kind];
     const url = resolveSoundUrl(sound);
     if (!url) {
@@ -572,7 +580,48 @@ export default function AdminBellSystem() {
       ringLockRef.current = false;
       setPreviewing('');
     }
-  }, [sounds, resolveSoundUrl, form.volumePercent, toast]);
+  }, [overrideActive, sounds, resolveSoundUrl, form.volumePercent, toast]);
+
+  const getNextOnTimeEvent = React.useCallback(() => {
+    const base = { ...form, delayBeforeSeconds: 0, delayAfterSeconds: 0 };
+    const events = buildEventsAround(new Date(), base).filter((ev) => ev.kind === 'on');
+    const nowMs = Date.now();
+    return events.find((ev) => ev.time.getTime() >= nowMs) || null;
+  }, [form]);
+
+  const handleOverride = React.useCallback(async () => {
+    if (overrideActive) return;
+    if (ringLockRef.current) {
+      toast({ title: 'Bell is currently playing', status: 'info' });
+      return;
+    }
+    const onSound = sounds.on;
+    const ringUrl = resolveSoundUrl(onSound);
+    if (!ringUrl) {
+      toast({ title: 'On-time sound is not set', status: 'warning' });
+      return;
+    }
+    setOverrideActive(true);
+    const originalDelay = form.delayBeforeSeconds;
+    overrideDelayRef.current = originalDelay;
+    const nextOn = getNextOnTimeEvent();
+    const overrideDelay = nextOn
+      ? Math.max(0, (nextOn.time.getTime() - Date.now()) / 1000)
+      : 0;
+    setForm((prev) => ({ ...prev, delayBeforeSeconds: overrideDelay }));
+    try {
+      await unlockAudio({ silent: true });
+      await triggerBell(`override-${Date.now()}`, ringUrl, { force: true });
+    } finally {
+      const restoreDelay = overrideDelayRef.current;
+      setForm((prev) => ({
+        ...prev,
+        delayBeforeSeconds: Number.isFinite(restoreDelay) ? restoreDelay : prev.delayBeforeSeconds,
+      }));
+      overrideDelayRef.current = null;
+      setOverrideActive(false);
+    }
+  }, [overrideActive, toast, form.delayBeforeSeconds, getNextOnTimeEvent, sounds.on, resolveSoundUrl, unlockAudio, triggerBell]);
 
   const countdown = React.useMemo(() => {
     if (!form.enabled) {
@@ -616,6 +665,7 @@ export default function AdminBellSystem() {
   }, [countdown, now]);
 
   React.useEffect(() => {
+    if (overrideActive) return;
     if (countdown.state !== 'active' || !countdown.next) return;
     if (!form.enabled || !primarySoundUrl || !audioUnlocked) return;
     const nextTimeMs = countdown.next.time.getTime();
@@ -630,7 +680,7 @@ export default function AdminBellSystem() {
       void triggerBell(eventKey, ringUrl);
     }, delay);
     return () => clearTimeout(timer);
-  }, [countdown, form.enabled, primarySoundUrl, audioUnlocked, triggerBell, pickSoundForKind, resolveSoundUrl]);
+  }, [overrideActive, countdown, form.enabled, primarySoundUrl, audioUnlocked, triggerBell, pickSoundForKind, resolveSoundUrl]);
 
   const sessions = form.sessions || {};
   const sessionTags = [
@@ -653,8 +703,8 @@ export default function AdminBellSystem() {
           <Heading size="md">Automated Bell System</Heading>
         </HStack>
         <HStack spacing={2}>
-          <Button variant="outline" onClick={refresh} isLoading={loading} loadingText="Refreshing">Refresh</Button>
-          <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading} isLoading={saving} loadingText="Saving">Save</Button>
+          <Button variant="outline" onClick={refresh} isLoading={loading} isDisabled={controlsDisabled} loadingText="Refreshing">Refresh</Button>
+          <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading || controlsDisabled} isLoading={saving} loadingText="Saving">Save</Button>
         </HStack>
       </HStack>
 
@@ -717,6 +767,20 @@ export default function AdminBellSystem() {
             )}
           </VStack>
         )}
+        <HStack justify="flex-end" mt={3}>
+          <Button
+            size="sm"
+            leftIcon={<FiPlay />}
+            colorScheme="red"
+            variant="solid"
+            onClick={handleOverride}
+            isLoading={overrideActive}
+            isDisabled={!isAdmin || controlsDisabled}
+            loadingText="Overriding"
+          >
+            Override: Play On-time Now
+          </Button>
+        </HStack>
       </Box>
 
       <SimpleGrid columns={{ base: 1, lg: 2 }} gap={4}>
@@ -735,6 +799,7 @@ export default function AdminBellSystem() {
                 colorScheme="blue"
                 isChecked={!!form.enabled}
                 onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+                isDisabled={controlsDisabled}
               />
             </FormControl>
           </HStack>
@@ -744,6 +809,7 @@ export default function AdminBellSystem() {
               value={form.intervalMinutes}
               min={1}
               onChange={(val) => setForm({ ...form, intervalMinutes: val })}
+              isDisabled={controlsDisabled}
               helper="How often to play the bell during active sessions."
             />
             <NumberField
@@ -751,6 +817,7 @@ export default function AdminBellSystem() {
               value={form.delayBeforeSeconds}
               min={0}
               onChange={(val) => setForm({ ...form, delayBeforeSeconds: val })}
+              isDisabled={controlsDisabled}
               helper="Play this many seconds before the scheduled time."
             />
             <NumberField
@@ -758,6 +825,7 @@ export default function AdminBellSystem() {
               value={form.delayAfterSeconds}
               min={0}
               onChange={(val) => setForm({ ...form, delayAfterSeconds: val })}
+              isDisabled={controlsDisabled}
               helper="Wait time after the scheduled time before playing."
             />
             <NumberField
@@ -765,6 +833,7 @@ export default function AdminBellSystem() {
               value={form.loopCount}
               min={1}
               onChange={(val) => setForm({ ...form, loopCount: val })}
+              isDisabled={controlsDisabled}
               helper="How many repeats per bell play."
             />
             <NumberField
@@ -772,6 +841,7 @@ export default function AdminBellSystem() {
               value={form.loopGapSeconds}
               min={0}
               onChange={(val) => setForm({ ...form, loopGapSeconds: val })}
+              isDisabled={controlsDisabled}
               helper="Pause between loop repeats."
             />
           </SimpleGrid>
@@ -784,6 +854,7 @@ export default function AdminBellSystem() {
                 min={0}
                 max={100}
                 colorScheme="blue"
+                isDisabled={controlsDisabled}
               >
                 <SliderTrack>
                   <SliderFilledTrack />
@@ -796,6 +867,7 @@ export default function AdminBellSystem() {
                 max={100}
                 onChange={(_, val) => setForm({ ...form, volumePercent: Number.isFinite(val) ? val : 0 })}
                 w="90px"
+                isDisabled={controlsDisabled}
               >
                 <NumberInputField />
                 <NumberInputStepper>
@@ -820,6 +892,7 @@ export default function AdminBellSystem() {
             type="file"
             accept="audio/*"
             onChange={onFileChange}
+            isDisabled={controlsDisabled}
             display="none"
           />
           <VStack align="stretch" spacing={3}>
@@ -845,7 +918,7 @@ export default function AdminBellSystem() {
                         onClick={() => onPickFile(key)}
                         variant="outline"
                         isLoading={uploading && uploadKind === key}
-                        isDisabled={!isAdmin}
+                        isDisabled={!isAdmin || controlsDisabled}
                       >
                         Upload
                       </Button>
@@ -854,7 +927,7 @@ export default function AdminBellSystem() {
                         leftIcon={<FiPlay />}
                         onClick={() => previewSound(key)}
                         variant="ghost"
-                        isDisabled={!sound || uploading || previewing === key}
+                        isDisabled={!sound || uploading || previewing === key || controlsDisabled}
                       >
                         Preview
                       </Button>
@@ -863,7 +936,7 @@ export default function AdminBellSystem() {
                         leftIcon={<FiTrash2 />}
                         onClick={() => clearSound(key)}
                         variant="ghost"
-                        isDisabled={!sound || uploading || !isAdmin}
+                        isDisabled={!sound || uploading || !isAdmin || controlsDisabled}
                       >
                         Clear
                       </Button>
@@ -912,16 +985,19 @@ export default function AdminBellSystem() {
           title="AM Session"
           value={sessions.am}
           onChange={(next) => setForm({ ...form, sessions: { ...sessions, am: next } })}
+          isDisabled={controlsDisabled}
         />
         <SessionCard
           title="PM Session"
           value={sessions.pm}
           onChange={(next) => setForm({ ...form, sessions: { ...sessions, pm: next } })}
+          isDisabled={controlsDisabled}
         />
         <SessionCard
           title="EVE Session"
           value={sessions.eve}
           onChange={(next) => setForm({ ...form, sessions: { ...sessions, eve: next } })}
+          isDisabled={controlsDisabled}
         />
       </SimpleGrid>
 
@@ -952,7 +1028,7 @@ export default function AdminBellSystem() {
 
       <Divider my={4} />
       <HStack justify="flex-end">
-        <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading} isLoading={saving}>Save Changes</Button>
+        <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading || controlsDisabled} isLoading={saving}>Save Changes</Button>
       </HStack>
     </Box>
   );
