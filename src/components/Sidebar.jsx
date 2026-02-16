@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, VStack, Text, useColorModeValue, HStack, Icon, Image, Badge } from '@chakra-ui/react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar, FiUserX, FiFileText, FiBook, FiUser, FiActivity, FiSettings, FiCheckSquare, FiBarChart2, FiCpu, FiVideo } from 'react-icons/fi';
+import { FiGrid, FiLayers, FiMapPin, FiSun, FiUsers, FiCalendar, FiUserX, FiFileText, FiBook, FiUser, FiActivity, FiSettings, FiCheckSquare, FiBarChart2, FiCpu, FiVideo, FiBell } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { FiAlertTriangle } from 'react-icons/fi';
 import { selectAllCourses } from '../store/dataSlice';
@@ -244,6 +244,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
                 <NavItem to="/admin/user-departments" icon={FiBook} onClick={onNavigate}>User Departments</NavItem>
                 <NavItem to="/admin/academic-calendar" icon={FiCalendar} onClick={onNavigate}>Academic Calendar</NavItem>
                 <NavItem to="/admin/blocks" icon={FiSettings} onClick={onNavigate}>Block Settings</NavItem>
+                <NavItem to="/admin/bell-system" icon={FiBell} onClick={onNavigate}>Automated Bell System</NavItem>
                 <NavItem to="/admin/settings" icon={FiSettings} onClick={onNavigate}>System Settings</NavItem>
                 <NavItem to="/admin/ai-labs" icon={FiCpu} onClick={onNavigate}>AI Labs</NavItem>
                 <NavItem to="/admin/users" icon={FiUser} onClick={onNavigate}>User Management</NavItem>
