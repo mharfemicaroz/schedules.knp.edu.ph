@@ -29,7 +29,7 @@ import {
   TagLabel,
   Icon,
 } from '@chakra-ui/react';
-import { FiBell, FiUpload, FiTrash2, FiClock } from 'react-icons/fi';
+import { FiBell, FiUpload, FiTrash2, FiClock, FiPlay } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadSettingsThunk, updateSettingsThunk } from '../store/settingsThunks';
 import { selectSettings } from '../store/settingsSlice';
@@ -43,12 +43,16 @@ const DEFAULT_BELL = {
   loopCount: 1,
   loopGapSeconds: 2,
   volumePercent: 80,
+  sounds: {
+    before: null,
+    on: null,
+    after: null,
+  },
   sessions: {
     am: { label: 'AM Session', enabled: true, start: '08:00', end: '12:00' },
     pm: { label: 'PM Session', enabled: true, start: '13:00', end: '17:00' },
     eve: { label: 'EVE Session', enabled: true, start: '17:00', end: '21:00' },
   },
-  sound: null,
 };
 
 function normalizeBellSystem(raw) {
@@ -64,6 +68,14 @@ function normalizeBellSystem(raw) {
       start: String(val.start || fallback.start),
       end: String(val.end || fallback.end),
     };
+  };
+  const soundsRaw = (obj.sounds && typeof obj.sounds === 'object') ? obj.sounds : {};
+  const fallbackSound = (obj.sound && typeof obj.sound === 'object') ? obj.sound : null;
+  const pickSound = (val) => (val && typeof val === 'object' ? { ...val } : null);
+  const sounds = {
+    before: pickSound(soundsRaw.before),
+    on: pickSound(soundsRaw.on) || pickSound(fallbackSound),
+    after: pickSound(soundsRaw.after),
   };
   const bell = {
     ...base,
@@ -84,7 +96,7 @@ function normalizeBellSystem(raw) {
       pm: mergeSession('pm'),
       eve: mergeSession('eve'),
     },
-    sound: obj.sound === null ? null : (obj.sound && typeof obj.sound === 'object' ? { ...obj.sound } : base.sound),
+    sounds,
   };
   delete bell.delaySeconds;
   delete bell.advanceSeconds;
@@ -92,6 +104,7 @@ function normalizeBellSystem(raw) {
 }
 
 const SESSION_KEYS = ['am', 'pm', 'eve'];
+const SOUND_KEYS = ['before', 'on', 'after'];
 const KIND_LABELS = {
   before: 'Early',
   after: 'After',
@@ -101,6 +114,11 @@ const KIND_SCHEMES = {
   before: 'purple',
   after: 'blue',
   on: 'green',
+};
+const SOUND_TITLES = {
+  before: 'Before (Early) Sound',
+  on: 'On-time Sound',
+  after: 'After Sound',
 };
 
 function parseTimeToMinutes(value) {
@@ -272,11 +290,14 @@ export default function AdminBellSystem() {
   const [orig, setOrig] = React.useState(DEFAULT_BELL);
   const [form, setForm] = React.useState(DEFAULT_BELL);
   const fileRef = React.useRef(null);
+  const [uploadKind, setUploadKind] = React.useState('on');
   const [lastUpdated, setLastUpdated] = React.useState(settings?.updatedAt || null);
   const [now, setNow] = React.useState(() => new Date());
   const [audioUnlocked, setAudioUnlocked] = React.useState(false);
   const [unlocking, setUnlocking] = React.useState(false);
   const audioRef = React.useRef(null);
+  const [previewing, setPreviewing] = React.useState('');
+  const slotAudioRefs = React.useRef({});
   const ringLockRef = React.useRef(false);
   const lastEventRef = React.useRef(null);
 
@@ -288,14 +309,20 @@ export default function AdminBellSystem() {
     if (!raw) return '';
     if (raw.startsWith('data:') || raw.startsWith('http')) return raw;
     try {
-      const origin = new URL(apiService.baseURL, window.location.origin).origin;
-      if (raw.startsWith('/')) return `${origin}${raw}`;
-      return `${origin}/${raw}`;
+      const base = apiService.baseURL || window.location.origin;
+      const baseUrl = /^https?:\/\//i.test(base) ? base : `${window.location.origin}${base}`;
+      return new URL(raw, baseUrl).toString();
     } catch {
       return raw;
     }
   }, []);
-  const soundUrl = resolveSoundUrl(form.sound);
+  const sounds = form.sounds || {};
+  const primarySound = sounds.on || sounds.before || sounds.after || null;
+  const primarySoundUrl = resolveSoundUrl(primarySound);
+  const pickSoundForKind = React.useCallback((kind) => {
+    const pool = form.sounds || {};
+    return pool[kind] || pool.on || pool.before || pool.after || null;
+  }, [form.sounds]);
 
   React.useEffect(() => {
     setLastUpdated(settings?.updatedAt || null);
@@ -308,14 +335,22 @@ export default function AdminBellSystem() {
 
   React.useEffect(() => {
     setAudioUnlocked(false);
-  }, [soundUrl]);
+  }, [primarySoundUrl]);
+
+  React.useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.src = primarySoundUrl || '';
+      if (audioRef.current.load) audioRef.current.load();
+    }
+  }, [primarySoundUrl]);
 
   React.useEffect(() => {
     if (audioRef.current) {
       const vol = Math.min(1, Math.max(0, Number(form.volumePercent) || 0) / 100);
       audioRef.current.volume = vol;
     }
-  }, [form.volumePercent, soundUrl]);
+  }, [form.volumePercent, primarySoundUrl]);
+
 
   const refresh = React.useCallback(async () => {
     try {
@@ -351,8 +386,10 @@ export default function AdminBellSystem() {
     }
   };
 
-  const onPickFile = () => {
-    if (fileRef.current) fileRef.current.click();
+  const onPickFile = (kind) => {
+    if (!fileRef.current) return;
+    setUploadKind(kind);
+    fileRef.current.click();
   };
 
   const onFileChange = async (event) => {
@@ -369,15 +406,16 @@ export default function AdminBellSystem() {
       event.target.value = '';
       return;
     }
+    const kind = SOUND_KEYS.includes(uploadKind) ? uploadKind : 'on';
     try {
       setUploading(true);
-      const res = await apiService.uploadBellSound(file);
-      const nextSound = res?.sound || res?.bellSystem?.sound;
+      const res = await apiService.uploadBellSound(file, kind);
+      const nextSound = res?.sound || res?.bellSystem?.sounds?.[kind] || res?.bellSystem?.sound;
       if (!nextSound) {
         throw new Error('Upload failed');
       }
-      setForm((prev) => ({ ...prev, sound: nextSound }));
-      setOrig((prev) => ({ ...prev, sound: nextSound }));
+      setForm((prev) => ({ ...prev, sounds: { ...(prev.sounds || {}), [kind]: nextSound } }));
+      setOrig((prev) => ({ ...prev, sounds: { ...(prev.sounds || {}), [kind]: nextSound } }));
       if (res?.updatedAt) setLastUpdated(res.updatedAt);
       toast({ title: 'Bell sound uploaded', status: 'success' });
     } catch (e) {
@@ -388,12 +426,13 @@ export default function AdminBellSystem() {
     event.target.value = '';
   };
 
-  const clearSound = async () => {
+  const clearSound = async (kind) => {
+    const key = SOUND_KEYS.includes(kind) ? kind : 'on';
     try {
       setUploading(true);
-      const res = await apiService.clearBellSound();
-      setForm((prev) => ({ ...prev, sound: null }));
-      setOrig((prev) => ({ ...prev, sound: null }));
+      const res = await apiService.clearBellSound(key);
+      setForm((prev) => ({ ...prev, sounds: { ...(prev.sounds || {}), [key]: null } }));
+      setOrig((prev) => ({ ...prev, sounds: { ...(prev.sounds || {}), [key]: null } }));
       if (res?.updatedAt) setLastUpdated(res.updatedAt);
       toast({ title: 'Bell sound cleared', status: 'success' });
     } catch (e) {
@@ -404,7 +443,7 @@ export default function AdminBellSystem() {
   };
 
   const unlockAudio = async ({ silent = false } = {}) => {
-    if (!soundUrl) {
+    if (!primarySoundUrl) {
       if (!silent) toast({ title: 'Upload a bell sound first', status: 'info' });
       return;
     }
@@ -412,6 +451,10 @@ export default function AdminBellSystem() {
     if (!audio) return;
     try {
       setUnlocking(true);
+      if (audio.src !== primarySoundUrl) {
+        audio.src = primarySoundUrl;
+        if (audio.load) audio.load();
+      }
       const prevVolume = audio.volume;
       audio.volume = 0;
       audio.currentTime = 0;
@@ -430,7 +473,7 @@ export default function AdminBellSystem() {
   };
 
   React.useEffect(() => {
-    if (!soundUrl || audioUnlocked) return;
+    if (!primarySoundUrl || audioUnlocked) return;
     void unlockAudio({ silent: true });
     const handler = () => {
       void unlockAudio({ silent: true });
@@ -441,10 +484,10 @@ export default function AdminBellSystem() {
       window.removeEventListener('pointerdown', handler);
       window.removeEventListener('keydown', handler);
     };
-  }, [soundUrl, audioUnlocked, unlockAudio]);
+  }, [primarySoundUrl, audioUnlocked, unlockAudio]);
 
-  const triggerBell = React.useCallback(async (eventKey) => {
-    if (!audioUnlocked || !soundUrl) return;
+  const triggerBell = React.useCallback(async (eventKey, ringUrl) => {
+    if (!audioUnlocked || !ringUrl) return;
     if (ringLockRef.current) return;
     const audio = audioRef.current;
     if (!audio) return;
@@ -457,6 +500,10 @@ export default function AdminBellSystem() {
       for (let i = 0; i < loops; i += 1) {
         audio.pause();
         audio.currentTime = 0;
+        if (audio.src !== ringUrl) {
+          audio.src = ringUrl;
+          if (audio.load) audio.load();
+        }
         audio.volume = volume;
         try {
           await audio.play();
@@ -479,7 +526,49 @@ export default function AdminBellSystem() {
     } finally {
       ringLockRef.current = false;
     }
-  }, [audioUnlocked, soundUrl, form.loopCount, form.loopGapSeconds, form.volumePercent]);
+  }, [audioUnlocked, form.loopCount, form.loopGapSeconds, form.volumePercent]);
+
+  const previewSound = React.useCallback(async (kind) => {
+    const sound = sounds[kind];
+    const url = resolveSoundUrl(sound);
+    if (!url) {
+      toast({ title: 'No sound assigned for this slot', status: 'info' });
+      return;
+    }
+    const audio = slotAudioRefs.current[kind] || audioRef.current;
+    if (!audio) return;
+    if (ringLockRef.current) {
+      toast({ title: 'Bell is currently playing', status: 'info' });
+      return;
+    }
+    try {
+      ringLockRef.current = true;
+      setPreviewing(kind);
+      audio.pause();
+      audio.currentTime = 0;
+      if (audio.src !== url) {
+        audio.src = url;
+        if (audio.load) audio.load();
+      }
+      audio.volume = Math.min(1, Math.max(0, Number(form.volumePercent) || 0) / 100);
+      await audio.play();
+      setAudioUnlocked(true);
+      await new Promise((resolve) => {
+        const onEnd = () => {
+          audio.removeEventListener('ended', onEnd);
+          audio.removeEventListener('error', onEnd);
+          resolve();
+        };
+        audio.addEventListener('ended', onEnd);
+        audio.addEventListener('error', onEnd);
+      });
+    } catch (e) {
+      toast({ title: 'Unable to preview sound', status: 'warning' });
+    } finally {
+      ringLockRef.current = false;
+      setPreviewing('');
+    }
+  }, [sounds, resolveSoundUrl, form.volumePercent, toast]);
 
   const countdown = React.useMemo(() => {
     if (!form.enabled) {
@@ -524,17 +613,20 @@ export default function AdminBellSystem() {
 
   React.useEffect(() => {
     if (countdown.state !== 'active' || !countdown.next) return;
-    if (!form.enabled || !soundUrl || !audioUnlocked) return;
+    if (!form.enabled || !primarySoundUrl || !audioUnlocked) return;
     const nextTimeMs = countdown.next.time.getTime();
     const eventKey = `${nextTimeMs}-${countdown.next.kind}`;
     if (lastEventRef.current === eventKey) return;
+    const soundEntry = pickSoundForKind(countdown.next.kind);
+    const ringUrl = resolveSoundUrl(soundEntry);
+    if (!ringUrl) return;
     const delay = Math.max(0, nextTimeMs - Date.now());
     const timer = setTimeout(() => {
       if (lastEventRef.current === eventKey) return;
-      void triggerBell(eventKey);
+      void triggerBell(eventKey, ringUrl);
     }, delay);
     return () => clearTimeout(timer);
-  }, [countdown, form.enabled, soundUrl, audioUnlocked, triggerBell]);
+  }, [countdown, form.enabled, primarySoundUrl, audioUnlocked, triggerBell, pickSoundForKind, resolveSoundUrl]);
 
   const sessions = form.sessions || {};
   const sessionTags = [
@@ -545,6 +637,13 @@ export default function AdminBellSystem() {
 
   return (
     <Box>
+      <audio
+        ref={audioRef}
+        preload="auto"
+        crossOrigin="anonymous"
+        style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+        aria-hidden="true"
+      />
       <HStack justify="space-between" mb={4} flexWrap="wrap" spacing={3}>
         <HStack spacing={2}>
           <FiBell />
@@ -578,8 +677,8 @@ export default function AdminBellSystem() {
                 </Badge>
               </>
             )}
-            <Badge colorScheme={soundUrl ? (audioUnlocked ? 'green' : 'orange') : 'gray'}>
-              {soundUrl ? (audioUnlocked ? 'Audio Ready' : (unlocking ? 'Arming...' : 'Auto-arming')) : 'No Sound'}
+            <Badge colorScheme={primarySoundUrl ? (audioUnlocked ? 'green' : 'orange') : 'gray'}>
+              {primarySoundUrl ? (audioUnlocked ? 'Audio Ready' : (unlocking ? 'Arming...' : 'Auto-arming')) : 'No Sound'}
             </Badge>
           </HStack>
         </HStack>
@@ -608,7 +707,7 @@ export default function AdminBellSystem() {
             <Text fontSize="xs" color={muted}>
               {Math.round(countdown.progress)}% to the next ring.
             </Text>
-            {!audioUnlocked && soundUrl && (
+            {!audioUnlocked && primarySoundUrl && (
               <Text fontSize="xs" color={muted}>
                 Audio will auto-arm on the next click or keypress in this browser session.
               </Text>
@@ -708,13 +807,10 @@ export default function AdminBellSystem() {
         <Box borderWidth="1px" borderColor={border} rounded="lg" p={4} bg={bg}>
           <HStack justify="space-between" mb={3} flexWrap="wrap" spacing={2}>
             <VStack align="start" spacing={0}>
-              <Heading size="sm">Bell Sound</Heading>
-              <Text fontSize="xs" color={muted}>Upload an audio file used for bell playback.</Text>
+              <Heading size="sm">Bell Sounds</Heading>
+              <Text fontSize="xs" color={muted}>Assign distinct sounds for early, on-time, and after rings.</Text>
             </VStack>
-            <HStack>
-              <Button size="sm" leftIcon={<FiUpload />} onClick={onPickFile} variant="outline" isLoading={uploading} isDisabled={!isAdmin}>Upload</Button>
-              <Button size="sm" leftIcon={<FiTrash2 />} onClick={clearSound} variant="ghost" isDisabled={!form.sound || uploading || !isAdmin}>Clear</Button>
-            </HStack>
+            <Badge colorScheme="blue" variant="subtle">3 Slots</Badge>
           </HStack>
           <Input
             ref={fileRef}
@@ -724,29 +820,84 @@ export default function AdminBellSystem() {
             display="none"
           />
           <VStack align="stretch" spacing={3}>
-            {form.sound ? (
-              <Box>
-                <HStack justify="space-between" mb={2}>
-                  <VStack align="start" spacing={0}>
-                    <Text fontWeight="600" fontSize="sm">{form.sound.name || 'Bell Sound'}</Text>
-                    <Text fontSize="xs" color={muted}>
-                      {(form.sound.size ? `${Math.round(form.sound.size / 1024)} KB` : 'Unknown size')}
-                      {form.sound.mime ? ` • ${form.sound.mime}` : ''}
-                    </Text>
-                  </VStack>
-                  <Badge colorScheme="green">Ready</Badge>
-                </HStack>
-                {soundUrl && (
-                  <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
-                    <audio ref={audioRef} controls style={{ width: '100%' }} src={soundUrl} preload="auto" />
-                  </Box>
-                )}
-              </Box>
-            ) : (
-              <Box borderWidth="1px" borderColor={border} rounded="md" p={4} textAlign="center">
-                <Text fontSize="sm" color={muted}>No bell sound uploaded yet.</Text>
-              </Box>
-            )}
+            {SOUND_KEYS.map((key) => {
+              const sound = sounds[key];
+              const url = resolveSoundUrl(sound);
+              const helperText = key === 'before'
+                ? `Plays ${form.delayBeforeSeconds || 0}s before the scheduled time.`
+                : key === 'after'
+                  ? `Plays ${form.delayAfterSeconds || 0}s after the scheduled time.`
+                  : 'Plays exactly on the scheduled time.';
+              return (
+                <Box key={key} borderWidth="1px" borderColor={border} rounded="md" p={3}>
+                  <HStack justify="space-between" mb={2} flexWrap="wrap" spacing={2}>
+                    <VStack align="start" spacing={0}>
+                      <Text fontWeight="600" fontSize="sm">{SOUND_TITLES[key]}</Text>
+                      <Text fontSize="xs" color={muted}>{helperText}</Text>
+                    </VStack>
+                    <HStack>
+                      <Button
+                        size="xs"
+                        leftIcon={<FiUpload />}
+                        onClick={() => onPickFile(key)}
+                        variant="outline"
+                        isLoading={uploading && uploadKind === key}
+                        isDisabled={!isAdmin}
+                      >
+                        Upload
+                      </Button>
+                      <Button
+                        size="xs"
+                        leftIcon={<FiPlay />}
+                        onClick={() => previewSound(key)}
+                        variant="ghost"
+                        isDisabled={!sound || uploading || previewing === key}
+                      >
+                        Preview
+                      </Button>
+                      <Button
+                        size="xs"
+                        leftIcon={<FiTrash2 />}
+                        onClick={() => clearSound(key)}
+                        variant="ghost"
+                        isDisabled={!sound || uploading || !isAdmin}
+                      >
+                        Clear
+                      </Button>
+                    </HStack>
+                  </HStack>
+                  {sound ? (
+                    <VStack align="stretch" spacing={2}>
+                      <HStack justify="space-between">
+                        <Text fontSize="xs" color={muted}>
+                          {sound.name || 'Audio File'}
+                          {sound.size ? ` • ${Math.round(sound.size / 1024)} KB` : ''}
+                        </Text>
+                        <Badge colorScheme="green">Ready</Badge>
+                      </HStack>
+                      {url && (
+                        <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
+                          <audio
+                            ref={(el) => {
+                              if (el) slotAudioRefs.current[key] = el;
+                            }}
+                            controls
+                            style={{ width: '100%' }}
+                            src={url}
+                            preload="auto"
+                            crossOrigin="anonymous"
+                          />
+                        </Box>
+                      )}
+                    </VStack>
+                  ) : (
+                    <Box borderWidth="1px" borderColor={border} rounded="md" p={3} textAlign="center">
+                      <Text fontSize="xs" color={muted}>No sound assigned.</Text>
+                    </Box>
+                  )}
+                </Box>
+              );
+            })}
             <Text fontSize="xs" color={muted}>
               Supported: MP3, WAV, or OGG. Max upload size 20 MB.
             </Text>

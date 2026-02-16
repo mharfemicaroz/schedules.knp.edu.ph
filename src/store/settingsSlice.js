@@ -17,12 +17,16 @@ const initialState = {
       loopCount: 1,
       loopGapSeconds: 2,
       volumePercent: 80,
+      sounds: {
+        before: null,
+        on: null,
+        after: null,
+      },
       sessions: {
         am: { label: 'AM Session', enabled: true, start: '08:00', end: '12:00' },
         pm: { label: 'PM Session', enabled: true, start: '13:00', end: '17:00' },
         eve: { label: 'EVE Session', enabled: true, start: '17:00', end: '21:00' },
       },
-      sound: null,
     },
     updatedAt: null,
   },

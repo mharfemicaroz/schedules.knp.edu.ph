@@ -970,8 +970,9 @@ class ApiService {
     return await res.json();
   }
 
-  async uploadBellSound(file) {
-    const url = `${this.baseURL}/settings/bell-sound`;
+  async uploadBellSound(file, kind = 'on') {
+    const qs = kind ? `?kind=${encodeURIComponent(kind)}` : '';
+    const url = `${this.baseURL}/settings/bell-sound${qs}`;
     const form = new FormData();
     form.append('file', file);
     const res = await this._fetch(url, { method: 'POST', headers: { ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: form });
@@ -979,8 +980,9 @@ class ApiService {
     return await res.json();
   }
 
-  async clearBellSound() {
-    const url = `${this.baseURL}/settings/bell-sound`;
+  async clearBellSound(kind = 'on') {
+    const qs = kind ? `?kind=${encodeURIComponent(kind)}` : '';
+    const url = `${this.baseURL}/settings/bell-sound${qs}`;
     const res = await this._fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
