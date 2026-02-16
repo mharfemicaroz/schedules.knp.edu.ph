@@ -507,6 +507,7 @@ export default function AdminBellSystem() {
     const loops = Math.max(1, Math.round(Number(form.loopCount) || 1));
     const gapMs = Math.max(0, Math.round(Number(form.loopGapSeconds) || 0) * 1000);
     const volume = Math.min(1, Math.max(0, Number(form.volumePercent) || 0) / 100);
+    let played = false;
     try {
       for (let i = 0; i < loops; i += 1) {
         audio.pause();
@@ -518,6 +519,7 @@ export default function AdminBellSystem() {
         audio.volume = volume;
         try {
           await audio.play();
+          played = true;
         } catch {
           break;
         }
@@ -537,6 +539,7 @@ export default function AdminBellSystem() {
     } finally {
       ringLockRef.current = false;
     }
+    return played;
   }, [audioUnlocked, form.loopCount, form.loopGapSeconds, form.volumePercent]);
 
   const previewSound = React.useCallback(async (kind) => {
@@ -595,8 +598,8 @@ export default function AdminBellSystem() {
       toast({ title: 'Bell is currently playing', status: 'info' });
       return;
     }
-    const onSound = sounds.on;
-    const ringUrl = resolveSoundUrl(onSound);
+    const soundEntry = pickSoundForKind('on');
+    const ringUrl = resolveSoundUrl(soundEntry);
     if (!ringUrl) {
       toast({ title: 'On-time sound is not set', status: 'warning' });
       return;
@@ -610,8 +613,13 @@ export default function AdminBellSystem() {
       : 0;
     setForm((prev) => ({ ...prev, delayBeforeSeconds: overrideDelay }));
     try {
-      await unlockAudio({ silent: true });
-      await triggerBell(`override-${Date.now()}`, ringUrl, { force: true });
+      const playPromise = triggerBell(`override-${Date.now()}`, ringUrl, { force: true });
+      const played = await playPromise;
+      if (played) {
+        setAudioUnlocked(true);
+      } else {
+        toast({ title: 'Unable to play sound', status: 'warning' });
+      }
     } finally {
       const restoreDelay = overrideDelayRef.current;
       setForm((prev) => ({
@@ -621,7 +629,7 @@ export default function AdminBellSystem() {
       overrideDelayRef.current = null;
       setOverrideActive(false);
     }
-  }, [overrideActive, toast, form.delayBeforeSeconds, getNextOnTimeEvent, sounds.on, resolveSoundUrl, unlockAudio, triggerBell]);
+  }, [overrideActive, toast, form.delayBeforeSeconds, getNextOnTimeEvent, pickSoundForKind, resolveSoundUrl, triggerBell]);
 
   const countdown = React.useMemo(() => {
     if (!form.enabled) {
