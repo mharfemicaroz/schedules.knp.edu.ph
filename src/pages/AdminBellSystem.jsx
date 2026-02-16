@@ -624,6 +624,13 @@ export default function AdminBellSystem() {
       : 0;
     setForm((prev) => ({ ...prev, delayBeforeSeconds: overrideDelay }));
     try {
+      const overrideBell = { ...orig, delayBeforeSeconds: overrideDelay };
+      try {
+        const data = await dispatch(updateSettingsThunk({ bellSystem: overrideBell })).unwrap();
+        if (data?.updatedAt) setLastUpdated(data.updatedAt);
+      } catch (e) {
+        toast({ title: e?.message || 'Failed to update bell settings', status: 'error' });
+      }
       const played = await triggerBell(`override-${Date.now()}`, ringUrl, { force: true });
       if (played) {
         setAudioUnlocked(true);
@@ -637,9 +644,15 @@ export default function AdminBellSystem() {
         delayBeforeSeconds: Number.isFinite(restoreDelay) ? restoreDelay : prev.delayBeforeSeconds,
       }));
       overrideDelayRef.current = null;
+      try {
+        const data = await dispatch(updateSettingsThunk({ bellSystem: orig })).unwrap();
+        if (data?.updatedAt) setLastUpdated(data.updatedAt);
+      } catch (e) {
+        toast({ title: e?.message || 'Failed to restore bell settings', status: 'error' });
+      }
       setOverrideActive(false);
     }
-  }, [overrideActive, toast, form.delayBeforeSeconds, getNextOnTimeEvent, pickSoundForKind, resolveSoundUrl, triggerBell]);
+  }, [overrideActive, toast, form.delayBeforeSeconds, getNextOnTimeEvent, pickSoundForKind, resolveSoundUrl, triggerBell, dispatch, orig]);
 
   const countdown = React.useMemo(() => {
     if (!form.enabled) {
