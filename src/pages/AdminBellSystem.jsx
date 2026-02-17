@@ -120,6 +120,9 @@ const SOUND_TITLES = {
   on: 'On-time Sound',
   after: 'After Sound',
 };
+const REALTIME_FAST_MS = 1000;
+const REALTIME_SLOW_MS = 30000;
+const REALTIME_SAME_LIMIT = 3;
 
 function parseTimeToMinutes(value) {
   const raw = String(value || '').trim();
@@ -306,9 +309,23 @@ export default function AdminBellSystem() {
   const ringLockRef = React.useRef(false);
   const lastEventRef = React.useRef(null);
   const overrideDelayRef = React.useRef(null);
+  const [rtEnabled, setRtEnabled] = React.useState(true);
+  const [rtIntervalMs, setRtIntervalMs] = React.useState(REALTIME_FAST_MS);
+  const rtTimerRef = React.useRef(null);
+  const rtInFlightRef = React.useRef(false);
+  const rtHashRef = React.useRef('');
+  const rtSameRef = React.useRef(0);
+  const rtDelayRef = React.useRef(REALTIME_FAST_MS);
 
   const dirty = React.useMemo(() => JSON.stringify(form) !== JSON.stringify(orig), [form, orig]);
   const controlsDisabled = overrideActive;
+  const dirtyRef = React.useRef(dirty);
+  const overrideActiveRef = React.useRef(overrideActive);
+  const savingRef = React.useRef(saving);
+
+  React.useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  React.useEffect(() => { overrideActiveRef.current = overrideActive; }, [overrideActive]);
+  React.useEffect(() => { savingRef.current = saving; }, [saving]);
 
   const resolveSoundUrl = React.useCallback((sound) => {
     if (!sound) return '';
@@ -339,6 +356,20 @@ export default function AdminBellSystem() {
     setLastUpdated(settings?.updatedAt || null);
   }, [settings?.updatedAt]);
 
+  const buildSnapshot = React.useCallback((data) => {
+    const bell = normalizeBellSystem(data?.bellSystem);
+    const updatedAt = data?.updatedAt || null;
+    return { bell, updatedAt, hash: JSON.stringify({ updatedAt, bell }) };
+  }, []);
+
+  const applySnapshot = React.useCallback((snap, { force = false } = {}) => {
+    if (force || (!dirtyRef.current && !overrideActiveRef.current && !savingRef.current)) {
+      setOrig(snap.bell);
+      setForm(snap.bell);
+    }
+    if (snap.updatedAt != null) setLastUpdated(snap.updatedAt);
+  }, []);
+
   React.useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
@@ -367,28 +398,86 @@ export default function AdminBellSystem() {
     try {
       setLoading(true);
       const data = await dispatch(loadSettingsThunk()).unwrap();
-      const bell = normalizeBellSystem(data?.bellSystem);
-      setOrig(bell);
-      setForm(bell);
-      setLastUpdated(data?.updatedAt || null);
+      const snap = buildSnapshot(data);
+      applySnapshot(snap, { force: true });
+      rtHashRef.current = snap.hash;
+      rtSameRef.current = 0;
     } catch (e) {
       toast({ title: 'Failed to load bell settings', status: 'error' });
     } finally {
       setLoading(false);
     }
-  }, [dispatch, toast]);
+  }, [dispatch, toast, buildSnapshot, applySnapshot]);
 
   React.useEffect(() => { refresh(); }, [refresh]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const clearTimer = () => {
+      if (rtTimerRef.current) {
+        clearTimeout(rtTimerRef.current);
+        rtTimerRef.current = null;
+      }
+    };
+    const scheduleNext = (delayMs) => {
+      if (cancelled || !rtEnabled) return;
+      clearTimer();
+      rtDelayRef.current = delayMs;
+      setRtIntervalMs(delayMs);
+      rtTimerRef.current = setTimeout(run, delayMs);
+    };
+    const run = async () => {
+      if (cancelled || !rtEnabled) return;
+      if (rtInFlightRef.current) {
+        scheduleNext(rtDelayRef.current);
+        return;
+      }
+      rtInFlightRef.current = true;
+      try {
+        const data = await dispatch(loadSettingsThunk()).unwrap();
+        const snap = buildSnapshot(data);
+        if (snap.hash === rtHashRef.current) {
+          rtSameRef.current += 1;
+        } else {
+          rtSameRef.current = 0;
+        }
+        rtHashRef.current = snap.hash;
+        const nextDelay = rtSameRef.current >= REALTIME_SAME_LIMIT
+          ? REALTIME_SLOW_MS
+          : REALTIME_FAST_MS;
+        applySnapshot(snap);
+        scheduleNext(nextDelay);
+      } catch {
+        scheduleNext(Math.max(rtDelayRef.current, REALTIME_SLOW_MS));
+      } finally {
+        rtInFlightRef.current = false;
+      }
+    };
+
+    if (!rtEnabled) {
+      clearTimer();
+      return () => { cancelled = true; };
+    }
+
+    rtSameRef.current = 0;
+    rtDelayRef.current = REALTIME_FAST_MS;
+    setRtIntervalMs(REALTIME_FAST_MS);
+    run();
+    return () => {
+      cancelled = true;
+      clearTimer();
+    };
+  }, [rtEnabled, dispatch, buildSnapshot, applySnapshot]);
 
   const save = async () => {
     try {
       setSaving(true);
       const payload = { bellSystem: form };
       const data = await dispatch(updateSettingsThunk(payload)).unwrap();
-      const bell = normalizeBellSystem(data?.bellSystem);
-      setOrig(bell);
-      setForm(bell);
-      setLastUpdated(data?.updatedAt || null);
+      const snap = buildSnapshot(data);
+      applySnapshot(snap, { force: true });
+      rtHashRef.current = snap.hash;
+      rtSameRef.current = 0;
       toast({ title: 'Bell settings saved', status: 'success' });
     } catch (e) {
       toast({ title: e?.message || 'Failed to save', status: 'error' });
@@ -733,7 +822,21 @@ export default function AdminBellSystem() {
           <FiBell />
           <Heading size="md">Automated Bell System</Heading>
         </HStack>
-        <HStack spacing={2}>
+        <HStack spacing={3} flexWrap="wrap">
+          <FormControl display="flex" alignItems="center" w="auto">
+            <FormLabel htmlFor="bell-realtime" mb="0" fontSize="sm" fontWeight="600">
+              Realtime
+            </FormLabel>
+            <Switch
+              id="bell-realtime"
+              colorScheme="blue"
+              isChecked={rtEnabled}
+              onChange={(e) => setRtEnabled(e.target.checked)}
+            />
+          </FormControl>
+          <Text fontSize="xs" color={muted}>
+            {rtEnabled ? `Polling every ${Math.round(rtIntervalMs / 1000)}s` : 'Polling paused'}
+          </Text>
           <Button variant="outline" onClick={refresh} isLoading={loading} isDisabled={controlsDisabled} loadingText="Refreshing">Refresh</Button>
           <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading || controlsDisabled} isLoading={saving} loadingText="Saving">Save</Button>
         </HStack>
