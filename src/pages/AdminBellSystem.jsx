@@ -123,6 +123,7 @@ const SOUND_TITLES = {
 const REALTIME_FAST_MS = 1000;
 const REALTIME_SLOW_MS = 30000;
 const REALTIME_SAME_LIMIT = 3;
+const OVERRIDE_MIN_HOLD_MS = 5000;
 
 function parseTimeToMinutes(value) {
   const raw = String(value || '').trim();
@@ -735,11 +736,13 @@ export default function AdminBellSystem() {
       ? Math.max(0, (nextOn.time.getTime() - Date.now()) / 1000)
       : 0;
     setForm((prev) => ({ ...prev, delayBeforeSeconds: overrideDelay }));
+    let overrideSavedAt = null;
     try {
       const overrideBell = { ...orig, delayBeforeSeconds: overrideDelay };
       try {
         const data = await dispatch(updateSettingsThunk({ bellSystem: overrideBell })).unwrap();
         if (data?.updatedAt) setLastUpdated(data.updatedAt);
+        overrideSavedAt = Date.now();
       } catch (e) {
         toast({ title: e?.message || 'Failed to update bell settings', status: 'error' });
       }
@@ -748,6 +751,13 @@ export default function AdminBellSystem() {
         setAudioUnlocked(true);
       } else {
         toast({ title: 'Unable to play sound', status: 'warning' });
+      }
+      if (overrideSavedAt) {
+        const elapsed = Date.now() - overrideSavedAt;
+        const waitMs = Math.max(OVERRIDE_MIN_HOLD_MS - elapsed, 0);
+        if (waitMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
       }
     } finally {
       const restoreDelay = overrideDelayRef.current;
