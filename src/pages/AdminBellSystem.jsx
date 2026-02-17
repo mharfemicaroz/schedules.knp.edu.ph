@@ -310,6 +310,9 @@ export default function AdminBellSystem() {
   const overrideDelayRef = React.useRef(null);
   const [rtEnabled, setRtEnabled] = React.useState(true);
   const [rtStatus, setRtStatus] = React.useState('connecting');
+  const lastOverrideEventRef = React.useRef('');
+  const lastLocalOverrideRef = React.useRef('');
+  const overrideAudioWarnRef = React.useRef(false);
 
   const dirty = React.useMemo(() => JSON.stringify(form) !== JSON.stringify(orig), [form, orig]);
   const controlsDisabled = overrideActive;
@@ -426,14 +429,17 @@ export default function AdminBellSystem() {
     const unsubConn = listenToFirebaseConnection((isConnected) => {
       setRtStatus(isConnected ? 'connected' : 'disconnected');
     });
-    const unsubOverride = listenToBellOverride(() => {
+    const unsubOverride = listenToBellOverride((payload) => {
       void refreshSilent();
+      if (payload?.type === 'override') {
+        void handleRemoteOverride(payload);
+      }
     });
     return () => {
       unsubOverride();
       unsubConn();
     };
-  }, [rtEnabled, refreshSilent]);
+  }, [rtEnabled, refreshSilent, handleRemoteOverride]);
 
   const save = async () => {
     try {
@@ -680,8 +686,9 @@ export default function AdminBellSystem() {
     try {
       const overrideBell = { ...orig, delayBeforeSeconds: overrideDelay };
       try {
-        const data = await dispatch(updateSettingsThunk({ bellSystem: overrideBell })).unwrap();
+        const data = await dispatch(updateSettingsThunk({ bellSystem: overrideBell, _rtEvent: 'override' })).unwrap();
         if (data?.updatedAt) setLastUpdated(data.updatedAt);
+        if (data?.updatedAt) lastLocalOverrideRef.current = String(data.updatedAt);
         overrideSavedAt = Date.now();
       } catch (e) {
         toast({ title: e?.message || 'Failed to update bell settings', status: 'error' });
@@ -707,7 +714,7 @@ export default function AdminBellSystem() {
       }));
       overrideDelayRef.current = null;
       try {
-        const data = await dispatch(updateSettingsThunk({ bellSystem: orig })).unwrap();
+        const data = await dispatch(updateSettingsThunk({ bellSystem: orig, _rtEvent: 'settings' })).unwrap();
         if (data?.updatedAt) setLastUpdated(data.updatedAt);
       } catch (e) {
         toast({ title: e?.message || 'Failed to restore bell settings', status: 'error' });
@@ -715,6 +722,23 @@ export default function AdminBellSystem() {
       setOverrideActive(false);
     }
   }, [overrideActive, toast, form.delayBeforeSeconds, getNextOnTimeEvent, pickSoundForKind, resolveSoundUrl, triggerBell, dispatch, orig]);
+
+  const handleRemoteOverride = React.useCallback(async (payload) => {
+    if (overrideActiveRef.current || ringLockRef.current) return;
+    const rawKey = payload?.updatedAt || payload?.ts || '';
+    const key = String(rawKey || '');
+    if (!key || key === lastOverrideEventRef.current) return;
+    if (key === lastLocalOverrideRef.current) return;
+    lastOverrideEventRef.current = key;
+    const soundEntry = pickSoundForKind('on');
+    const ringUrl = resolveSoundUrl(soundEntry);
+    if (!ringUrl) return;
+    const played = await triggerBell(`remote-override-${key}`, ringUrl, { force: true });
+    if (!played && !overrideAudioWarnRef.current) {
+      overrideAudioWarnRef.current = true;
+      toast({ title: 'Realtime bell needs a click to enable audio', status: 'info' });
+    }
+  }, [pickSoundForKind, resolveSoundUrl, triggerBell, toast]);
 
   const countdown = React.useMemo(() => {
     if (!form.enabled) {
