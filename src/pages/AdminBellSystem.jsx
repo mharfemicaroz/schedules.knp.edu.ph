@@ -415,33 +415,6 @@ export default function AdminBellSystem() {
     } catch {}
   }, [dispatch, buildSnapshot, applySnapshot]);
 
-
-  React.useEffect(() => {
-    if (!rtEnabled) {
-      setRtStatus('off');
-      return () => {};
-    }
-    const configured = !!import.meta.env.VITE_FB_API_KEY && !!import.meta.env.VITE_FB_DATABASE_URL;
-    if (!configured) {
-      setRtStatus('disconnected');
-      return () => {};
-    }
-    setRtStatus('connecting');
-    const unsubConn = listenToFirebaseConnection((isConnected) => {
-      setRtStatus(isConnected ? 'connected' : 'disconnected');
-    });
-    const unsubOverride = listenToBellOverride((payload) => {
-      void refreshSilent();
-      if (payload?.type === 'override') {
-        void handleRemoteOverride(payload);
-      }
-    });
-    return () => {
-      unsubOverride();
-      unsubConn();
-    };
-  }, [rtEnabled, refreshSilent, handleRemoteOverride]);
-
   const save = async () => {
     try {
       setSaving(true);
@@ -613,6 +586,49 @@ export default function AdminBellSystem() {
     return played;
   }, [audioUnlocked, form.loopCount, form.loopGapSeconds, form.volumePercent]);
 
+  const handleRemoteOverride = React.useCallback(async (payload) => {
+    if (overrideActiveRef.current || ringLockRef.current) return;
+    const rawKey = payload?.updatedAt || payload?.ts || '';
+    const key = String(rawKey || '');
+    if (!key || key === lastOverrideEventRef.current) return;
+    if (key === lastLocalOverrideRef.current) return;
+    lastOverrideEventRef.current = key;
+    const soundEntry = pickSoundForKind('on');
+    const ringUrl = resolveSoundUrl(soundEntry);
+    if (!ringUrl) return;
+    const played = await triggerBell(`remote-override-${key}`, ringUrl, { force: true });
+    if (!played && !overrideAudioWarnRef.current) {
+      overrideAudioWarnRef.current = true;
+      toast({ title: 'Realtime bell needs a click to enable audio', status: 'info' });
+    }
+  }, [pickSoundForKind, resolveSoundUrl, triggerBell, toast]);
+
+  React.useEffect(() => {
+    if (!rtEnabled) {
+      setRtStatus('off');
+      return () => {};
+    }
+    const configured = !!import.meta.env.VITE_FB_API_KEY && !!import.meta.env.VITE_FB_DATABASE_URL;
+    if (!configured) {
+      setRtStatus('disconnected');
+      return () => {};
+    }
+    setRtStatus('connecting');
+    const unsubConn = listenToFirebaseConnection((isConnected) => {
+      setRtStatus(isConnected ? 'connected' : 'disconnected');
+    });
+    const unsubOverride = listenToBellOverride((payload) => {
+      void refreshSilent();
+      if (payload?.type === 'override') {
+        void handleRemoteOverride(payload);
+      }
+    });
+    return () => {
+      unsubOverride();
+      unsubConn();
+    };
+  }, [rtEnabled, refreshSilent, handleRemoteOverride]);
+
   const previewSound = React.useCallback(async (kind) => {
     if (overrideActive) return;
     const sound = sounds[kind];
@@ -724,22 +740,6 @@ export default function AdminBellSystem() {
     }
   }, [overrideActive, toast, form.delayBeforeSeconds, getNextOnTimeEvent, pickSoundForKind, resolveSoundUrl, triggerBell, dispatch, orig]);
 
-  const handleRemoteOverride = React.useCallback(async (payload) => {
-    if (overrideActiveRef.current || ringLockRef.current) return;
-    const rawKey = payload?.updatedAt || payload?.ts || '';
-    const key = String(rawKey || '');
-    if (!key || key === lastOverrideEventRef.current) return;
-    if (key === lastLocalOverrideRef.current) return;
-    lastOverrideEventRef.current = key;
-    const soundEntry = pickSoundForKind('on');
-    const ringUrl = resolveSoundUrl(soundEntry);
-    if (!ringUrl) return;
-    const played = await triggerBell(`remote-override-${key}`, ringUrl, { force: true });
-    if (!played && !overrideAudioWarnRef.current) {
-      overrideAudioWarnRef.current = true;
-      toast({ title: 'Realtime bell needs a click to enable audio', status: 'info' });
-    }
-  }, [pickSoundForKind, resolveSoundUrl, triggerBell, toast]);
 
   const countdown = React.useMemo(() => {
     if (!form.enabled) {
