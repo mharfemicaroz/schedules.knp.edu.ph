@@ -34,6 +34,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { loadSettingsThunk, updateSettingsThunk } from '../store/settingsThunks';
 import { selectSettings } from '../store/settingsSlice';
 import apiService from '../services/apiService';
+import { listenToBellOverride, listenToFirebaseConnection } from '../utils/firebaseOverride';
 
 const DEFAULT_BELL = {
   enabled: false,
@@ -120,7 +121,6 @@ const SOUND_TITLES = {
   on: 'On-time Sound',
   after: 'After Sound',
 };
-const REALTIME_RECONNECT_MS = 3000;
 const OVERRIDE_MIN_HOLD_MS = 5000;
 
 function parseTimeToMinutes(value) {
@@ -310,8 +310,6 @@ export default function AdminBellSystem() {
   const overrideDelayRef = React.useRef(null);
   const [rtEnabled, setRtEnabled] = React.useState(true);
   const [rtStatus, setRtStatus] = React.useState('connecting');
-  const wsRef = React.useRef(null);
-  const rtReconnectRef = React.useRef(null);
 
   const dirty = React.useMemo(() => JSON.stringify(form) !== JSON.stringify(orig), [form, orig]);
   const controlsDisabled = overrideActive;
@@ -405,23 +403,6 @@ export default function AdminBellSystem() {
 
   React.useEffect(() => { refresh(); }, [refresh]);
 
-  const wsUrl = React.useMemo(() => {
-    if (typeof window === 'undefined') return '';
-    const baseUrl = apiService.baseURL || '';
-    const loc = window.location;
-    const proto = loc.protocol === 'https:' ? 'wss' : 'ws';
-    try {
-      if (/^https?:\/\//i.test(baseUrl)) {
-        const url = new URL(baseUrl);
-        url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-        url.pathname = url.pathname.replace(/\/$/, '') + '/ws';
-        return url.toString();
-      }
-    } catch {}
-    const path = String(baseUrl || '').replace(/\/$/, '');
-    return `${proto}://${loc.host}${path}/ws`;
-  }, []);
-
   const refreshSilent = React.useCallback(async () => {
     if (dirtyRef.current || overrideActiveRef.current || savingRef.current) return;
     try {
@@ -432,74 +413,27 @@ export default function AdminBellSystem() {
   }, [dispatch, buildSnapshot, applySnapshot]);
 
   React.useEffect(() => {
-    if (!rtEnabled || !wsUrl || typeof window === 'undefined') {
+    if (!rtEnabled) {
       setRtStatus('off');
-      if (wsRef.current) {
-        try { wsRef.current.close(); } catch {}
-        wsRef.current = null;
-      }
       return () => {};
     }
-    let cancelled = false;
-    const clearReconnect = () => {
-      if (rtReconnectRef.current) {
-        clearTimeout(rtReconnectRef.current);
-        rtReconnectRef.current = null;
-      }
-    };
-    const scheduleReconnect = () => {
-      if (cancelled || !rtEnabled) return;
-      if (rtReconnectRef.current) return;
-      rtReconnectRef.current = setTimeout(() => {
-        rtReconnectRef.current = null;
-        connect();
-      }, REALTIME_RECONNECT_MS);
-    };
-    const connect = () => {
-      if (cancelled) return;
-      setRtStatus('connecting');
-      let socket;
-      try {
-        socket = new WebSocket(wsUrl);
-      } catch {
-        setRtStatus('disconnected');
-        scheduleReconnect();
-        return;
-      }
-      wsRef.current = socket;
-      socket.onopen = () => {
-        if (cancelled) return;
-        setRtStatus('connected');
-      };
-      socket.onmessage = (event) => {
-        if (cancelled) return;
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg && msg.event === 'settings_updated') {
-            void refreshSilent();
-          }
-        } catch {}
-      };
-      socket.onerror = () => {
-        try { socket.close(); } catch {}
-      };
-      socket.onclose = () => {
-        if (cancelled) return;
-        setRtStatus('disconnected');
-        scheduleReconnect();
-      };
-    };
-
-    connect();
+    const configured = !!import.meta.env.VITE_FB_API_KEY && !!import.meta.env.VITE_FB_DATABASE_URL;
+    if (!configured) {
+      setRtStatus('disconnected');
+      return () => {};
+    }
+    setRtStatus('connecting');
+    const unsubConn = listenToFirebaseConnection((isConnected) => {
+      setRtStatus(isConnected ? 'connected' : 'disconnected');
+    });
+    const unsubOverride = listenToBellOverride(() => {
+      void refreshSilent();
+    });
     return () => {
-      cancelled = true;
-      clearReconnect();
-      if (wsRef.current) {
-        try { wsRef.current.close(); } catch {}
-        wsRef.current = null;
-      }
+      unsubOverride();
+      unsubConn();
     };
-  }, [rtEnabled, wsUrl, refreshSilent]);
+  }, [rtEnabled, refreshSilent]);
 
   const save = async () => {
     try {
