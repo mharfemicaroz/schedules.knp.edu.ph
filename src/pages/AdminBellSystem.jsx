@@ -28,13 +28,32 @@ import {
   Tag,
   TagLabel,
   Icon,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  Textarea,
+  Select,
+  Wrap,
+  WrapItem,
 } from '@chakra-ui/react';
-import { FiBell, FiUpload, FiTrash2, FiClock, FiPlay } from 'react-icons/fi';
+import {
+  FiBell,
+  FiUpload,
+  FiTrash2,
+  FiClock,
+  FiPlay,
+  FiMic,
+  FiSend,
+  FiVolume2,
+} from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadSettingsThunk, updateSettingsThunk } from '../store/settingsThunks';
 import { selectSettings } from '../store/settingsSlice';
 import apiService from '../services/apiService';
 import { listenToBellOverride } from '../utils/firebaseOverride';
+import FacultySelect from '../components/FacultySelect';
 
 const DEFAULT_BELL = {
   enabled: false,
@@ -122,6 +141,32 @@ const SOUND_TITLES = {
   after: 'After Sound',
 };
 const OVERRIDE_MIN_HOLD_MS = 5000;
+const GENERAL_ANNOUNCEMENT_TEMPLATES = [
+  {
+    id: 'admin-office',
+    label: 'Admin office notice',
+    text: 'Attention all faculty, please proceed to the admin office.',
+  },
+  {
+    id: 'meeting',
+    label: 'Faculty meeting',
+    text: 'Attention all faculty, please proceed to {location} for the meeting.',
+    needsLocation: true,
+  },
+  {
+    id: 'assembly',
+    label: 'Assembly',
+    text: 'Attention everyone, please proceed to {location} for the assembly.',
+    needsLocation: true,
+  },
+  {
+    id: 'dismissal',
+    label: 'Class dismissal',
+    text: 'Classes are dismissed for today. Thank you.',
+  },
+];
+
+ 
 
 function parseTimeToMinutes(value) {
   const raw = String(value || '').trim();
@@ -289,6 +334,7 @@ export default function AdminBellSystem() {
   const bg = useColorModeValue('white', 'gray.800');
   const muted = useColorModeValue('gray.600', 'gray.300');
   const highlight = useColorModeValue('blue.600', 'blue.300');
+  const softBg = useColorModeValue('gray.50', 'gray.900');
 
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -311,6 +357,30 @@ export default function AdminBellSystem() {
   const lastOverrideEventRef = React.useRef('');
   const lastLocalOverrideRef = React.useRef('');
   const overrideAudioWarnRef = React.useRef(false);
+  const [announceMode, setAnnounceMode] = React.useState('faculty');
+  const [announceFaculty, setAnnounceFaculty] = React.useState('');
+  const [announceFacultyId, setAnnounceFacultyId] = React.useState(null);
+  const [announceLocation, setAnnounceLocation] = React.useState('admin office');
+  const [announceTemplate, setAnnounceTemplate] = React.useState('admin-office');
+  const [announceCustom, setAnnounceCustom] = React.useState('');
+  const [announceVoice, setAnnounceVoice] = React.useState('');
+  const [announceRate, setAnnounceRate] = React.useState(1);
+  const [announcePitch, setAnnouncePitch] = React.useState(1);
+  const [announcePreChime, setAnnouncePreChime] = React.useState(true);
+  const [announcePostChime, setAnnouncePostChime] = React.useState(true);
+  const [announceChimeCount, setAnnounceChimeCount] = React.useState(1);
+  const [announceChimeGapSeconds, setAnnounceChimeGapSeconds] = React.useState(0.4);
+  const [announceRepeatCount, setAnnounceRepeatCount] = React.useState(1);
+  const [announceRepeatGapSeconds, setAnnounceRepeatGapSeconds] = React.useState(3);
+  const [announceSending, setAnnounceSending] = React.useState(false);
+  const [voices, setVoices] = React.useState([]);
+  const [ttsSupported, setTtsSupported] = React.useState(true);
+  const announceLockRef = React.useRef(false);
+  const audioCtxRef = React.useRef(null);
+  const lastAnnouncementEventRef = React.useRef('');
+  const lastLocalAnnouncementRef = React.useRef('');
+  const announceAudioWarnRef = React.useRef(false);
+  const announcementListenAtRef = React.useRef(Date.now());
   const firebaseConfigured = React.useMemo(() => (
     !!import.meta.env.VITE_FB_API_KEY && !!import.meta.env.VITE_FB_DATABASE_URL
   ), []);
@@ -349,6 +419,41 @@ export default function AdminBellSystem() {
     const pool = form.sounds || {};
     return pool[kind] || pool.on || pool.before || pool.after || null;
   }, [form.sounds]);
+  const selectedAnnouncementTemplate = React.useMemo(() => (
+    GENERAL_ANNOUNCEMENT_TEMPLATES.find((t) => t.id === announceTemplate)
+      || GENERAL_ANNOUNCEMENT_TEMPLATES[0]
+  ), [announceTemplate]);
+  const announcementLocationNeeded = React.useMemo(() => (
+    announceMode === 'faculty'
+    || (announceMode === 'general' && selectedAnnouncementTemplate?.needsLocation)
+  ), [announceMode, selectedAnnouncementTemplate]);
+  const announcementMessage = React.useMemo(() => {
+    const faculty = String(announceFaculty || '').trim();
+    const location = String(announceLocation || '').trim() || 'admin office';
+    if (announceMode === 'faculty') {
+      if (!faculty) return '';
+      return `Attention ${faculty}, please proceed to ${location} now.`;
+    }
+    if (announceMode === 'general') {
+      const template = selectedAnnouncementTemplate || GENERAL_ANNOUNCEMENT_TEMPLATES[0];
+      if (!template) return '';
+      let text = String(template.text || '');
+      if (text.includes('{location}')) {
+        text = text.replace('{location}', location);
+      }
+      return text;
+    }
+    if (announceMode === 'custom') {
+      return String(announceCustom || '').trim();
+    }
+    return '';
+  }, [announceMode, announceFaculty, announceLocation, announceCustom, selectedAnnouncementTemplate]);
+  const visibleVoices = React.useMemo(() => (
+    (voices || []).filter((v) => v.lang === 'en-US')
+  ), [voices]);
+  const selectedAnnouncementVoice = React.useMemo(() => (
+    visibleVoices.find((v) => v.name === announceVoice) || null
+  ), [visibleVoices, announceVoice]);
 
   React.useEffect(() => {
     setLastUpdated(settings?.updatedAt || null);
@@ -390,6 +495,31 @@ export default function AdminBellSystem() {
       audioRef.current.volume = vol;
     }
   }, [form.volumePercent, primarySoundUrl]);
+
+  React.useEffect(() => {
+    const supported = typeof window !== 'undefined'
+      && 'speechSynthesis' in window
+      && typeof window.SpeechSynthesisUtterance !== 'undefined';
+    setTtsSupported(supported);
+    if (!supported) return () => {};
+    const loadVoices = () => {
+      const list = window.speechSynthesis.getVoices() || [];
+      setVoices(list);
+    };
+    loadVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+    return () => {
+      window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
+    };
+  }, []);
+
+
+  React.useEffect(() => {
+    if (!visibleVoices.length) return;
+    const inList = visibleVoices.find((v) => v.name === announceVoice);
+    if (inList) return;
+    setAnnounceVoice(visibleVoices[0].name);
+  }, [visibleVoices, announceVoice]);
 
 
   const refresh = React.useCallback(async () => {
@@ -520,6 +650,171 @@ export default function AdminBellSystem() {
     }
   };
 
+  const pickAnnouncementVoice = React.useCallback((voiceName, voiceLang) => {
+    const list = voices || [];
+    if (!list.length) return null;
+    if (voiceName) {
+      const found = list.find((v) => v.name === voiceName);
+      if (found) return found;
+    }
+    if (voiceLang) {
+      const exact = list.find((v) => v.lang === voiceLang);
+      if (exact) return exact;
+      const short = String(voiceLang).split('-')[0];
+      const match = list.find((v) => String(v.lang || '').startsWith(short));
+      if (match) return match;
+    }
+    const enUs = list.find((v) => v.lang === 'en-US');
+    if (enUs) return enUs;
+    const english = list.find((v) => String(v.lang || '').toLowerCase().startsWith('en'));
+    return english || list[0];
+  }, [voices]);
+
+  const speakAnnouncement = React.useCallback(async (message, opts = {}) => {
+    if (!message) return false;
+    if (!ttsSupported || typeof window === 'undefined' || !window.speechSynthesis) return false;
+    const utter = new SpeechSynthesisUtterance(message);
+    const voice = pickAnnouncementVoice(opts.voiceName, opts.lang);
+    if (voice) utter.voice = voice;
+    const rate = Number.isFinite(Number(opts.rate)) ? Number(opts.rate) : announceRate;
+    const pitch = Number.isFinite(Number(opts.pitch)) ? Number(opts.pitch) : announcePitch;
+    utter.rate = Math.min(2, Math.max(0.5, rate));
+    utter.pitch = Math.min(2, Math.max(0.5, pitch));
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        resolve(ok);
+      };
+      utter.onend = () => finish(true);
+      utter.onerror = () => finish(false);
+      try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utter);
+      } catch {
+        finish(false);
+      }
+      const timeoutMs = Math.max(8000, message.length * 60);
+      setTimeout(() => finish(false), timeoutMs);
+    });
+  }, [announceRate, announcePitch, pickAnnouncementVoice, ttsSupported]);
+
+  const ensureAudioContext = React.useCallback(() => {
+    if (typeof window === 'undefined') return null;
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return null;
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new Ctor();
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playTone = React.useCallback((ctx, freq, durationMs, volume = 0.28) => (
+    new Promise((resolve) => {
+      try {
+        const osc = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const now = ctx.currentTime;
+        const dur = Math.max(0.05, durationMs / 1000);
+        osc.type = 'sine';
+        osc2.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now);
+        osc2.frequency.setValueAtTime(freq * 2.01, now);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(volume, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+        osc.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc2.start(now);
+        osc.stop(now + dur + 0.05);
+        osc2.stop(now + dur + 0.05);
+        setTimeout(() => resolve(true), (dur * 1000) + 120);
+      } catch {
+        resolve(false);
+      }
+    })
+  ), []);
+
+  const playChimeOnce = React.useCallback(async () => {
+    const ctx = ensureAudioContext();
+    if (!ctx) return false;
+    if (ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch {
+        return false;
+      }
+    }
+    const ok1 = await playTone(ctx, 784, 420, 0.3);
+    if (!ok1) return false;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const ok2 = await playTone(ctx, 523, 520, 0.26);
+    return ok2;
+  }, [ensureAudioContext, playTone]);
+
+  const playChimeSequence = React.useCallback(async (count, gapMs) => {
+    const loops = Math.max(1, Math.round(Number(count) || 1));
+    const gap = Math.max(0, Number(gapMs) || 0);
+    for (let i = 0; i < loops; i += 1) {
+      const ok = await playChimeOnce();
+      if (!ok) return false;
+      if (gap && i < loops - 1) {
+        await new Promise((resolve) => setTimeout(resolve, gap));
+      }
+    }
+    return true;
+  }, [playChimeOnce]);
+
+  const playAnnouncementSequence = React.useCallback(async (message, opts = {}) => {
+    if (!message) return false;
+    if (announceLockRef.current || ringLockRef.current) return false;
+    announceLockRef.current = true;
+    const repeatCount = Math.max(1, Math.round(Number(opts.repeatCount ?? announceRepeatCount) || 1));
+    const repeatGapMs = Math.max(0, Number(opts.repeatGapSeconds ?? announceRepeatGapSeconds) * 1000);
+    const preChime = opts.preChime ?? announcePreChime;
+    const postChime = opts.postChime ?? announcePostChime;
+    const chimeCount = opts.chimeCount ?? announceChimeCount;
+    const chimeGapMs = (Number(opts.chimeGapSeconds ?? announceChimeGapSeconds) || 0) * 1000;
+    try {
+      for (let i = 0; i < repeatCount; i += 1) {
+        if (preChime) {
+          const chimeOk = await playChimeSequence(chimeCount, chimeGapMs);
+          if (!chimeOk) return false;
+        }
+        const spoke = await speakAnnouncement(message, {
+          voiceName: opts.voiceName,
+          lang: opts.lang,
+          rate: opts.rate,
+          pitch: opts.pitch,
+        });
+        if (!spoke) return false;
+        if (postChime) {
+          const chimeOk = await playChimeSequence(chimeCount, chimeGapMs);
+          if (!chimeOk) return false;
+        }
+        if (repeatGapMs && i < repeatCount - 1) {
+          await new Promise((resolve) => setTimeout(resolve, repeatGapMs));
+        }
+      }
+      return true;
+    } finally {
+      announceLockRef.current = false;
+    }
+  }, [
+    announceChimeCount,
+    announceChimeGapSeconds,
+    announcePostChime,
+    announcePreChime,
+    announceRepeatCount,
+    announceRepeatGapSeconds,
+    playChimeSequence,
+    speakAnnouncement,
+  ]);
+
   React.useEffect(() => {
     if (!primarySoundUrl || audioUnlocked) return;
     void unlockAudio({ silent: true });
@@ -610,15 +905,61 @@ export default function AdminBellSystem() {
   const handleRemoteOverrideRef = React.useRef(handleRemoteOverride);
   React.useEffect(() => { handleRemoteOverrideRef.current = handleRemoteOverride; }, [handleRemoteOverride]);
 
+  const handleRemoteAnnouncement = React.useCallback(async (payload) => {
+    const ts = Number(payload?.ts);
+    if (Number.isFinite(ts) && ts < (announcementListenAtRef.current - 1000)) return;
+    const rawKey = payload?.eventId || payload?.updatedAt || payload?.ts || '';
+    const key = String(rawKey || '');
+    if (!key || key === lastAnnouncementEventRef.current) return;
+    if (key === lastLocalAnnouncementRef.current) return;
+    lastAnnouncementEventRef.current = key;
+    const message = String(payload?.message || '').trim();
+    if (!message) return;
+    if (!ttsSupported) {
+      if (!announceAudioWarnRef.current) {
+        announceAudioWarnRef.current = true;
+        toast({ title: 'Text-to-speech is not supported on this browser', status: 'info' });
+      }
+      return;
+    }
+    const played = await playAnnouncementSequence(message, {
+      voiceName: payload?.voice,
+      lang: payload?.lang,
+      rate: payload?.rate,
+      pitch: payload?.pitch,
+      preChime: payload?.preChime,
+      postChime: payload?.postChime,
+      chimeCount: payload?.chimeCount,
+      chimeGapSeconds: payload?.chimeGapSeconds,
+      repeatCount: payload?.repeatCount,
+      repeatGapSeconds: payload?.repeatGapSeconds,
+    });
+    if (!played && !announceAudioWarnRef.current) {
+      announceAudioWarnRef.current = true;
+      toast({ title: 'Realtime announcement needs a click to enable audio', status: 'info' });
+    }
+  }, [playAnnouncementSequence, toast, ttsSupported]);
+
+  const handleRemoteAnnouncementRef = React.useRef(handleRemoteAnnouncement);
+  React.useEffect(() => { handleRemoteAnnouncementRef.current = handleRemoteAnnouncement; }, [handleRemoteAnnouncement]);
+
   React.useEffect(() => {
     if (!firebaseConfigured) {
       return () => {};
     }
+    announcementListenAtRef.current = Date.now();
     const unsubOverride = listenToBellOverride((payload) => {
-      const refreshNow = refreshSilentRef.current;
-      if (refreshNow) void refreshNow();
-      if (payload?.type === 'override') {
+      const type = payload?.type || '';
+      if (type === 'override' || type === 'settings') {
+        const refreshNow = refreshSilentRef.current;
+        if (refreshNow) void refreshNow();
+      }
+      if (type === 'override') {
         const handler = handleRemoteOverrideRef.current;
+        if (handler) void handler(payload);
+      }
+      if (type === 'announcement') {
+        const handler = handleRemoteAnnouncementRef.current;
         if (handler) void handler(payload);
       }
     });
@@ -738,6 +1079,137 @@ export default function AdminBellSystem() {
     }
   }, [overrideActive, toast, form.delayBeforeSeconds, getNextOnTimeEvent, pickSoundForKind, resolveSoundUrl, triggerBell, dispatch, orig]);
 
+  const previewAnnouncement = React.useCallback(async () => {
+    const message = String(announcementMessage || '').trim();
+    if (!message) {
+      toast({ title: 'Add an announcement message first', status: 'info' });
+      return;
+    }
+    if (!ttsSupported) {
+      toast({ title: 'Text-to-speech is not supported on this browser', status: 'warning' });
+      return;
+    }
+    const played = await playAnnouncementSequence(message, {
+      voiceName: selectedAnnouncementVoice?.name || announceVoice,
+      lang: selectedAnnouncementVoice?.lang,
+      rate: announceRate,
+      pitch: announcePitch,
+      preChime: announcePreChime,
+      postChime: announcePostChime,
+      chimeCount: announceChimeCount,
+      chimeGapSeconds: announceChimeGapSeconds,
+      repeatCount: announceRepeatCount,
+      repeatGapSeconds: announceRepeatGapSeconds,
+    });
+    if (!played) {
+      toast({ title: 'Unable to play announcement audio', status: 'warning' });
+    }
+  }, [
+    announcementMessage,
+    announceVoice,
+    announceRate,
+    announcePitch,
+    announcePreChime,
+    announcePostChime,
+    announceChimeCount,
+    announceChimeGapSeconds,
+    announceRepeatCount,
+    announceRepeatGapSeconds,
+    selectedAnnouncementVoice,
+    playAnnouncementSequence,
+    toast,
+    ttsSupported,
+  ]);
+
+  const sendAnnouncement = React.useCallback(async () => {
+    const message = String(announcementMessage || '').trim();
+    if (!message) {
+      toast({ title: 'Add an announcement message first', status: 'info' });
+      return;
+    }
+    if (!isAdmin) {
+      toast({ title: 'Only admins can send announcements', status: 'warning' });
+      return;
+    }
+    const eventId = `announce-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+    lastLocalAnnouncementRef.current = eventId;
+    setAnnounceSending(true);
+    try {
+    const payload = {
+      eventId,
+      message,
+      voice: selectedAnnouncementVoice?.name || announceVoice || null,
+      lang: selectedAnnouncementVoice?.lang || null,
+      rate: announceRate,
+      pitch: announcePitch,
+        faculty: announceMode === 'faculty' ? announceFaculty : null,
+        location: announcementLocationNeeded ? announceLocation : null,
+        template: announceMode === 'general' ? announceTemplate : null,
+        mode: announceMode,
+        preChime: announcePreChime,
+        postChime: announcePostChime,
+        chimeCount: announceChimeCount,
+        chimeGapSeconds: announceChimeGapSeconds,
+        repeatCount: announceRepeatCount,
+        repeatGapSeconds: announceRepeatGapSeconds,
+      };
+    const res = await apiService.broadcastAnnouncement(payload);
+    const event = res?.event || {};
+    if (event?.eventId) lastLocalAnnouncementRef.current = String(event.eventId);
+    if (!ttsSupported) {
+        toast({
+          title: 'Announcement sent',
+          description: 'This browser does not support text-to-speech.',
+          status: 'info',
+        });
+        return;
+      }
+      const played = await playAnnouncementSequence(message, {
+        voiceName: event?.voice || payload.voice,
+        lang: event?.lang || payload.lang,
+        rate: event?.rate ?? announceRate,
+        pitch: event?.pitch ?? announcePitch,
+        preChime: event?.preChime ?? payload.preChime,
+        postChime: event?.postChime ?? payload.postChime,
+        chimeCount: event?.chimeCount ?? payload.chimeCount,
+        chimeGapSeconds: event?.chimeGapSeconds ?? payload.chimeGapSeconds,
+        repeatCount: event?.repeatCount ?? payload.repeatCount,
+        repeatGapSeconds: event?.repeatGapSeconds ?? payload.repeatGapSeconds,
+      });
+      if (!played && !announceAudioWarnRef.current) {
+        announceAudioWarnRef.current = true;
+        toast({ title: 'Announcement sent, but this browser needs a click to enable audio', status: 'info' });
+      } else {
+        toast({ title: 'Announcement sent', status: 'success' });
+      }
+    } catch (e) {
+      toast({ title: e?.message || 'Failed to send announcement', status: 'error' });
+    } finally {
+      setAnnounceSending(false);
+    }
+  }, [
+    announcementMessage,
+    announceVoice,
+    announceRate,
+    announcePitch,
+    announceMode,
+    announceFaculty,
+    announceLocation,
+    announceTemplate,
+    announcePreChime,
+    announcePostChime,
+    announceChimeCount,
+    announceChimeGapSeconds,
+    announceRepeatCount,
+    announceRepeatGapSeconds,
+    announcementLocationNeeded,
+    isAdmin,
+    selectedAnnouncementVoice,
+    playAnnouncementSequence,
+    ttsSupported,
+    toast,
+  ]);
+
 
   const countdown = React.useMemo(() => {
     if (!form.enabled) {
@@ -813,16 +1285,33 @@ export default function AdminBellSystem() {
         style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
         aria-hidden="true"
       />
-      <HStack justify="space-between" mb={4} flexWrap="wrap" spacing={3}>
-        <HStack spacing={2}>
-          <FiBell />
-          <Heading size="md">Automated Bell System</Heading>
-        </HStack>
-        <HStack spacing={3} flexWrap="wrap">
-          <Button variant="outline" onClick={refresh} isLoading={loading} isDisabled={controlsDisabled} loadingText="Refreshing">Refresh</Button>
-          <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading || controlsDisabled} isLoading={saving} loadingText="Saving">Save</Button>
-        </HStack>
-      </HStack>
+      <Tabs variant="enclosed-colored" colorScheme="blue">
+        <TabList>
+          <Tab>
+            <HStack spacing={2}>
+              <Icon as={FiBell} />
+              <Text>Bell System</Text>
+            </HStack>
+          </Tab>
+          <Tab>
+            <HStack spacing={2}>
+              <Icon as={FiMic} />
+              <Text>Announcements</Text>
+            </HStack>
+          </Tab>
+        </TabList>
+        <TabPanels>
+          <TabPanel p={0} pt={4}>
+            <HStack justify="space-between" mb={4} flexWrap="wrap" spacing={3}>
+              <HStack spacing={2}>
+                <FiBell />
+                <Heading size="md">Automated Bell System</Heading>
+              </HStack>
+              <HStack spacing={3} flexWrap="wrap">
+                <Button variant="outline" onClick={refresh} isLoading={loading} isDisabled={controlsDisabled} loadingText="Refreshing">Refresh</Button>
+                <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading || controlsDisabled} isLoading={saving} loadingText="Saving">Save</Button>
+              </HStack>
+            </HStack>
 
       <Text fontSize="sm" color={muted} mb={2}>
         Configure bell intervals, session windows, and the sound file used for scheduled rings.
@@ -1146,6 +1635,275 @@ export default function AdminBellSystem() {
       <HStack justify="flex-end">
         <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading || controlsDisabled} isLoading={saving}>Save Changes</Button>
       </HStack>
+          </TabPanel>
+          <TabPanel p={0} pt={4}>
+            <HStack justify="space-between" mb={4} flexWrap="wrap" spacing={3}>
+              <HStack spacing={2}>
+                <Icon as={FiMic} />
+                <Heading size="md">Realtime Announcements</Heading>
+              </HStack>
+              <HStack spacing={2} flexWrap="wrap">
+                <Badge colorScheme={ttsSupported ? 'green' : 'red'}>
+                  {ttsSupported ? 'TTS Ready' : 'TTS Unavailable'}
+                </Badge>
+                <Badge colorScheme={announcementMessage ? 'blue' : 'gray'}>
+                  {announcementMessage ? 'Message Ready' : 'Message Empty'}
+                </Badge>
+              </HStack>
+            </HStack>
+
+            <Text fontSize="sm" color={muted} mb={4}>
+              Send spoken announcements to all connected devices using Firebase realtime updates.
+            </Text>
+
+            <SimpleGrid columns={{ base: 1, lg: 2 }} gap={4}>
+              <Box borderWidth="1px" borderColor={border} rounded="lg" p={4} bg={bg}>
+                <VStack align="stretch" spacing={3}>
+                  <HStack justify="space-between" flexWrap="wrap">
+                    <Heading size="sm">Message Builder</Heading>
+                    <Badge colorScheme="purple" variant="subtle">Realtime</Badge>
+                  </HStack>
+                  <Text fontSize="xs" color={muted}>
+                    Choose a target audience and compose a short announcement.
+                  </Text>
+
+                  <FormControl>
+                    <FormLabel fontSize="sm">Announcement type</FormLabel>
+                    <Wrap spacing={2}>
+                      {[
+                        { id: 'faculty', label: 'Faculty Call' },
+                        { id: 'general', label: 'General Notice' },
+                        { id: 'custom', label: 'Custom' },
+                      ].map((opt) => (
+                        <WrapItem key={opt.id}>
+                          <Button
+                            size="sm"
+                            variant={announceMode === opt.id ? 'solid' : 'outline'}
+                            colorScheme="blue"
+                            onClick={() => setAnnounceMode(opt.id)}
+                          >
+                            {opt.label}
+                          </Button>
+                        </WrapItem>
+                      ))}
+                    </Wrap>
+                  </FormControl>
+
+                  {announceMode === 'faculty' && (
+                    <SimpleGrid columns={{ base: 1, md: 2 }} gap={3}>
+                      <FormControl>
+                        <FormLabel fontSize="sm">Faculty</FormLabel>
+                        <FacultySelect
+                          value={announceFaculty}
+                          onChange={setAnnounceFaculty}
+                          onChangeId={setAnnounceFacultyId}
+                          placeholder="Select faculty"
+                          allowClear
+                        />
+                      </FormControl>
+                      {announcementLocationNeeded && (
+                        <FormControl>
+                          <FormLabel fontSize="sm">Location</FormLabel>
+                          <Input
+                            value={announceLocation}
+                            onChange={(e) => setAnnounceLocation(e.target.value)}
+                            placeholder="admin office"
+                          />
+                        </FormControl>
+                      )}
+                    </SimpleGrid>
+                  )}
+
+                  {announceMode === 'general' && (
+                    <SimpleGrid columns={{ base: 1, md: 2 }} gap={3}>
+                      <FormControl>
+                        <FormLabel fontSize="sm">Template</FormLabel>
+                        <Select
+                          value={announceTemplate}
+                          onChange={(e) => setAnnounceTemplate(e.target.value)}
+                        >
+                          {GENERAL_ANNOUNCEMENT_TEMPLATES.map((tpl) => (
+                            <option key={tpl.id} value={tpl.id}>{tpl.label}</option>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      {announcementLocationNeeded && (
+                        <FormControl>
+                          <FormLabel fontSize="sm">Location</FormLabel>
+                          <Input
+                            value={announceLocation}
+                            onChange={(e) => setAnnounceLocation(e.target.value)}
+                            placeholder="auditorium"
+                          />
+                        </FormControl>
+                      )}
+                    </SimpleGrid>
+                  )}
+
+                  {announceMode === 'custom' && (
+                    <FormControl>
+                      <FormLabel fontSize="sm">Custom message</FormLabel>
+                      <Textarea
+                        value={announceCustom}
+                        onChange={(e) => setAnnounceCustom(e.target.value)}
+                        placeholder="Type the announcement..."
+                        rows={4}
+                      />
+                    </FormControl>
+                  )}
+
+                  <Box borderWidth="1px" borderColor={border} rounded="md" p={3} bg={softBg}>
+                    <Text fontSize="xs" color={muted} mb={1}>Message Preview</Text>
+                    <Text fontSize="sm" fontWeight="600" whiteSpace="pre-wrap">
+                      {announcementMessage || 'No message yet.'}
+                    </Text>
+                  </Box>
+                </VStack>
+              </Box>
+
+              <Box borderWidth="1px" borderColor={border} rounded="lg" p={4} bg={bg}>
+                <VStack align="stretch" spacing={3}>
+                  <HStack justify="space-between" flexWrap="wrap">
+                    <Heading size="sm">Voice and Playback</Heading>
+                    <Badge colorScheme={visibleVoices.length ? 'green' : 'gray'} variant="subtle">
+                      {visibleVoices.length ? `${visibleVoices.length} en-US voices` : 'No en-US voices'}
+                    </Badge>
+                  </HStack>
+                  <FormControl>
+                    <FormLabel fontSize="sm">Voice</FormLabel>
+                    <Select
+                      value={announceVoice}
+                      onChange={(e) => setAnnounceVoice(e.target.value)}
+                      isDisabled={!visibleVoices.length}
+                    >
+                      {visibleVoices.map((v) => (
+                        <option key={`${v.name}-${v.lang}`} value={v.name}>
+                          {v.name} ({v.lang})
+                        </option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <SimpleGrid columns={{ base: 1, md: 2 }} gap={3}>
+                    <NumberField
+                      label="Rate"
+                      value={announceRate}
+                      min={0.5}
+                      max={2}
+                      step={0.1}
+                      onChange={setAnnounceRate}
+                      helper="1.0 = normal speed"
+                    />
+                    <NumberField
+                      label="Pitch"
+                      value={announcePitch}
+                      min={0.5}
+                      max={2}
+                      step={0.1}
+                      onChange={setAnnouncePitch}
+                      helper="1.0 = default pitch"
+                    />
+                  </SimpleGrid>
+                  <Divider />
+                  <HStack justify="space-between">
+                    <Heading size="xs" textTransform="uppercase" color={muted}>Chime & Repeat</Heading>
+                    <Badge colorScheme="purple" variant="subtle">Paging style</Badge>
+                  </HStack>
+                  <SimpleGrid columns={{ base: 1, md: 2 }} gap={3}>
+                    <FormControl display="flex" alignItems="center" justifyContent="space-between">
+                      <FormLabel mb="0" fontSize="sm">Pre-chime</FormLabel>
+                      <Switch
+                        colorScheme="blue"
+                        isChecked={announcePreChime}
+                        onChange={(e) => setAnnouncePreChime(e.target.checked)}
+                      />
+                    </FormControl>
+                    <FormControl display="flex" alignItems="center" justifyContent="space-between">
+                      <FormLabel mb="0" fontSize="sm">Post-chime</FormLabel>
+                      <Switch
+                        colorScheme="blue"
+                        isChecked={announcePostChime}
+                        onChange={(e) => setAnnouncePostChime(e.target.checked)}
+                      />
+                    </FormControl>
+                  </SimpleGrid>
+                  <SimpleGrid columns={{ base: 1, md: 2 }} gap={3}>
+                    <NumberField
+                      label="Chime count"
+                      value={announceChimeCount}
+                      min={1}
+                      max={5}
+                      step={1}
+                      onChange={setAnnounceChimeCount}
+                      helper="How many chimes per sequence."
+                    />
+                    <NumberField
+                      label="Chime gap (seconds)"
+                      value={announceChimeGapSeconds}
+                      min={0}
+                      max={5}
+                      step={0.1}
+                      onChange={setAnnounceChimeGapSeconds}
+                      helper="Pause between chimes."
+                    />
+                  </SimpleGrid>
+                  <SimpleGrid columns={{ base: 1, md: 2 }} gap={3}>
+                    <NumberField
+                      label="Repeat count"
+                      value={announceRepeatCount}
+                      min={1}
+                      max={5}
+                      step={1}
+                      onChange={setAnnounceRepeatCount}
+                      helper="How many times to repeat the message."
+                    />
+                    <NumberField
+                      label="Repeat gap (seconds)"
+                      value={announceRepeatGapSeconds}
+                      min={0}
+                      max={30}
+                      step={0.5}
+                      onChange={setAnnounceRepeatGapSeconds}
+                      helper="Pause between message repeats."
+                    />
+                  </SimpleGrid>
+                  <HStack spacing={2} flexWrap="wrap">
+                    <Button
+                      size="sm"
+                      leftIcon={<FiVolume2 />}
+                      variant="outline"
+                      onClick={previewAnnouncement}
+                      isDisabled={!announcementMessage || !ttsSupported || !visibleVoices.length}
+                    >
+                      Preview
+                    </Button>
+                    <Button
+                      size="sm"
+                      colorScheme="blue"
+                      leftIcon={<FiSend />}
+                      onClick={sendAnnouncement}
+                      isLoading={announceSending}
+                      isDisabled={!announcementMessage || !isAdmin}
+                      loadingText="Sending"
+                    >
+                      Announce Now
+                    </Button>
+                  </HStack>
+                  {!ttsSupported && (
+                    <Text fontSize="xs" color={muted}>
+                      Text-to-speech is not available in this browser.
+                    </Text>
+                  )}
+                  {ttsSupported && !visibleVoices.length && (
+                    <Text fontSize="xs" color={muted}>
+                      No en-US voices are installed on this device. Install an English (US) voice in system settings.
+                    </Text>
+                  )}
+                </VStack>
+              </Box>
+            </SimpleGrid>
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
     </Box>
   );
 }

@@ -995,6 +995,20 @@ class ApiService {
     return await res.json();
   }
 
+  async broadcastAnnouncement(payload) {
+    const url = `${this.baseURL}/announcements/broadcast`;
+    const res = await this._fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+      },
+      body: JSON.stringify(payload || {}),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   // AUTH API
   async login(identifier, password) {
     return this.requestAbs(`${this.authPath}/login`, {
