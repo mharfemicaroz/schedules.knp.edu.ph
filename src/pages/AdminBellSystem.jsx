@@ -120,9 +120,7 @@ const SOUND_TITLES = {
   on: 'On-time Sound',
   after: 'After Sound',
 };
-const REALTIME_FAST_MS = 1000;
-const REALTIME_SLOW_MS = 30000;
-const REALTIME_SAME_LIMIT = 3;
+const REALTIME_RECONNECT_MS = 3000;
 const OVERRIDE_MIN_HOLD_MS = 5000;
 
 function parseTimeToMinutes(value) {
@@ -311,12 +309,9 @@ export default function AdminBellSystem() {
   const lastEventRef = React.useRef(null);
   const overrideDelayRef = React.useRef(null);
   const [rtEnabled, setRtEnabled] = React.useState(true);
-  const [rtIntervalMs, setRtIntervalMs] = React.useState(REALTIME_FAST_MS);
-  const rtTimerRef = React.useRef(null);
-  const rtInFlightRef = React.useRef(false);
-  const rtMetaUpdatedAtRef = React.useRef('');
-  const rtSameRef = React.useRef(0);
-  const rtDelayRef = React.useRef(REALTIME_FAST_MS);
+  const [rtStatus, setRtStatus] = React.useState('connecting');
+  const wsRef = React.useRef(null);
+  const rtReconnectRef = React.useRef(null);
 
   const dirty = React.useMemo(() => JSON.stringify(form) !== JSON.stringify(orig), [form, orig]);
   const controlsDisabled = overrideActive;
@@ -401,8 +396,6 @@ export default function AdminBellSystem() {
       const data = await dispatch(loadSettingsThunk()).unwrap();
       const snap = buildSnapshot(data);
       applySnapshot(snap, { force: true });
-      rtMetaUpdatedAtRef.current = snap.updatedAt ? String(snap.updatedAt) : '';
-      rtSameRef.current = 0;
     } catch (e) {
       toast({ title: 'Failed to load bell settings', status: 'error' });
     } finally {
@@ -412,86 +405,101 @@ export default function AdminBellSystem() {
 
   React.useEffect(() => { refresh(); }, [refresh]);
 
+  const wsUrl = React.useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    const baseUrl = apiService.baseURL || '';
+    const loc = window.location;
+    const proto = loc.protocol === 'https:' ? 'wss' : 'ws';
+    try {
+      if (/^https?:\/\//i.test(baseUrl)) {
+        const url = new URL(baseUrl);
+        url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+        url.pathname = url.pathname.replace(/\/$/, '') + '/ws';
+        return url.toString();
+      }
+    } catch {}
+    const path = String(baseUrl || '').replace(/\/$/, '');
+    return `${proto}://${loc.host}${path}/ws`;
+  }, []);
+
+  const refreshSilent = React.useCallback(async () => {
+    if (dirtyRef.current || overrideActiveRef.current || savingRef.current) return;
+    try {
+      const data = await dispatch(loadSettingsThunk()).unwrap();
+      const snap = buildSnapshot(data);
+      applySnapshot(snap);
+    } catch {}
+  }, [dispatch, buildSnapshot, applySnapshot]);
+
   React.useEffect(() => {
+    if (!rtEnabled || !wsUrl || typeof window === 'undefined') {
+      setRtStatus('off');
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch {}
+        wsRef.current = null;
+      }
+      return () => {};
+    }
     let cancelled = false;
-    const clearTimer = () => {
-      if (rtTimerRef.current) {
-        clearTimeout(rtTimerRef.current);
-        rtTimerRef.current = null;
+    const clearReconnect = () => {
+      if (rtReconnectRef.current) {
+        clearTimeout(rtReconnectRef.current);
+        rtReconnectRef.current = null;
       }
     };
-    const scheduleNext = (delayMs) => {
+    const scheduleReconnect = () => {
       if (cancelled || !rtEnabled) return;
-      clearTimer();
-      rtDelayRef.current = delayMs;
-      setRtIntervalMs(delayMs);
-      rtTimerRef.current = setTimeout(run, delayMs);
+      if (rtReconnectRef.current) return;
+      rtReconnectRef.current = setTimeout(() => {
+        rtReconnectRef.current = null;
+        connect();
+      }, REALTIME_RECONNECT_MS);
     };
-    const parseFastPollUntil = (value) => {
-      if (!value) return null;
-      const ts = new Date(value).getTime();
-      return Number.isFinite(ts) ? ts : null;
-    };
-    const decideDelay = (meta, sameCount) => {
-      const hasFast = !!(meta && Object.prototype.hasOwnProperty.call(meta, 'fastPollUntil'));
-      const untilMs = hasFast ? parseFastPollUntil(meta.fastPollUntil) : null;
-      if (untilMs && untilMs > Date.now()) return REALTIME_FAST_MS;
-      if (hasFast) return REALTIME_SLOW_MS;
-      return sameCount >= REALTIME_SAME_LIMIT ? REALTIME_SLOW_MS : REALTIME_FAST_MS;
-    };
-    const run = async () => {
-      if (cancelled || !rtEnabled) return;
-      if (rtInFlightRef.current) {
-        scheduleNext(rtDelayRef.current);
+    const connect = () => {
+      if (cancelled) return;
+      setRtStatus('connecting');
+      let socket;
+      try {
+        socket = new WebSocket(wsUrl);
+      } catch {
+        setRtStatus('disconnected');
+        scheduleReconnect();
         return;
       }
-      rtInFlightRef.current = true;
-      try {
-        const meta = await apiService.getSettingsMeta();
-        const metaUpdatedAt = meta?.updatedAt ? String(meta.updatedAt) : '';
-        const prevUpdatedAt = rtMetaUpdatedAtRef.current;
-        if (metaUpdatedAt && metaUpdatedAt !== prevUpdatedAt) {
-          try {
-            const data = await dispatch(loadSettingsThunk()).unwrap();
-            const snap = buildSnapshot(data);
-            applySnapshot(snap);
-            rtMetaUpdatedAtRef.current = snap.updatedAt ? String(snap.updatedAt) : metaUpdatedAt;
-            rtSameRef.current = 0;
-          } catch {
-            rtSameRef.current = 0;
-          }
-        } else {
-          rtSameRef.current += 1;
-        }
-        scheduleNext(decideDelay(meta, rtSameRef.current));
-      } catch {
+      wsRef.current = socket;
+      socket.onopen = () => {
+        if (cancelled) return;
+        setRtStatus('connected');
+      };
+      socket.onmessage = (event) => {
+        if (cancelled) return;
         try {
-          const data = await dispatch(loadSettingsThunk()).unwrap();
-          const snap = buildSnapshot(data);
-          applySnapshot(snap);
-          rtMetaUpdatedAtRef.current = snap.updatedAt ? String(snap.updatedAt) : rtMetaUpdatedAtRef.current;
-          rtSameRef.current = 0;
+          const msg = JSON.parse(event.data);
+          if (msg && msg.event === 'settings_updated') {
+            void refreshSilent();
+          }
         } catch {}
-        scheduleNext(Math.max(rtDelayRef.current, REALTIME_SLOW_MS));
-      } finally {
-        rtInFlightRef.current = false;
-      }
+      };
+      socket.onerror = () => {
+        try { socket.close(); } catch {}
+      };
+      socket.onclose = () => {
+        if (cancelled) return;
+        setRtStatus('disconnected');
+        scheduleReconnect();
+      };
     };
 
-    if (!rtEnabled) {
-      clearTimer();
-      return () => { cancelled = true; };
-    }
-
-    rtSameRef.current = 0;
-    rtDelayRef.current = REALTIME_FAST_MS;
-    setRtIntervalMs(REALTIME_FAST_MS);
-    run();
+    connect();
     return () => {
       cancelled = true;
-      clearTimer();
+      clearReconnect();
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch {}
+        wsRef.current = null;
+      }
     };
-  }, [rtEnabled, dispatch, buildSnapshot, applySnapshot]);
+  }, [rtEnabled, wsUrl, refreshSilent]);
 
   const save = async () => {
     try {
@@ -500,8 +508,6 @@ export default function AdminBellSystem() {
       const data = await dispatch(updateSettingsThunk(payload)).unwrap();
       const snap = buildSnapshot(data);
       applySnapshot(snap, { force: true });
-      rtMetaUpdatedAtRef.current = snap.updatedAt ? String(snap.updatedAt) : '';
-      rtSameRef.current = 0;
       toast({ title: 'Bell settings saved', status: 'success' });
     } catch (e) {
       toast({ title: e?.message || 'Failed to save', status: 'error' });
@@ -868,7 +874,13 @@ export default function AdminBellSystem() {
             />
           </FormControl>
           <Text fontSize="xs" color={muted}>
-            {rtEnabled ? `Polling every ${Math.round(rtIntervalMs / 1000)}s` : 'Polling paused'}
+            {rtEnabled
+              ? (rtStatus === 'connected'
+                ? 'Realtime connected'
+                : rtStatus === 'connecting'
+                  ? 'Realtime connecting...'
+                  : 'Realtime disconnected')
+              : 'Realtime off'}
           </Text>
           <Button variant="outline" onClick={refresh} isLoading={loading} isDisabled={controlsDisabled} loadingText="Refreshing">Refresh</Button>
           <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading || controlsDisabled} isLoading={saving} loadingText="Saving">Save</Button>

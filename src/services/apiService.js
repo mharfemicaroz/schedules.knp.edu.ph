@@ -963,17 +963,6 @@ class ApiService {
     return await res.json();
   }
 
-  async getSettingsMeta() {
-    const url = `${this.baseURL}/settings/meta`;
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
-    if (!res.ok) {
-      const err = new Error(`HTTP ${res.status}: ${res.statusText}`);
-      err.status = res.status;
-      throw err;
-    }
-    return await res.json();
-  }
-
   async updateSettings(patch) {
     const url = `${this.baseURL}/settings/`;
     const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(patch || {}) });
