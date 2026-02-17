@@ -313,7 +313,7 @@ export default function AdminBellSystem() {
   const [rtIntervalMs, setRtIntervalMs] = React.useState(REALTIME_FAST_MS);
   const rtTimerRef = React.useRef(null);
   const rtInFlightRef = React.useRef(false);
-  const rtHashRef = React.useRef('');
+  const rtMetaUpdatedAtRef = React.useRef('');
   const rtSameRef = React.useRef(0);
   const rtDelayRef = React.useRef(REALTIME_FAST_MS);
 
@@ -400,7 +400,7 @@ export default function AdminBellSystem() {
       const data = await dispatch(loadSettingsThunk()).unwrap();
       const snap = buildSnapshot(data);
       applySnapshot(snap, { force: true });
-      rtHashRef.current = snap.hash;
+      rtMetaUpdatedAtRef.current = snap.updatedAt ? String(snap.updatedAt) : '';
       rtSameRef.current = 0;
     } catch (e) {
       toast({ title: 'Failed to load bell settings', status: 'error' });
@@ -426,6 +426,18 @@ export default function AdminBellSystem() {
       setRtIntervalMs(delayMs);
       rtTimerRef.current = setTimeout(run, delayMs);
     };
+    const parseFastPollUntil = (value) => {
+      if (!value) return null;
+      const ts = new Date(value).getTime();
+      return Number.isFinite(ts) ? ts : null;
+    };
+    const decideDelay = (meta, sameCount) => {
+      const hasFast = !!(meta && Object.prototype.hasOwnProperty.call(meta, 'fastPollUntil'));
+      const untilMs = hasFast ? parseFastPollUntil(meta.fastPollUntil) : null;
+      if (untilMs && untilMs > Date.now()) return REALTIME_FAST_MS;
+      if (hasFast) return REALTIME_SLOW_MS;
+      return sameCount >= REALTIME_SAME_LIMIT ? REALTIME_SLOW_MS : REALTIME_FAST_MS;
+    };
     const run = async () => {
       if (cancelled || !rtEnabled) return;
       if (rtInFlightRef.current) {
@@ -434,20 +446,31 @@ export default function AdminBellSystem() {
       }
       rtInFlightRef.current = true;
       try {
-        const data = await dispatch(loadSettingsThunk()).unwrap();
-        const snap = buildSnapshot(data);
-        if (snap.hash === rtHashRef.current) {
-          rtSameRef.current += 1;
+        const meta = await apiService.getSettingsMeta();
+        const metaUpdatedAt = meta?.updatedAt ? String(meta.updatedAt) : '';
+        const prevUpdatedAt = rtMetaUpdatedAtRef.current;
+        if (metaUpdatedAt && metaUpdatedAt !== prevUpdatedAt) {
+          try {
+            const data = await dispatch(loadSettingsThunk()).unwrap();
+            const snap = buildSnapshot(data);
+            applySnapshot(snap);
+            rtMetaUpdatedAtRef.current = snap.updatedAt ? String(snap.updatedAt) : metaUpdatedAt;
+            rtSameRef.current = 0;
+          } catch {
+            rtSameRef.current = 0;
+          }
         } else {
-          rtSameRef.current = 0;
+          rtSameRef.current += 1;
         }
-        rtHashRef.current = snap.hash;
-        const nextDelay = rtSameRef.current >= REALTIME_SAME_LIMIT
-          ? REALTIME_SLOW_MS
-          : REALTIME_FAST_MS;
-        applySnapshot(snap);
-        scheduleNext(nextDelay);
+        scheduleNext(decideDelay(meta, rtSameRef.current));
       } catch {
+        try {
+          const data = await dispatch(loadSettingsThunk()).unwrap();
+          const snap = buildSnapshot(data);
+          applySnapshot(snap);
+          rtMetaUpdatedAtRef.current = snap.updatedAt ? String(snap.updatedAt) : rtMetaUpdatedAtRef.current;
+          rtSameRef.current = 0;
+        } catch {}
         scheduleNext(Math.max(rtDelayRef.current, REALTIME_SLOW_MS));
       } finally {
         rtInFlightRef.current = false;
@@ -476,7 +499,7 @@ export default function AdminBellSystem() {
       const data = await dispatch(updateSettingsThunk(payload)).unwrap();
       const snap = buildSnapshot(data);
       applySnapshot(snap, { force: true });
-      rtHashRef.current = snap.hash;
+      rtMetaUpdatedAtRef.current = snap.updatedAt ? String(snap.updatedAt) : '';
       rtSameRef.current = 0;
       toast({ title: 'Bell settings saved', status: 'success' });
     } catch (e) {
