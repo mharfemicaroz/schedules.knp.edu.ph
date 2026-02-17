@@ -34,7 +34,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { loadSettingsThunk, updateSettingsThunk } from '../store/settingsThunks';
 import { selectSettings } from '../store/settingsSlice';
 import apiService from '../services/apiService';
-import { listenToBellOverride, listenToFirebaseConnection } from '../utils/firebaseOverride';
+import { listenToBellOverride } from '../utils/firebaseOverride';
 
 const DEFAULT_BELL = {
   enabled: false,
@@ -308,11 +308,12 @@ export default function AdminBellSystem() {
   const ringLockRef = React.useRef(false);
   const lastEventRef = React.useRef(null);
   const overrideDelayRef = React.useRef(null);
-  const [rtEnabled, setRtEnabled] = React.useState(true);
-  const [rtStatus, setRtStatus] = React.useState('connecting');
   const lastOverrideEventRef = React.useRef('');
   const lastLocalOverrideRef = React.useRef('');
   const overrideAudioWarnRef = React.useRef(false);
+  const firebaseConfigured = React.useMemo(() => (
+    !!import.meta.env.VITE_FB_API_KEY && !!import.meta.env.VITE_FB_DATABASE_URL
+  ), []);
 
   const dirty = React.useMemo(() => JSON.stringify(form) !== JSON.stringify(orig), [form, orig]);
   const controlsDisabled = overrideActive;
@@ -414,6 +415,9 @@ export default function AdminBellSystem() {
       applySnapshot(snap);
     } catch {}
   }, [dispatch, buildSnapshot, applySnapshot]);
+
+  const refreshSilentRef = React.useRef(refreshSilent);
+  React.useEffect(() => { refreshSilentRef.current = refreshSilent; }, [refreshSilent]);
 
   const save = async () => {
     try {
@@ -603,31 +607,25 @@ export default function AdminBellSystem() {
     }
   }, [pickSoundForKind, resolveSoundUrl, triggerBell, toast]);
 
+  const handleRemoteOverrideRef = React.useRef(handleRemoteOverride);
+  React.useEffect(() => { handleRemoteOverrideRef.current = handleRemoteOverride; }, [handleRemoteOverride]);
+
   React.useEffect(() => {
-    if (!rtEnabled) {
-      setRtStatus('off');
+    if (!firebaseConfigured) {
       return () => {};
     }
-    const configured = !!import.meta.env.VITE_FB_API_KEY && !!import.meta.env.VITE_FB_DATABASE_URL;
-    if (!configured) {
-      setRtStatus('disconnected');
-      return () => {};
-    }
-    setRtStatus('connecting');
-    const unsubConn = listenToFirebaseConnection((isConnected) => {
-      setRtStatus(isConnected ? 'connected' : 'disconnected');
-    });
     const unsubOverride = listenToBellOverride((payload) => {
-      void refreshSilent();
+      const refreshNow = refreshSilentRef.current;
+      if (refreshNow) void refreshNow();
       if (payload?.type === 'override') {
-        void handleRemoteOverride(payload);
+        const handler = handleRemoteOverrideRef.current;
+        if (handler) void handler(payload);
       }
     });
     return () => {
       unsubOverride();
-      unsubConn();
     };
-  }, [rtEnabled, refreshSilent, handleRemoteOverride]);
+  }, [firebaseConfigured]);
 
   const previewSound = React.useCallback(async (kind) => {
     if (overrideActive) return;
@@ -821,26 +819,6 @@ export default function AdminBellSystem() {
           <Heading size="md">Automated Bell System</Heading>
         </HStack>
         <HStack spacing={3} flexWrap="wrap">
-          <FormControl display="flex" alignItems="center" w="auto">
-            <FormLabel htmlFor="bell-realtime" mb="0" fontSize="sm" fontWeight="600">
-              Realtime
-            </FormLabel>
-            <Switch
-              id="bell-realtime"
-              colorScheme="blue"
-              isChecked={rtEnabled}
-              onChange={(e) => setRtEnabled(e.target.checked)}
-            />
-          </FormControl>
-          <Text fontSize="xs" color={muted}>
-            {rtEnabled
-              ? (rtStatus === 'connected'
-                ? 'Realtime connected'
-                : rtStatus === 'connecting'
-                  ? 'Realtime connecting...'
-                  : 'Realtime disconnected')
-              : 'Realtime off'}
-          </Text>
           <Button variant="outline" onClick={refresh} isLoading={loading} isDisabled={controlsDisabled} loadingText="Refreshing">Refresh</Button>
           <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading || controlsDisabled} isLoading={saving} loadingText="Saving">Save</Button>
         </HStack>
