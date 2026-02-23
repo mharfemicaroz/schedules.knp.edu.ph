@@ -65,7 +65,7 @@ export default function AttendancePrint() {
       await apiService.updateAttendance(record.id, {
         status: 'excused',
         date: record.date,
-        remarks: record.remarks,
+        remarks: record.remarks == null ? '' : String(record.remarks),
       });
       toast({ title: 'Marked as excused', status: 'success' });
       await refresh(true);
@@ -193,17 +193,17 @@ export default function AttendancePrint() {
     .prt-title { font-weight: 900; font-size: 20px; margin: 0; }
     .prt-sub { color: #333; margin: 6px 0 0 0; font-size: 13px; font-weight: 600; }
     .prt-meta { color: #666; font-size: 12px; margin: 8px 0 0 0; }
-    .prt-body { padding: 16px 24px 24px; }
-    .prt-table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; }
-    .prt-table th, .prt-table td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; line-height: 1.3; vertical-align: top; }
+    .prt-body { padding: 16px 24px 24px; overflow-x: auto; }
+    .prt-table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: auto; }
+    .prt-table th, .prt-table td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; line-height: 1.3; vertical-align: top; word-break: break-word; }
     .prt-table th { background: #f6f9fc; text-align: left; font-weight: 700; }
-    .prt-table .col-action { width: 1%; white-space: nowrap; text-align: right; }
+    .prt-table .col-action { width: 72px; min-width: 72px; white-space: nowrap; text-align: right; }
     .prt-fac-name { font-weight: 900; font-size: 16px; margin: 0 0 6px 0; }
     .prt-footer { padding: 0 24px 16px; margin-top: 12px; display: flex; gap: 32px; justify-content: space-between; flex-wrap: wrap; font-size: 13px; }
     .prt-block { min-width: 260px; }
     .prt-sign { margin-top: 12px; display: inline-block; border-top: 1px solid #333; padding-top: 6px; font-weight: 700; }
     .prt-role { color: #444; font-size: 12px; }
-    .excuse-btn { background: #0f172a; color: #fff; border: 1px solid #0f172a; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 3px 8px; cursor: pointer; }
+    .excuse-btn { background: #0f172a; color: #fff; border: 1px solid #0f172a; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 4px 10px; line-height: 1; cursor: pointer; }
     .excuse-btn:hover { background: #1d4ed8; border-color: #1d4ed8; }
     .excuse-btn:disabled { background: #94a3b8; border-color: #94a3b8; cursor: not-allowed; opacity: 0.8; }
     .excuse-muted { color: #94a3b8; font-size: 11px; font-weight: 700; }
