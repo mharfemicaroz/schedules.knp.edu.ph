@@ -1,14 +1,15 @@
-import React from 'react';
-import { Box, HStack, Button } from '@chakra-ui/react';
+﻿import React from 'react';
+import { Box, HStack, Button, useToast } from '@chakra-ui/react';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import useAttendance from '../hooks/useAttendance';
-import { buildTable } from '../utils/printDesign';
 import useFaculties from '../hooks/useFaculties';
+import apiService from '../services/apiService';
 
 export default function AttendancePrint() {
   const [search] = useSearchParams();
+  const toast = useToast();
   const type = normalizeStatus(search.get('type') || 'all');
   const startDate = search.get('startDate') || '';
   const endDate = search.get('endDate') || '';
@@ -34,11 +35,66 @@ export default function AttendancePrint() {
     : '';
   const statusFilter = isSummary ? type : status;
 
-  const { data, loading } = useAttendance({ page: 1, limit: '', startDate, endDate, term, school_year: schoolYear, semester, facultyId, faculty, status: statusFilter, schedules });
+  const { data, loading, refresh } = useAttendance({ page: 1, limit: '', startDate, endDate, term, school_year: schoolYear, semester, facultyId, faculty, status: statusFilter, schedules });
+  const [excusingIds, setExcusingIds] = React.useState(() => new Set());
+  const allowExcuse = normalizeStatus(type) === 'absent' || normalizeStatus(statusFilter) === 'absent';
+
+  const recordById = React.useMemo(() => {
+    const map = new Map();
+    const arr = Array.isArray(data) ? data : [];
+    arr.forEach((r) => {
+      if (r && r.id != null) map.set(String(r.id), r);
+    });
+    return map;
+  }, [data]);
+
+  const handleExcuse = React.useCallback(async (id) => {
+    const key = String(id || '').trim();
+    if (!key || excusingIds.has(key)) return;
+    const record = recordById.get(key);
+    if (!record) {
+      toast({ title: 'Record not found', status: 'warning' });
+      return;
+    }
+    setExcusingIds((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+    try {
+      await apiService.updateAttendance(record.id, {
+        status: 'excused',
+        date: record.date,
+        remarks: record.remarks,
+      });
+      toast({ title: 'Marked as excused', status: 'success' });
+      await refresh(true);
+    } catch (e) {
+      toast({ title: 'Failed to update', description: e.message, status: 'error' });
+    } finally {
+      setExcusingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }, [excusingIds, recordById, refresh, toast]);
+
+  const handleBodyClick = React.useCallback((event) => {
+    const target = event.target;
+    const btn = target && typeof target.closest === 'function'
+      ? target.closest('[data-attendance-id]')
+      : null;
+    if (!btn) return;
+    const id = btn.getAttribute('data-attendance-id');
+    if (!id) return;
+    event.preventDefault();
+    handleExcuse(id);
+  }, [handleExcuse]);
 
   const title = isSummary ? `${summaryLabel} Summary (Per Faculty)` : 'Attendance Report';
   const subBits = [];
-  if (startDate || endDate) subBits.push(`Dates: ${startDate || '—'} to ${endDate || '—'}`);
+  if (startDate || endDate) subBits.push(`Dates: ${startDate || 'â€”'} to ${endDate || 'â€”'}`);
   if (schoolYear) subBits.push(`SY: ${schoolYear}`);
   if (semester) subBits.push(`Sem: ${semester}`);
   if (term) subBits.push(`Term: ${term}`);
@@ -46,8 +102,44 @@ export default function AttendancePrint() {
   const subtitle = subBits.join('  |  ');
 
   const bodyHtml = React.useMemo(() => {
-    if (loading) return '<p>Loading…</p>';
+    if (loading) return '<p>Loading...</p>';
     const arr = Array.isArray(data) ? data : [];
+    const renderExcuseButton = (row) => {
+      if (!allowExcuse) return '';
+      const key = row && row.id != null ? String(row.id) : '';
+      if (!key) return '<span class="excuse-muted">N/A</span>';
+      const busy = excusingIds.has(key);
+      const label = busy ? 'Excusing...' : 'Excuse';
+      const disabled = busy ? 'disabled aria-disabled="true"' : '';
+      return `<button type="button" class="excuse-btn" data-attendance-id="${escapeHtml(key)}" ${disabled}>${label}</button>`;
+    };
+    const buildTableHtml = (headers, rows, showAction) => {
+      const norm = (s) => String(s || '').trim().toLowerCase();
+      const allHeaders = showAction ? [...headers, 'Excuse'] : headers;
+      const colClasses = allHeaders.map((h, i) => {
+        if (showAction && i === allHeaders.length - 1) return 'col-action no-print';
+        const n = norm(h);
+        if (n === 'title' || n === 'course' || n === 'subject' || n === 'remarks') return 'col-title';
+        if (n === 'faculty') return 'col-faculty';
+        return 'col-tight';
+      });
+      const thead = `<thead><tr>${allHeaders
+        .map((h, i) => `<th class="${colClasses[i]}">${escapeHtml(h)}</th>`)
+        .join('')}</tr></thead>`;
+      const tbody = `<tbody>${rows
+        .map((row) => {
+          const cells = Array.isArray(row?.cells) ? row.cells : [];
+          const tds = cells
+            .map((c, i) => `<td class="${colClasses[i]}">${escapeHtml(c)}</td>`)
+            .join('');
+          const actionTd = showAction
+            ? `<td class="${colClasses[colClasses.length - 1]}">${renderExcuseButton(row)}</td>`
+            : '';
+          return `<tr>${tds}${actionTd}</tr>`;
+        })
+        .join('')}</tbody>`;
+      return `<table class="prt-table">${thead}${tbody}</table>`;
+    };
     if (isSummary) {
       const by = new Map();
       arr.forEach(r => {
@@ -58,7 +150,7 @@ export default function AttendancePrint() {
         const key = fac || '(Unknown Faculty)';
         const subj = [sch.programcode, sch.courseName, sch.courseTitle].filter(Boolean).join(' - ');
         const tm = [sch.day, sch.time].filter(Boolean).join(' ');
-        const row = [r.date || '', subj || '-', tm || '-', sch.term || ''];
+        const row = { id: r.id, status: r.status, cells: [r.date || '', subj || '-', tm || '-', sch.term || ''] };
         const a = by.get(key) || []; a.push(row); by.set(key, a);
       });
       const names = Array.from(by.keys()).sort((a,b)=>a.localeCompare(b));
@@ -66,20 +158,20 @@ export default function AttendancePrint() {
       let html = '';
       names.forEach((name) => {
         const rows = by.get(name) || [];
-        const tbl = buildTable(['Date','Subject','Time','Term'], rows);
+        const tbl = buildTableHtml(['Date','Subject','Time','Term'], rows, allowExcuse && type === 'absent');
         html += `<div style="margin-bottom:12px;"><h3 class="prt-fac-name">${escapeHtml(name)}</h3>${tbl}</div>`;
       });
       return html;
     } else {
       const rows = arr.map(r => {
         const sch = r.schedule || {};
-        const course = [sch.programcode, sch.courseName].filter(Boolean).join(' – ');
+        const course = [sch.programcode, sch.courseName].filter(Boolean).join(' - ');
         const sched = [sch.day, sch.time].filter(Boolean).join(' ');
-        return [r.date || '', String(r.status || '').toUpperCase(), course || '-', sched || '-', String(r.remarks || '').slice(0,80)];
+        return { id: r.id, status: r.status, cells: [r.date || '', String(r.status || '').toUpperCase(), course || '-', sched || '-', String(r.remarks || '').slice(0,80)] };
       });
-      return buildTable(['Date','Status','Course','Schedule','Remarks'], rows);
+      return buildTableHtml(['Date','Status','Course','Schedule','Remarks'], rows, allowExcuse);
     }
-  }, [isSummary, type, data, loading, summaryLabel, facultyById]);
+  }, [isSummary, type, data, loading, summaryLabel, facultyById, allowExcuse, excusingIds]);
 
   const styles = `
     @page { size: A4 portrait; margin: 12mm; }
@@ -87,7 +179,8 @@ export default function AttendancePrint() {
     html, body { height: 100%; }
     body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 0; color: #0a0a0a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .toolbar { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 8px 12px; display: flex; gap: 8px; z-index: 5; }
-    @media print { .toolbar { display: none; } }
+    .no-print { }
+    @media print { .toolbar { display: none; } .no-print { display: none !important; } }
     .inst-hero { position: relative; background: url('/bg.jpg') center/cover no-repeat; min-height: 120px; padding: 16px 24px; display: flex; align-items: center; }
     .inst-hero::after { content: ''; position: absolute; inset: 0; background: rgba(255,255,255,0.92); z-index: 0; }
     .inst-wrap { position: relative; z-index: 1; display: flex; align-items: center; gap: 16px; width: 100%; }
@@ -104,11 +197,16 @@ export default function AttendancePrint() {
     .prt-table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; }
     .prt-table th, .prt-table td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; line-height: 1.3; vertical-align: top; }
     .prt-table th { background: #f6f9fc; text-align: left; font-weight: 700; }
+    .prt-table .col-action { width: 1%; white-space: nowrap; text-align: right; }
     .prt-fac-name { font-weight: 900; font-size: 16px; margin: 0 0 6px 0; }
     .prt-footer { padding: 0 24px 16px; margin-top: 12px; display: flex; gap: 32px; justify-content: space-between; flex-wrap: wrap; font-size: 13px; }
     .prt-block { min-width: 260px; }
     .prt-sign { margin-top: 12px; display: inline-block; border-top: 1px solid #333; padding-top: 6px; font-weight: 700; }
     .prt-role { color: #444; font-size: 12px; }
+    .excuse-btn { background: #0f172a; color: #fff; border: 1px solid #0f172a; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 3px 8px; cursor: pointer; }
+    .excuse-btn:hover { background: #1d4ed8; border-color: #1d4ed8; }
+    .excuse-btn:disabled { background: #94a3b8; border-color: #94a3b8; cursor: not-allowed; opacity: 0.8; }
+    .excuse-muted { color: #94a3b8; font-size: 11px; font-weight: 700; }
   `;
 
   const now = new Date().toLocaleString();
@@ -151,7 +249,7 @@ export default function AttendancePrint() {
       <HStack className="toolbar" justify="flex-end">
         <Button colorScheme="blue" onClick={() => window.print()}>Print</Button>
       </HStack>
-      <Box dangerouslySetInnerHTML={{ __html: html }} />
+      <Box onClick={handleBodyClick} dangerouslySetInnerHTML={{ __html: html }} />
     </Box>
   );
 }
