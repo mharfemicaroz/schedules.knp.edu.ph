@@ -80,8 +80,56 @@ export default function AttendancePrint() {
     }
   }, [excusingIds, recordById, refresh, toast]);
 
+  const handleExcuseMany = React.useCallback(async (ids) => {
+    const list = Array.isArray(ids) ? ids : [];
+    const cleaned = list.map((id) => String(id || '').trim()).filter(Boolean);
+    const pending = cleaned.filter((id) => !excusingIds.has(id));
+    if (!pending.length) return;
+    setExcusingIds((prev) => new Set([...prev, ...pending]));
+    try {
+      const updates = pending
+        .map((id) => recordById.get(id))
+        .filter(Boolean)
+        .map((record) => apiService.updateAttendance(record.id, {
+          status: 'excused',
+          date: record.date,
+          remarks: record.remarks == null ? '' : String(record.remarks),
+        }));
+      if (!updates.length) {
+        toast({ title: 'No records found', status: 'warning' });
+        return;
+      }
+      await Promise.all(updates);
+      toast({
+        title: 'Marked as excused',
+        description: `Excused ${updates.length} record${updates.length === 1 ? '' : 's'}.`,
+        status: 'success',
+      });
+      await refresh(true);
+    } catch (e) {
+      toast({ title: 'Failed to update', description: e.message, status: 'error' });
+    } finally {
+      setExcusingIds((prev) => {
+        const next = new Set(prev);
+        pending.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
+  }, [excusingIds, recordById, refresh, toast]);
+
   const handleBodyClick = React.useCallback((event) => {
     const target = event.target;
+    const batchBtn = target && typeof target.closest === 'function'
+      ? target.closest('[data-attendance-ids]')
+      : null;
+    if (batchBtn) {
+      const raw = batchBtn.getAttribute('data-attendance-ids') || '';
+      const ids = raw.split(',').map((v) => v.trim()).filter(Boolean);
+      if (!ids.length) return;
+      event.preventDefault();
+      handleExcuseMany(ids);
+      return;
+    }
     const btn = target && typeof target.closest === 'function'
       ? target.closest('[data-attendance-id]')
       : null;
@@ -90,7 +138,7 @@ export default function AttendancePrint() {
     if (!id) return;
     event.preventDefault();
     handleExcuse(id);
-  }, [handleExcuse]);
+  }, [handleExcuse, handleExcuseMany]);
 
   const title = isSummary ? `${summaryLabel} Summary (Per Faculty)` : 'Attendance Report';
   const subBits = [];
@@ -112,6 +160,15 @@ export default function AttendancePrint() {
       const label = busy ? 'Excusing...' : 'Excuse';
       const disabled = busy ? 'disabled aria-disabled="true"' : '';
       return `<button type="button" class="excuse-btn" data-attendance-id="${escapeHtml(key)}" ${disabled}>${label}</button>`;
+    };
+    const renderExcuseAllButton = (rows) => {
+      if (!allowExcuse || type !== 'absent') return '';
+      const ids = (rows || []).map((row) => row?.id).filter(Boolean).map((id) => String(id));
+      if (!ids.length) return '';
+      const busy = ids.some((id) => excusingIds.has(id));
+      const label = busy ? 'Excusing...' : `Excuse all (${ids.length})`;
+      const disabled = busy ? 'disabled aria-disabled="true"' : '';
+      return `<button type="button" class="excuse-all-btn no-print" data-attendance-ids="${escapeHtml(ids.join(','))}" ${disabled}>${label}</button>`;
     };
     const buildTableHtml = (headers, rows, showAction) => {
       const norm = (s) => String(s || '').trim().toLowerCase();
@@ -159,7 +216,9 @@ export default function AttendancePrint() {
       names.forEach((name) => {
         const rows = by.get(name) || [];
         const tbl = buildTableHtml(['Date','Subject','Time','Term'], rows, allowExcuse && type === 'absent');
-        html += `<div style="margin-bottom:12px;"><h3 class="prt-fac-name">${escapeHtml(name)}</h3>${tbl}</div>`;
+        const action = renderExcuseAllButton(rows);
+        const head = `<div class="prt-fac-head"><h3 class="prt-fac-name">${escapeHtml(name)}</h3>${action ? `<div class="prt-fac-actions no-print">${action}</div>` : ''}</div>`;
+        html += `<div class="prt-fac-section">${head}${tbl}</div>`;
       });
       return html;
     } else {
@@ -198,7 +257,10 @@ export default function AttendancePrint() {
     .prt-table th, .prt-table td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; line-height: 1.3; vertical-align: top; word-break: break-word; }
     .prt-table th { background: #f6f9fc; text-align: left; font-weight: 700; }
     .prt-table .col-action { width: 72px; min-width: 72px; white-space: nowrap; text-align: right; }
-    .prt-fac-name { font-weight: 900; font-size: 16px; margin: 0 0 6px 0; }
+    .prt-fac-section { margin-bottom: 12px; }
+    .prt-fac-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 6px 0; }
+    .prt-fac-actions { display: flex; align-items: center; gap: 6px; }
+    .prt-fac-name { font-weight: 900; font-size: 16px; margin: 0; }
     .prt-footer { padding: 0 24px 16px; margin-top: 12px; display: flex; gap: 32px; justify-content: space-between; flex-wrap: wrap; font-size: 13px; }
     .prt-block { min-width: 260px; }
     .prt-sign { margin-top: 12px; display: inline-block; border-top: 1px solid #333; padding-top: 6px; font-weight: 700; }
@@ -206,6 +268,9 @@ export default function AttendancePrint() {
     .excuse-btn { background: #0f172a; color: #fff; border: 1px solid #0f172a; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 4px 10px; line-height: 1; cursor: pointer; }
     .excuse-btn:hover { background: #1d4ed8; border-color: #1d4ed8; }
     .excuse-btn:disabled { background: #94a3b8; border-color: #94a3b8; cursor: not-allowed; opacity: 0.8; }
+    .excuse-all-btn { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 4px 10px; line-height: 1; cursor: pointer; }
+    .excuse-all-btn:hover { background: #dbeafe; }
+    .excuse-all-btn:disabled { background: #e2e8f0; color: #64748b; border-color: #e2e8f0; cursor: not-allowed; opacity: 0.9; }
     .excuse-muted { color: #94a3b8; font-size: 11px; font-weight: 700; }
   `;
 
