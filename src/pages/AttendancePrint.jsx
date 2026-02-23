@@ -275,46 +275,41 @@ export default function AttendancePrint() {
   `;
 
   const now = new Date().toLocaleString();
-  const html = `
-    <style>${styles}</style>
-    <div class='inst-hero'>
-      <div class='inst-wrap'>
-        <img class='inst-logo' src='/logo.png' alt='Logo' />
-        <div class='inst-lines'>
-          <p class='inst-name'>Kolehiyo ng Pantukan</p>
-          <p class='inst-office'>Office of the Vice President of Academic Affairs</p>
-          <p class='inst-app'>Smart Academic Scheduler</p>
-        </div>
-      </div>
-    </div>
-    <div class='prt-header'>
-      <p class='prt-title'>${escapeHtml(title)}</p>
-      ${subtitle ? `<p class='prt-sub'>${escapeHtml(subtitle)}</p>` : ''}
-      <p class='prt-meta'>Printed: ${escapeHtml(now)}</p>
-    </div>
-    <div class='prt-body'>
-      ${bodyHtml}
-    </div>
-    <div class='prt-footer'>
-      <div class='prt-block'>
-        <div class='prt-approve'>Verified by:</div>
-        <div class='prt-sign'>Dr. Mharfe M. Micaroz</div>
-        <div class='prt-role'>Vice President of Academic Affairs</div>
-      </div>
-      <div class='prt-block'>
-        <div class='prt-approve'>Approved by:</div>
-        <div class='prt-sign'>Dr. Mary Ann R. Araula</div>
-        <div class='prt-role'>Acting College President</div>
-      </div>
-    </div>
-  `;
 
   return (
     <Box>
+      <style>{styles}</style>
       <HStack className="toolbar" justify="flex-end">
         <Button colorScheme="blue" onClick={() => window.print()}>Print</Button>
       </HStack>
-      <Box onClick={handleBodyClick} dangerouslySetInnerHTML={{ __html: html }} />
+      <Box className="inst-hero">
+        <Box className="inst-wrap">
+          <img className="inst-logo" src="/logo.png" alt="Logo" />
+          <Box className="inst-lines">
+            <p className="inst-name">Kolehiyo ng Pantukan</p>
+            <p className="inst-office">Office of the Vice President of Academic Affairs</p>
+            <p className="inst-app">Smart Academic Scheduler</p>
+          </Box>
+        </Box>
+      </Box>
+      <Box className="prt-header">
+        <p className="prt-title">{title}</p>
+        {subtitle ? <p className="prt-sub">{subtitle}</p> : null}
+        <p className="prt-meta">Printed: {now}</p>
+      </Box>
+      <Box className="prt-body" onClick={handleBodyClick} dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+      <Box className="prt-footer">
+        <Box className="prt-block">
+          <div className="prt-approve">Verified by:</div>
+          <div className="prt-sign">Dr. Mharfe M. Micaroz</div>
+          <div className="prt-role">Vice President of Academic Affairs</div>
+        </Box>
+        <Box className="prt-block">
+          <div className="prt-approve">Approved by:</div>
+          <div className="prt-sign">Dr. Mary Ann R. Araula</div>
+          <div className="prt-role">Acting College President</div>
+        </Box>
+      </Box>
     </Box>
   );
 }
