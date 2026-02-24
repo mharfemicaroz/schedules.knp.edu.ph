@@ -47,6 +47,8 @@ import {
   FiMic,
   FiSend,
   FiVolume2,
+  FiHeart,
+  FiPlus,
 } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadSettingsThunk, updateSettingsThunk } from '../store/settingsThunks';
@@ -73,6 +75,27 @@ const DEFAULT_BELL = {
     pm: { label: 'PM Session', enabled: true, start: '13:00', end: '17:00' },
     eve: { label: 'EVE Session', enabled: true, start: '17:00', end: '21:00' },
   },
+};
+
+const PRAYER_SOUND_SLOTS = [
+  { id: 'prayer-1', label: 'Prayer Sound A' },
+  { id: 'prayer-2', label: 'Prayer Sound B' },
+  { id: 'prayer-3', label: 'Prayer Sound C' },
+];
+
+const DEFAULT_PRAYER = {
+  enabled: false,
+  volumePercent: 75,
+  sounds: {
+    'prayer-1': null,
+    'prayer-2': null,
+    'prayer-3': null,
+  },
+  times: [
+    { id: 'noon', label: 'Midday Prayer', time: '12:00', enabled: true, soundId: 'prayer-1' },
+    { id: 'afternoon', label: 'Afternoon Prayer', time: '15:00', enabled: true, soundId: 'prayer-2' },
+    { id: 'evening', label: 'Evening Prayer', time: '18:00', enabled: true, soundId: 'prayer-3' },
+  ],
 };
 
 function normalizeBellSystem(raw) {
@@ -121,6 +144,65 @@ function normalizeBellSystem(raw) {
   delete bell.delaySeconds;
   delete bell.advanceSeconds;
   return bell;
+}
+
+function normalizePrayerSystem(raw) {
+  const base = DEFAULT_PRAYER;
+  const obj = (raw && typeof raw === 'object') ? raw : {};
+  const pickSound = (val) => (val && typeof val === 'object' ? { ...val } : null);
+  const slotIds = PRAYER_SOUND_SLOTS.map((slot) => slot.id);
+  const defaultSlotId = slotIds[0];
+  const soundsRaw = (obj.sounds && typeof obj.sounds === 'object') ? obj.sounds : {};
+  const fallbackSound = (obj.sound && typeof obj.sound === 'object') ? obj.sound : null;
+  const sounds = {};
+  PRAYER_SOUND_SLOTS.forEach((slot) => {
+    if (Object.prototype.hasOwnProperty.call(soundsRaw, slot.id)) {
+      sounds[slot.id] = pickSound(soundsRaw[slot.id]);
+    } else if (slot.id === defaultSlotId && fallbackSound) {
+      sounds[slot.id] = pickSound(fallbackSound);
+    } else {
+      sounds[slot.id] = base.sounds[slot.id] ?? null;
+    }
+  });
+  const hasTimes = Array.isArray(obj.times);
+  const rawTimes = hasTimes ? obj.times : [];
+  const times = rawTimes.map((slot, index) => {
+    if (slot == null) return null;
+    let time = '';
+    let label = '';
+    let enabled;
+    let id = '';
+    let soundId = '';
+    if (typeof slot === 'string' || typeof slot === 'number') {
+      time = String(slot);
+    } else if (typeof slot === 'object') {
+      time = String(slot.time || slot.at || '');
+      label = slot.label != null ? String(slot.label) : '';
+      if (typeof slot.enabled === 'boolean') enabled = slot.enabled;
+      if (slot.id != null) id = String(slot.id);
+      if (slot.soundId != null) soundId = String(slot.soundId);
+      if (!soundId && slot.sound_id != null) soundId = String(slot.sound_id);
+      if (!soundId && slot.sound != null) soundId = String(slot.sound);
+    }
+    const minutes = parseTimeToMinutes(time);
+    if (minutes == null) return null;
+    const safeSoundId = slotIds.includes(soundId) ? soundId : defaultSlotId;
+    return {
+      id: id || `time-${index + 1}`,
+      label,
+      time: `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
+      enabled: typeof enabled === 'boolean' ? enabled : true,
+      soundId: safeSoundId,
+    };
+  }).filter(Boolean);
+  return {
+    ...base,
+    ...obj,
+    enabled: typeof obj.enabled === 'boolean' ? obj.enabled : base.enabled,
+    volumePercent: Number.isFinite(Number(obj.volumePercent)) ? Number(obj.volumePercent) : base.volumePercent,
+    sounds,
+    times: hasTimes ? times : base.times.map((slot) => ({ ...slot })),
+  };
 }
 
 const SESSION_KEYS = ['am', 'pm', 'eve'];
@@ -177,6 +259,13 @@ function parseTimeToMinutes(value) {
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
   if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
   return (hh * 60) + mm;
+}
+
+function formatMinutesToTime(totalMinutes) {
+  const minutes = Math.max(0, Math.round(Number(totalMinutes) || 0));
+  const hh = Math.floor(minutes / 60) % 24;
+  const mm = minutes % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
 function sameDay(a, b) {
@@ -248,6 +337,42 @@ function buildEventsAround(now, bell) {
   const all = [];
   days.forEach((d) => {
     all.push(...buildEventsForDay(d, bell));
+  });
+  all.sort((a, b) => a.time.getTime() - b.time.getTime());
+  return all;
+}
+
+function buildPrayerEventsForDay(day, prayer) {
+  const events = [];
+  const times = Array.isArray(prayer?.times) ? prayer.times : [];
+  if (!times.length) return events;
+  const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+  const dayStartMs = dayStart.getTime();
+  times.forEach((slot, index) => {
+    if (!slot || slot.enabled === false) return;
+    const minutes = parseTimeToMinutes(slot.time);
+    if (minutes == null) return;
+    const timeMs = dayStartMs + minutes * 60 * 1000;
+    events.push({
+      time: new Date(timeMs),
+      label: String(slot.label || '').trim() || formatMinutesToTime(minutes),
+      id: slot.id || `time-${index + 1}`,
+      soundId: slot.soundId || '',
+    });
+  });
+  events.sort((a, b) => a.time.getTime() - b.time.getTime());
+  return events;
+}
+
+function buildPrayerEventsAround(now, prayer) {
+  const days = [-1, 0, 1].map((offset) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() + offset);
+    return d;
+  });
+  const all = [];
+  days.forEach((d) => {
+    all.push(...buildPrayerEventsForDay(d, prayer));
   });
   all.sort((a, b) => a.time.getTime() - b.time.getTime());
   return all;
@@ -341,22 +466,35 @@ export default function AdminBellSystem() {
   const [uploading, setUploading] = React.useState(false);
   const [orig, setOrig] = React.useState(DEFAULT_BELL);
   const [form, setForm] = React.useState(DEFAULT_BELL);
+  const [prayerSaving, setPrayerSaving] = React.useState(false);
+  const [prayerUploading, setPrayerUploading] = React.useState(false);
+  const [prayerOrig, setPrayerOrig] = React.useState(DEFAULT_PRAYER);
+  const [prayerForm, setPrayerForm] = React.useState(DEFAULT_PRAYER);
   const fileRef = React.useRef(null);
+  const prayerFileRef = React.useRef(null);
   const [uploadKind, setUploadKind] = React.useState('on');
+  const [prayerUploadSlot, setPrayerUploadSlot] = React.useState(PRAYER_SOUND_SLOTS[0].id);
   const [lastUpdated, setLastUpdated] = React.useState(settings?.updatedAt || null);
   const [now, setNow] = React.useState(() => new Date());
   const [audioUnlocked, setAudioUnlocked] = React.useState(false);
   const [unlocking, setUnlocking] = React.useState(false);
+  const [prayerAudioUnlocked, setPrayerAudioUnlocked] = React.useState(false);
+  const [prayerUnlocking, setPrayerUnlocking] = React.useState(false);
   const [overrideActive, setOverrideActive] = React.useState(false);
   const audioRef = React.useRef(null);
+  const prayerAudioRef = React.useRef(null);
   const [previewing, setPreviewing] = React.useState('');
+  const [prayerPreviewing, setPrayerPreviewing] = React.useState('');
   const slotAudioRefs = React.useRef({});
   const ringLockRef = React.useRef(false);
   const lastEventRef = React.useRef(null);
+  const prayerLockRef = React.useRef(false);
+  const lastPrayerEventRef = React.useRef(null);
   const overrideDelayRef = React.useRef(null);
   const lastOverrideEventRef = React.useRef('');
   const lastLocalOverrideRef = React.useRef('');
   const overrideAudioWarnRef = React.useRef(false);
+  const prayerAudioWarnRef = React.useRef(false);
   const [announceMode, setAnnounceMode] = React.useState('faculty');
   const [announceFaculty, setAnnounceFaculty] = React.useState('');
   const [announceFacultyId, setAnnounceFacultyId] = React.useState(null);
@@ -385,15 +523,20 @@ export default function AdminBellSystem() {
     !!import.meta.env.VITE_FB_API_KEY && !!import.meta.env.VITE_FB_DATABASE_URL
   ), []);
 
-  const dirty = React.useMemo(() => JSON.stringify(form) !== JSON.stringify(orig), [form, orig]);
+  const bellDirty = React.useMemo(() => JSON.stringify(form) !== JSON.stringify(orig), [form, orig]);
+  const prayerDirty = React.useMemo(() => JSON.stringify(prayerForm) !== JSON.stringify(prayerOrig), [prayerForm, prayerOrig]);
   const controlsDisabled = overrideActive;
-  const dirtyRef = React.useRef(dirty);
+  const bellDirtyRef = React.useRef(bellDirty);
+  const prayerDirtyRef = React.useRef(prayerDirty);
   const overrideActiveRef = React.useRef(overrideActive);
   const savingRef = React.useRef(saving);
+  const prayerSavingRef = React.useRef(prayerSaving);
 
-  React.useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  React.useEffect(() => { bellDirtyRef.current = bellDirty; }, [bellDirty]);
+  React.useEffect(() => { prayerDirtyRef.current = prayerDirty; }, [prayerDirty]);
   React.useEffect(() => { overrideActiveRef.current = overrideActive; }, [overrideActive]);
   React.useEffect(() => { savingRef.current = saving; }, [saving]);
+  React.useEffect(() => { prayerSavingRef.current = prayerSaving; }, [prayerSaving]);
 
   const resolveSoundUrl = React.useCallback((sound) => {
     if (!sound) return '';
@@ -415,10 +558,26 @@ export default function AdminBellSystem() {
   const sounds = form.sounds || {};
   const primarySound = sounds.on || sounds.before || sounds.after || null;
   const primarySoundUrl = resolveSoundUrl(primarySound);
+  const prayerSounds = prayerForm.sounds || {};
+  const prayerPrimarySound = PRAYER_SOUND_SLOTS.map((slot) => prayerSounds[slot.id]).find(Boolean) || null;
+  const prayerPrimarySoundUrl = resolveSoundUrl(prayerPrimarySound);
   const pickSoundForKind = React.useCallback((kind) => {
     const pool = form.sounds || {};
     return pool[kind] || pool.on || pool.before || pool.after || null;
   }, [form.sounds]);
+  const resolvePrayerSound = React.useCallback((soundId) => {
+    const pool = prayerForm.sounds || {};
+    const slotIds = PRAYER_SOUND_SLOTS.map((slot) => slot.id);
+    if (soundId) {
+      if (slotIds.includes(soundId)) {
+        return pool[soundId] || null;
+      }
+    }
+    for (const slot of PRAYER_SOUND_SLOTS) {
+      if (pool[slot.id]) return pool[slot.id];
+    }
+    return null;
+  }, [prayerForm.sounds]);
   const selectedAnnouncementTemplate = React.useMemo(() => (
     GENERAL_ANNOUNCEMENT_TEMPLATES.find((t) => t.id === announceTemplate)
       || GENERAL_ANNOUNCEMENT_TEMPLATES[0]
@@ -461,14 +620,17 @@ export default function AdminBellSystem() {
 
   const buildSnapshot = React.useCallback((data) => {
     const bell = normalizeBellSystem(data?.bellSystem);
+    const prayer = normalizePrayerSystem(data?.prayerSystem);
     const updatedAt = data?.updatedAt || null;
-    return { bell, updatedAt, hash: JSON.stringify({ updatedAt, bell }) };
+    return { bell, prayer, updatedAt, hash: JSON.stringify({ updatedAt, bell, prayer }) };
   }, []);
 
   const applySnapshot = React.useCallback((snap, { force = false } = {}) => {
-    if (force || (!dirtyRef.current && !overrideActiveRef.current && !savingRef.current)) {
+    if (force || (!bellDirtyRef.current && !prayerDirtyRef.current && !overrideActiveRef.current && !savingRef.current && !prayerSavingRef.current)) {
       setOrig(snap.bell);
       setForm(snap.bell);
+      setPrayerOrig(snap.prayer);
+      setPrayerForm(snap.prayer);
     }
     if (snap.updatedAt != null) setLastUpdated(snap.updatedAt);
   }, []);
@@ -483,6 +645,10 @@ export default function AdminBellSystem() {
   }, [primarySoundUrl]);
 
   React.useEffect(() => {
+    setPrayerAudioUnlocked(false);
+  }, [prayerPrimarySoundUrl]);
+
+  React.useEffect(() => {
     if (audioRef.current) {
       audioRef.current.src = primarySoundUrl || '';
       if (audioRef.current.load) audioRef.current.load();
@@ -490,11 +656,25 @@ export default function AdminBellSystem() {
   }, [primarySoundUrl]);
 
   React.useEffect(() => {
+    if (prayerAudioRef.current) {
+      prayerAudioRef.current.src = prayerPrimarySoundUrl || '';
+      if (prayerAudioRef.current.load) prayerAudioRef.current.load();
+    }
+  }, [prayerPrimarySoundUrl]);
+
+  React.useEffect(() => {
     if (audioRef.current) {
       const vol = Math.min(1, Math.max(0, Number(form.volumePercent) || 0) / 100);
       audioRef.current.volume = vol;
     }
   }, [form.volumePercent, primarySoundUrl]);
+
+  React.useEffect(() => {
+    if (prayerAudioRef.current) {
+      const vol = Math.min(1, Math.max(0, Number(prayerForm.volumePercent) || 0) / 100);
+      prayerAudioRef.current.volume = vol;
+    }
+  }, [prayerForm.volumePercent, prayerPrimarySoundUrl]);
 
   React.useEffect(() => {
     const supported = typeof window !== 'undefined'
@@ -529,7 +709,7 @@ export default function AdminBellSystem() {
       const snap = buildSnapshot(data);
       applySnapshot(snap, { force: true });
     } catch (e) {
-      toast({ title: 'Failed to load bell settings', status: 'error' });
+      toast({ title: 'Failed to load settings', status: 'error' });
     } finally {
       setLoading(false);
     }
@@ -538,7 +718,7 @@ export default function AdminBellSystem() {
   React.useEffect(() => { refresh(); }, [refresh]);
 
   const refreshSilent = React.useCallback(async () => {
-    if (dirtyRef.current || overrideActiveRef.current || savingRef.current) return;
+    if (bellDirtyRef.current || prayerDirtyRef.current || overrideActiveRef.current || savingRef.current || prayerSavingRef.current) return;
     try {
       const data = await dispatch(loadSettingsThunk()).unwrap();
       const snap = buildSnapshot(data);
@@ -561,6 +741,21 @@ export default function AdminBellSystem() {
       toast({ title: e?.message || 'Failed to save', status: 'error' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const savePrayer = async () => {
+    try {
+      setPrayerSaving(true);
+      const payload = { prayerSystem: prayerForm };
+      const data = await dispatch(updateSettingsThunk(payload)).unwrap();
+      const snap = buildSnapshot(data);
+      applySnapshot(snap, { force: true });
+      toast({ title: 'Prayer settings saved', status: 'success' });
+    } catch (e) {
+      toast({ title: e?.message || 'Failed to save', status: 'error' });
+    } finally {
+      setPrayerSaving(false);
     }
   };
 
@@ -620,6 +815,92 @@ export default function AdminBellSystem() {
     }
   };
 
+  const onPickPrayerFile = (slotId) => {
+    if (!prayerFileRef.current) return;
+    setPrayerUploadSlot(slotId);
+    prayerFileRef.current.click();
+  };
+
+  const onPrayerFileChange = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('audio/')) {
+      toast({ title: 'Please select an audio file', status: 'warning' });
+      event.target.value = '';
+      return;
+    }
+    const maxSize = 20 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast({ title: 'Audio file is too large (max 20 MB)', status: 'warning' });
+      event.target.value = '';
+      return;
+    }
+    const slotId = prayerUploadSlot || PRAYER_SOUND_SLOTS[0].id;
+    try {
+      setPrayerUploading(true);
+      const res = await apiService.uploadPrayerSound(file, slotId);
+      const nextSound = res?.sound || res?.prayerSystem?.sounds?.[slotId];
+      if (!nextSound) {
+        throw new Error('Upload failed');
+      }
+      setPrayerForm((prev) => ({ ...prev, sounds: { ...(prev.sounds || {}), [slotId]: nextSound } }));
+      setPrayerOrig((prev) => ({ ...prev, sounds: { ...(prev.sounds || {}), [slotId]: nextSound } }));
+      if (res?.updatedAt) setLastUpdated(res.updatedAt);
+      toast({ title: 'Prayer sound uploaded', status: 'success' });
+    } catch (e) {
+      toast({ title: e?.message || 'Failed to upload', status: 'error' });
+    } finally {
+      setPrayerUploading(false);
+    }
+    event.target.value = '';
+  };
+
+  const clearPrayerSound = async (slotId) => {
+    const target = slotId || PRAYER_SOUND_SLOTS[0].id;
+    try {
+      setPrayerUploading(true);
+      const res = await apiService.clearPrayerSound(target);
+      setPrayerForm((prev) => ({ ...prev, sounds: { ...(prev.sounds || {}), [target]: null } }));
+      setPrayerOrig((prev) => ({ ...prev, sounds: { ...(prev.sounds || {}), [target]: null } }));
+      if (res?.updatedAt) setLastUpdated(res.updatedAt);
+      toast({ title: 'Prayer sound cleared', status: 'success' });
+    } catch (e) {
+      toast({ title: e?.message || 'Failed to clear sound', status: 'error' });
+    } finally {
+      setPrayerUploading(false);
+    }
+  };
+
+  const updatePrayerTime = React.useCallback((index, patch) => {
+    setPrayerForm((prev) => {
+      const list = Array.isArray(prev.times) ? [...prev.times] : [];
+      const next = { ...(list[index] || {}), ...patch };
+      list[index] = next;
+      return { ...prev, times: list };
+    });
+  }, []);
+
+  const removePrayerTime = React.useCallback((index) => {
+    setPrayerForm((prev) => {
+      const list = Array.isArray(prev.times) ? prev.times.filter((_, idx) => idx !== index) : [];
+      return { ...prev, times: list };
+    });
+  }, []);
+
+  const addPrayerTime = React.useCallback(() => {
+    setPrayerForm((prev) => {
+      const list = Array.isArray(prev.times) ? [...prev.times] : [];
+      list.push({
+        id: `custom-${Date.now()}`,
+        label: '',
+        time: '12:00',
+        enabled: true,
+        soundId: PRAYER_SOUND_SLOTS[0].id,
+      });
+      return { ...prev, times: list };
+    });
+  }, []);
+
   const unlockAudio = async ({ silent = false } = {}) => {
     if (!primarySoundUrl) {
       if (!silent) toast({ title: 'Upload a bell sound first', status: 'info' });
@@ -647,6 +928,36 @@ export default function AdminBellSystem() {
       if (!silent) toast({ title: 'Audio blocked by browser', status: 'warning' });
     } finally {
       setUnlocking(false);
+    }
+  };
+
+  const unlockPrayerAudio = async ({ silent = false } = {}) => {
+    if (!prayerPrimarySoundUrl) {
+      if (!silent) toast({ title: 'Upload a prayer sound first', status: 'info' });
+      return;
+    }
+    const audio = prayerAudioRef.current;
+    if (!audio) return;
+    try {
+      setPrayerUnlocking(true);
+      if (audio.src !== prayerPrimarySoundUrl) {
+        audio.src = prayerPrimarySoundUrl;
+        if (audio.load) audio.load();
+      }
+      const prevVolume = audio.volume;
+      audio.volume = 0;
+      audio.currentTime = 0;
+      await audio.play();
+      audio.pause();
+      audio.currentTime = 0;
+      audio.volume = prevVolume;
+      setPrayerAudioUnlocked(true);
+      if (!silent) toast({ title: 'Prayer audio ready', status: 'success' });
+    } catch (e) {
+      setPrayerAudioUnlocked(false);
+      if (!silent) toast({ title: 'Audio blocked by browser', status: 'warning' });
+    } finally {
+      setPrayerUnlocking(false);
     }
   };
 
@@ -829,6 +1140,20 @@ export default function AdminBellSystem() {
     };
   }, [primarySoundUrl, audioUnlocked, unlockAudio]);
 
+  React.useEffect(() => {
+    if (!prayerPrimarySoundUrl || prayerAudioUnlocked) return;
+    void unlockPrayerAudio({ silent: true });
+    const handler = () => {
+      void unlockPrayerAudio({ silent: true });
+    };
+    window.addEventListener('pointerdown', handler, { once: true });
+    window.addEventListener('keydown', handler, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', handler);
+      window.removeEventListener('keydown', handler);
+    };
+  }, [prayerPrimarySoundUrl, prayerAudioUnlocked, unlockPrayerAudio]);
+
   const triggerBell = React.useCallback(async (eventKey, ringUrl, { force = false } = {}) => {
     if ((!audioUnlocked && !force) || !ringUrl) return;
     if (ringLockRef.current) return;
@@ -884,6 +1209,51 @@ export default function AdminBellSystem() {
     }
     return played;
   }, [audioUnlocked, form.loopCount, form.loopGapSeconds, form.volumePercent]);
+
+  const triggerPrayer = React.useCallback(async (eventKey, ringUrl, { force = false } = {}) => {
+    if ((!prayerAudioUnlocked && !force) || !ringUrl) return false;
+    if (prayerLockRef.current) return false;
+    const audio = prayerAudioRef.current;
+    if (!audio) return false;
+    prayerLockRef.current = true;
+    lastPrayerEventRef.current = eventKey;
+    const volume = Math.min(1, Math.max(0, Number(prayerForm.volumePercent) || 0) / 100);
+    let played = false;
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+      if (audio.src !== ringUrl) {
+        audio.src = ringUrl;
+        if (audio.load) audio.load();
+      }
+      audio.volume = volume;
+      const playedNow = await Promise.race([
+        audio.play().then(() => true).catch(() => false),
+        new Promise((resolve) => setTimeout(() => resolve(false), 3000)),
+      ]);
+      if (!playedNow) return false;
+      played = true;
+      const maxWaitMs = Number.isFinite(audio.duration) && audio.duration > 0
+        ? Math.ceil(audio.duration * 1000) + 500
+        : 8000;
+      await new Promise((resolve) => {
+        let done = false;
+        const finalize = () => {
+          if (done) return;
+          done = true;
+          audio.removeEventListener('ended', finalize);
+          audio.removeEventListener('error', finalize);
+          resolve();
+        };
+        audio.addEventListener('ended', finalize);
+        audio.addEventListener('error', finalize);
+        setTimeout(finalize, maxWaitMs);
+      });
+      return played;
+    } finally {
+      prayerLockRef.current = false;
+    }
+  }, [prayerAudioUnlocked, prayerForm.volumePercent]);
 
   const handleRemoteOverride = React.useCallback(async (payload) => {
     if (overrideActiveRef.current || ringLockRef.current) return;
@@ -1010,6 +1380,48 @@ export default function AdminBellSystem() {
       setPreviewing('');
     }
   }, [overrideActive, sounds, resolveSoundUrl, form.volumePercent, toast]);
+
+  const previewPrayerSound = React.useCallback(async (slotId) => {
+    const sound = prayerSounds[slotId];
+    const url = resolveSoundUrl(sound);
+    if (!url) {
+      toast({ title: 'No prayer sound assigned', status: 'info' });
+      return;
+    }
+    const audio = prayerAudioRef.current;
+    if (!audio) return;
+    if (prayerLockRef.current) {
+      toast({ title: 'Prayer audio is currently playing', status: 'info' });
+      return;
+    }
+    try {
+      prayerLockRef.current = true;
+      setPrayerPreviewing(slotId);
+      audio.pause();
+      audio.currentTime = 0;
+      if (audio.src !== url) {
+        audio.src = url;
+        if (audio.load) audio.load();
+      }
+      audio.volume = Math.min(1, Math.max(0, Number(prayerForm.volumePercent) || 0) / 100);
+      await audio.play();
+      setPrayerAudioUnlocked(true);
+      await new Promise((resolve) => {
+        const onEnd = () => {
+          audio.removeEventListener('ended', onEnd);
+          audio.removeEventListener('error', onEnd);
+          resolve();
+        };
+        audio.addEventListener('ended', onEnd);
+        audio.addEventListener('error', onEnd);
+      });
+    } catch (e) {
+      toast({ title: 'Unable to preview prayer sound', status: 'warning' });
+    } finally {
+      prayerLockRef.current = false;
+      setPrayerPreviewing('');
+    }
+  }, [prayerSounds, resolveSoundUrl, prayerForm.volumePercent, toast]);
 
   const getNextOnTimeEvent = React.useCallback(() => {
     const base = { ...form, delayBeforeSeconds: 0, delayAfterSeconds: 0 };
@@ -1211,6 +1623,87 @@ export default function AdminBellSystem() {
   ]);
 
 
+  const prayerEvents = React.useMemo(() => buildPrayerEventsAround(now, prayerForm), [now, prayerForm]);
+
+  const prayerCountdown = React.useMemo(() => {
+    if (!prayerForm.enabled) {
+      return { state: 'disabled' };
+    }
+    if (!prayerEvents.length) {
+      return { state: 'none' };
+    }
+    const nowMs = now.getTime();
+    let prev = null;
+    let next = null;
+    for (const ev of prayerEvents) {
+      if (ev.time.getTime() >= nowMs) {
+        next = ev;
+        break;
+      }
+      prev = ev;
+    }
+    if (!next) {
+      return { state: 'none' };
+    }
+    const remainingMs = Math.max(0, next.time.getTime() - nowMs);
+    const totalMs = prev ? Math.max(1, next.time.getTime() - prev.time.getTime()) : Math.max(remainingMs, 60 * 60 * 1000);
+    const progress = Math.min(100, Math.max(0, ((totalMs - remainingMs) / totalMs) * 100));
+    return { state: 'active', next, prev, remainingMs, totalMs, progress };
+  }, [prayerForm.enabled, prayerEvents, now]);
+
+  const prayerNextSound = React.useMemo(() => {
+    if (prayerCountdown.state !== 'active' || !prayerCountdown.next) return null;
+    return resolvePrayerSound(prayerCountdown.next.soundId);
+  }, [prayerCountdown, resolvePrayerSound]);
+  const prayerNextSoundUrl = resolveSoundUrl(prayerNextSound);
+  const prayerStatusSoundUrl = prayerCountdown.state === 'active' ? prayerNextSoundUrl : prayerPrimarySoundUrl;
+
+  const prayerUpcoming = React.useMemo(() => (
+    prayerEvents.filter((ev) => ev.time.getTime() >= now.getTime()).slice(0, 4)
+  ), [prayerEvents, now]);
+
+  const prayerNextLabel = React.useMemo(() => {
+    if (prayerCountdown.state !== 'active' || !prayerCountdown.next) return '';
+    const next = prayerCountdown.next;
+    const timeStr = next.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const dayStr = sameDay(next.time, now)
+      ? 'Today'
+      : next.time.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    return `${next.label} - ${timeStr} - ${dayStr}`;
+  }, [prayerCountdown, now]);
+
+  React.useEffect(() => {
+    if (prayerCountdown.state !== 'active' || !prayerCountdown.next) return;
+    if (!prayerForm.enabled || !prayerPrimarySoundUrl || !prayerAudioUnlocked) return;
+    const nextTimeMs = prayerCountdown.next.time.getTime();
+    const eventKey = `${nextTimeMs}-${prayerCountdown.next.id}`;
+    if (lastPrayerEventRef.current === eventKey) return;
+    const soundEntry = resolvePrayerSound(prayerCountdown.next.soundId);
+    const ringUrl = resolveSoundUrl(soundEntry);
+    if (!ringUrl) return;
+    const delay = Math.max(0, nextTimeMs - Date.now());
+    const timer = setTimeout(() => {
+      if (lastPrayerEventRef.current === eventKey) return;
+      void (async () => {
+        const played = await triggerPrayer(eventKey, ringUrl);
+        if (!played && !prayerAudioWarnRef.current) {
+          prayerAudioWarnRef.current = true;
+          toast({ title: 'Prayer audio needs a click to enable playback', status: 'info' });
+        }
+      })();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [
+    prayerCountdown,
+    prayerForm.enabled,
+    prayerPrimarySoundUrl,
+    prayerAudioUnlocked,
+    resolvePrayerSound,
+    resolveSoundUrl,
+    triggerPrayer,
+    toast,
+  ]);
+
   const countdown = React.useMemo(() => {
     if (!form.enabled) {
       return { state: 'disabled' };
@@ -1276,11 +1769,18 @@ export default function AdminBellSystem() {
     { key: 'pm', label: 'PM', color: 'blue' },
     { key: 'eve', label: 'EVE', color: 'purple' },
   ];
+  const prayerTimes = Array.isArray(prayerForm.times) ? prayerForm.times : [];
 
   return (
     <Box>
       <audio
         ref={audioRef}
+        preload="auto"
+        style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+        aria-hidden="true"
+      />
+      <audio
+        ref={prayerAudioRef}
         preload="auto"
         style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
         aria-hidden="true"
@@ -1291,6 +1791,12 @@ export default function AdminBellSystem() {
             <HStack spacing={2}>
               <Icon as={FiBell} />
               <Text>Bell System</Text>
+            </HStack>
+          </Tab>
+          <Tab>
+            <HStack spacing={2}>
+              <Icon as={FiHeart} />
+              <Text>Prayers</Text>
             </HStack>
           </Tab>
           <Tab>
@@ -1309,7 +1815,7 @@ export default function AdminBellSystem() {
               </HStack>
               <HStack spacing={3} flexWrap="wrap">
                 <Button variant="outline" onClick={refresh} isLoading={loading} isDisabled={controlsDisabled} loadingText="Refreshing">Refresh</Button>
-                <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading || controlsDisabled} isLoading={saving} loadingText="Saving">Save</Button>
+                <Button colorScheme="blue" onClick={save} isDisabled={!bellDirty || !isAdmin || uploading || controlsDisabled} isLoading={saving} loadingText="Saving">Save</Button>
               </HStack>
             </HStack>
 
@@ -1633,8 +2139,339 @@ export default function AdminBellSystem() {
 
       <Divider my={4} />
       <HStack justify="flex-end">
-        <Button colorScheme="blue" onClick={save} isDisabled={!dirty || !isAdmin || uploading || controlsDisabled} isLoading={saving}>Save Changes</Button>
+        <Button colorScheme="blue" onClick={save} isDisabled={!bellDirty || !isAdmin || uploading || controlsDisabled} isLoading={saving}>Save Changes</Button>
       </HStack>
+          </TabPanel>
+          <TabPanel p={0} pt={4}>
+            <HStack justify="space-between" mb={4} flexWrap="wrap" spacing={3}>
+              <HStack spacing={2}>
+                <Icon as={FiHeart} />
+                <Heading size="md">Prayer Schedule</Heading>
+              </HStack>
+              <HStack spacing={3} flexWrap="wrap">
+                <Button variant="outline" onClick={refresh} isLoading={loading} isDisabled={controlsDisabled} loadingText="Refreshing">Refresh</Button>
+                <Button colorScheme="blue" onClick={savePrayer} isDisabled={!prayerDirty || !isAdmin || prayerUploading || controlsDisabled} isLoading={prayerSaving} loadingText="Saving">Save</Button>
+              </HStack>
+            </HStack>
+
+            <Text fontSize="sm" color={muted} mb={2}>
+              Set exact prayer times and the audio that plays instantly at those moments.
+            </Text>
+            {lastUpdated && (
+              <HStack mb={3}><Badge colorScheme="purple">Last Updated: {new Date(lastUpdated).toLocaleString()}</Badge></HStack>
+            )}
+
+            <Box borderWidth="1px" borderColor={border} rounded="lg" p={4} bg={bg} mb={4}>
+              <HStack justify="space-between" flexWrap="wrap" spacing={3} mb={2}>
+                <HStack spacing={2}>
+                  <Icon as={FiClock} color={highlight} />
+                  <Heading size="sm">Next Prayer Countdown</Heading>
+                </HStack>
+                <HStack spacing={2} flexWrap="wrap">
+                  <Badge colorScheme={prayerForm.enabled ? 'green' : 'gray'}>
+                    {prayerForm.enabled ? 'Enabled' : 'Disabled'}
+                  </Badge>
+                  <Badge colorScheme={prayerStatusSoundUrl ? (prayerAudioUnlocked ? 'green' : 'orange') : 'gray'}>
+                    {prayerStatusSoundUrl ? (prayerAudioUnlocked ? 'Audio Ready' : (prayerUnlocking ? 'Arming...' : 'Auto-arming')) : 'No Sound'}
+                  </Badge>
+                </HStack>
+              </HStack>
+
+              {prayerCountdown.state === 'disabled' && (
+                <Text fontSize="sm" color={muted}>Prayer schedule is disabled.</Text>
+              )}
+              {prayerCountdown.state === 'none' && (
+                <Text fontSize="sm" color={muted}>No upcoming prayer times found.</Text>
+              )}
+              {prayerCountdown.state === 'active' && (
+                <VStack align="stretch" spacing={2}>
+                  <HStack justify="space-between" flexWrap="wrap">
+                    <Text fontSize={{ base: '2xl', md: '3xl' }} fontWeight="700">
+                      {formatDuration(prayerCountdown.remainingMs)}
+                    </Text>
+                    <VStack align="end" spacing={0}>
+                      <Text fontSize="xs" color={muted}>Next prayer</Text>
+                      <Text fontSize="sm" fontWeight="600">{prayerNextLabel}</Text>
+                    </VStack>
+                  </HStack>
+                  <Progress value={prayerCountdown.progress} size="sm" colorScheme="pink" hasStripe isAnimated />
+                  <Text fontSize="xs" color={muted}>
+                    {Math.round(prayerCountdown.progress)}% to the next prayer time.
+                  </Text>
+                  {!prayerAudioUnlocked && prayerStatusSoundUrl && (
+                    <Text fontSize="xs" color={muted}>
+                      Audio will auto-arm on the next click or keypress in this browser session.
+                    </Text>
+                  )}
+                </VStack>
+              )}
+              {prayerCountdown.state === 'active' && prayerUpcoming.length > 0 && (
+                <HStack spacing={2} flexWrap="wrap" mt={3}>
+                  {prayerUpcoming.map((slot) => {
+                    const timeStr = slot.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    return (
+                      <Tag key={`${slot.id}-${slot.time.toISOString()}`} size="sm" variant="subtle" colorScheme="pink">
+                        <TagLabel>{slot.label} - {timeStr}</TagLabel>
+                      </Tag>
+                    );
+                  })}
+                </HStack>
+              )}
+            </Box>
+
+            <SimpleGrid columns={{ base: 1, lg: 2 }} gap={4}>
+              <Box borderWidth="1px" borderColor={border} rounded="lg" p={4} bg={bg}>
+                <HStack justify="space-between" mb={3} flexWrap="wrap" spacing={2}>
+                  <VStack align="start" spacing={0}>
+                    <Heading size="sm">Prayer Times</Heading>
+                    <Text fontSize="xs" color={muted}>Plays instantly at each enabled time.</Text>
+                  </VStack>
+                  <Button
+                    size="xs"
+                    leftIcon={<FiPlus />}
+                    onClick={addPrayerTime}
+                    variant="outline"
+                    isDisabled={!isAdmin || controlsDisabled}
+                  >
+                    Add time
+                  </Button>
+                </HStack>
+                <FormControl display="flex" alignItems="center" justifyContent="space-between" mb={3}>
+                  <FormLabel mb="0" fontSize="sm" fontWeight="600">Enabled</FormLabel>
+                  <Switch
+                    colorScheme="pink"
+                    isChecked={!!prayerForm.enabled}
+                    onChange={(e) => setPrayerForm({ ...prayerForm, enabled: e.target.checked })}
+                    isDisabled={controlsDisabled}
+                  />
+                </FormControl>
+                <VStack align="stretch" spacing={3}>
+                  {prayerTimes.map((slot, index) => (
+                    <Box key={slot.id || index} borderWidth="1px" borderColor={border} rounded="md" p={3}>
+                      <SimpleGrid columns={{ base: 1, md: 4 }} gap={3}>
+                        <FormControl>
+                          <FormLabel fontSize="sm">Time</FormLabel>
+                          <Input
+                            type="time"
+                            value={slot.time || ''}
+                            onChange={(e) => updatePrayerTime(index, { time: e.target.value })}
+                            isDisabled={controlsDisabled}
+                          />
+                        </FormControl>
+                        <FormControl>
+                          <FormLabel fontSize="sm">Label</FormLabel>
+                          <Input
+                            value={slot.label || ''}
+                            onChange={(e) => updatePrayerTime(index, { label: e.target.value })}
+                            placeholder="Midday Prayer"
+                            isDisabled={controlsDisabled}
+                          />
+                        </FormControl>
+                        <FormControl>
+                          <FormLabel fontSize="sm">Sound</FormLabel>
+                          <Select
+                            value={slot.soundId || PRAYER_SOUND_SLOTS[0].id}
+                            onChange={(e) => updatePrayerTime(index, { soundId: e.target.value })}
+                            isDisabled={controlsDisabled}
+                          >
+                            {PRAYER_SOUND_SLOTS.map((soundSlot) => (
+                              <option key={soundSlot.id} value={soundSlot.id}>
+                                {soundSlot.label}
+                              </option>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <FormControl display="flex" alignItems="center" justifyContent="space-between">
+                          <FormLabel mb="0" fontSize="sm">Active</FormLabel>
+                          <Switch
+                            colorScheme="pink"
+                            isChecked={slot.enabled !== false}
+                            onChange={(e) => updatePrayerTime(index, { enabled: e.target.checked })}
+                            isDisabled={controlsDisabled}
+                          />
+                        </FormControl>
+                      </SimpleGrid>
+                      <HStack justify="flex-end" mt={2}>
+                        <Button
+                          size="xs"
+                          leftIcon={<FiTrash2 />}
+                          variant="ghost"
+                          onClick={() => removePrayerTime(index)}
+                          isDisabled={!isAdmin || controlsDisabled}
+                        >
+                          Remove
+                        </Button>
+                      </HStack>
+                    </Box>
+                  ))}
+                  {!prayerTimes.length && (
+                    <Box borderWidth="1px" borderColor={border} rounded="md" p={3} textAlign="center">
+                      <Text fontSize="xs" color={muted}>No prayer times yet.</Text>
+                    </Box>
+                  )}
+                </VStack>
+              </Box>
+
+              <VStack align="stretch" spacing={4}>
+                <Box borderWidth="1px" borderColor={border} rounded="lg" p={4} bg={bg}>
+                  <HStack justify="space-between" mb={3} flexWrap="wrap" spacing={2}>
+                    <VStack align="start" spacing={0}>
+                      <Heading size="sm">Prayer Sound</Heading>
+                      <Text fontSize="xs" color={muted}>Assign one of three sounds to each prayer time.</Text>
+                    </VStack>
+                    <Badge colorScheme="pink" variant="subtle">3 Slots</Badge>
+                  </HStack>
+                  <Input
+                    ref={prayerFileRef}
+                    type="file"
+                    accept="audio/*"
+                    onChange={onPrayerFileChange}
+                    isDisabled={controlsDisabled}
+                    display="none"
+                  />
+                  <VStack align="stretch" spacing={3}>
+                    {PRAYER_SOUND_SLOTS.map((slot) => {
+                      const sound = prayerSounds[slot.id];
+                      const url = resolveSoundUrl(sound);
+                      return (
+                        <Box key={slot.id} borderWidth="1px" borderColor={border} rounded="md" p={3}>
+                          <HStack justify="space-between" mb={2} flexWrap="wrap" spacing={2}>
+                            <VStack align="start" spacing={0}>
+                              <Text fontWeight="600" fontSize="sm">{slot.label}</Text>
+                              <Text fontSize="xs" color={muted}>Assign this sound to prayer times.</Text>
+                            </VStack>
+                            <HStack>
+                              <Button
+                                size="xs"
+                                leftIcon={<FiUpload />}
+                                onClick={() => onPickPrayerFile(slot.id)}
+                                variant="outline"
+                                isLoading={prayerUploading && prayerUploadSlot === slot.id}
+                                isDisabled={!isAdmin || controlsDisabled}
+                              >
+                                Upload
+                              </Button>
+                              <Button
+                                size="xs"
+                                leftIcon={<FiPlay />}
+                                onClick={() => previewPrayerSound(slot.id)}
+                                variant="ghost"
+                                isDisabled={!sound || prayerUploading || prayerPreviewing === slot.id || controlsDisabled}
+                              >
+                                Preview
+                              </Button>
+                              <Button
+                                size="xs"
+                                leftIcon={<FiTrash2 />}
+                                onClick={() => clearPrayerSound(slot.id)}
+                                variant="ghost"
+                                isDisabled={!sound || prayerUploading || !isAdmin || controlsDisabled}
+                              >
+                                Clear
+                              </Button>
+                            </HStack>
+                          </HStack>
+                          {sound ? (
+                            <VStack align="stretch" spacing={2}>
+                              <HStack justify="space-between">
+                                <Text fontSize="xs" color={muted}>
+                                  {sound.name || 'Audio File'}
+                                  {sound.size ? ` - ${Math.round(sound.size / 1024)} KB` : ''}
+                                </Text>
+                                <Badge colorScheme="green">Ready</Badge>
+                              </HStack>
+                              {url && (
+                                <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
+                                  <audio controls style={{ width: '100%' }} src={url} preload="auto" />
+                                </Box>
+                              )}
+                            </VStack>
+                          ) : (
+                            <Box borderWidth="1px" borderColor={border} rounded="md" p={3} textAlign="center">
+                              <Text fontSize="xs" color={muted}>No sound assigned.</Text>
+                            </Box>
+                          )}
+                        </Box>
+                      );
+                    })}
+                  </VStack>
+                  <Text fontSize="xs" color={muted} mt={2}>
+                    Supported: MP3, WAV, or OGG. Max upload size 20 MB.
+                  </Text>
+                </Box>
+
+                <Box borderWidth="1px" borderColor={border} rounded="lg" p={4} bg={bg}>
+                  <HStack justify="space-between" mb={3} flexWrap="wrap" spacing={2}>
+                    <VStack align="start" spacing={0}>
+                      <Heading size="sm">Playback</Heading>
+                      <Text fontSize="xs" color={muted}>Adjust volume for prayer playback.</Text>
+                    </VStack>
+                    <Badge colorScheme="pink" variant="subtle">Volume</Badge>
+                  </HStack>
+                  <FormLabel fontSize="sm">Volume</FormLabel>
+                  <HStack spacing={3}>
+                    <Slider
+                      value={prayerForm.volumePercent}
+                      onChange={(val) => setPrayerForm({ ...prayerForm, volumePercent: val })}
+                      min={0}
+                      max={100}
+                      colorScheme="pink"
+                      isDisabled={controlsDisabled}
+                    >
+                      <SliderTrack>
+                        <SliderFilledTrack />
+                      </SliderTrack>
+                      <SliderThumb />
+                    </Slider>
+                    <NumberInput
+                      value={prayerForm.volumePercent}
+                      min={0}
+                      max={100}
+                      onChange={(_, val) => setPrayerForm({ ...prayerForm, volumePercent: Number.isFinite(val) ? val : 0 })}
+                      w="90px"
+                      isDisabled={controlsDisabled}
+                    >
+                      <NumberInputField />
+                      <NumberInputStepper>
+                        <NumberIncrementStepper />
+                        <NumberDecrementStepper />
+                      </NumberInputStepper>
+                    </NumberInput>
+                  </HStack>
+                </Box>
+              </VStack>
+            </SimpleGrid>
+
+            <Box borderWidth="1px" borderColor={border} rounded="lg" p={4} bg={bg} mt={4}>
+              <HStack justify="space-between" mb={2} flexWrap="wrap" spacing={2}>
+                <Heading size="sm">Summary</Heading>
+                <Badge colorScheme={prayerForm.enabled ? 'green' : 'gray'}>
+                  {prayerForm.enabled ? 'Enabled' : 'Disabled'}
+                </Badge>
+              </HStack>
+              <Text fontSize="sm" color={muted} mb={3}>
+                Plays at {prayerTimes.length || 0} time(s). Volume set to {prayerForm.volumePercent || 0}%.
+              </Text>
+              <HStack spacing={2} flexWrap="wrap">
+                {prayerTimes.map((slot, index) => {
+                  const label = String(slot.label || '').trim() || 'Prayer';
+                  const soundLabel = PRAYER_SOUND_SLOTS.find((soundSlot) => soundSlot.id === slot.soundId)?.label || 'Sound';
+                  return (
+                    <Tag key={`${slot.id || index}-${slot.time}`} size="md" variant="subtle" colorScheme={slot.enabled === false ? 'gray' : 'pink'}>
+                      <TagLabel>{label}: {slot.time || '--:--'} ({soundLabel})</TagLabel>
+                    </Tag>
+                  );
+                })}
+                {!prayerTimes.length && (
+                  <Text fontSize="xs" color={muted}>No prayer times configured yet.</Text>
+                )}
+              </HStack>
+            </Box>
+
+            <Divider my={4} />
+            <HStack justify="flex-end">
+              <Button colorScheme="blue" onClick={savePrayer} isDisabled={!prayerDirty || !isAdmin || prayerUploading || controlsDisabled} isLoading={prayerSaving}>Save Changes</Button>
+            </HStack>
           </TabPanel>
           <TabPanel p={0} pt={4}>
             <HStack justify="space-between" mb={4} flexWrap="wrap" spacing={3}>

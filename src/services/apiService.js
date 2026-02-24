@@ -988,6 +988,24 @@ class ApiService {
     return await res.json();
   }
 
+  async uploadPrayerSound(file, slotId) {
+    const qs = slotId ? `?slot=${encodeURIComponent(slotId)}` : '';
+    const url = `${this.baseURL}/settings/prayer-sound${qs}`;
+    const form = new FormData();
+    form.append('file', file);
+    const res = await this._fetch(url, { method: 'POST', headers: { ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: form });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
+  async clearPrayerSound(slotId) {
+    const qs = slotId ? `?slot=${encodeURIComponent(slotId)}` : '';
+    const url = `${this.baseURL}/settings/prayer-sound${qs}`;
+    const res = await this._fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   async getPublicSettings() {
     const url = `${this.baseURL}/settings/public`;
     const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });

@@ -28,6 +28,20 @@ const initialState = {
         eve: { label: 'EVE Session', enabled: true, start: '17:00', end: '21:00' },
       },
     },
+    prayerSystem: {
+      enabled: false,
+      volumePercent: 75,
+      sounds: {
+        'prayer-1': null,
+        'prayer-2': null,
+        'prayer-3': null,
+      },
+      times: [
+        { id: 'noon', label: 'Midday Prayer', time: '12:00', enabled: true, soundId: 'prayer-1' },
+        { id: 'afternoon', label: 'Afternoon Prayer', time: '15:00', enabled: true, soundId: 'prayer-2' },
+        { id: 'evening', label: 'Evening Prayer', time: '18:00', enabled: true, soundId: 'prayer-3' },
+      ],
+    },
     updatedAt: null,
   },
   loading: false,
