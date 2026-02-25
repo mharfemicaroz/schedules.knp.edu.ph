@@ -369,11 +369,9 @@ const rows = React.useMemo(() => {
       'Department',
       'Employment',
       'Load Units',
-      'Load Release',
       'Overload',
       '1st Term (units/hrs)',
-      '2nd Term (units/hrs)',
-      'Courses'
+      '2nd Term (units/hrs)'
     ];
     const compare = (a, b) =>
       String(a ?? "").localeCompare(String(b ?? ""), undefined, {
@@ -393,11 +391,9 @@ const rows = React.useMemo(() => {
         r.department,
         r.employment,
         String(r.loadUnits),
-        String(r.releaseUnits),
         String(r.overloadUnits ?? r.overload),
         `${r.overloadFirst}u / ${r.overloadFirstHours}h`,
-        `${r.overloadSecond}u / ${r.overloadSecondHours}h`,
-        String(r.courseCount)
+        `${r.overloadSecond}u / ${r.overloadSecondHours}h`
       ]);
 
     const subtitle = [
@@ -405,7 +401,7 @@ const rows = React.useMemo(() => {
       settingsLoad?.semester ? `Sem ${settingsLoad.semester}` : ''
     ].filter(Boolean).join('  |  ');
     const bodyHtml = buildTable(headers, data);
-    printContent({ title: 'Faculty Overload Summary', subtitle, bodyHtml },{orientation: 'landscape'});
+    printContent({ title: 'Faculty Overload Summary', subtitle, bodyHtml }, { orientation: 'portrait' });
   };
 
   const toggleSort = (key) => {
