@@ -453,7 +453,7 @@ export default function AdminBellSystem() {
   const settings = useSelector(selectSettings);
   const authUser = useSelector(s => s.auth.user);
   const roleStr = String(authUser?.role || '').toLowerCase();
-  const isAdmin = roleStr === 'admin';
+  const canManage = roleStr === 'admin' || roleStr === 'alerter';
 
   const border = useColorModeValue('gray.200', 'gray.700');
   const bg = useColorModeValue('white', 'gray.800');
@@ -1539,8 +1539,8 @@ export default function AdminBellSystem() {
       toast({ title: 'Add an announcement message first', status: 'info' });
       return;
     }
-    if (!isAdmin) {
-      toast({ title: 'Only admins can send announcements', status: 'warning' });
+    if (!canManage) {
+      toast({ title: 'Only bell operators can send announcements', status: 'warning' });
       return;
     }
     const eventId = `announce-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
@@ -1615,7 +1615,7 @@ export default function AdminBellSystem() {
     announceRepeatCount,
     announceRepeatGapSeconds,
     announcementLocationNeeded,
-    isAdmin,
+    canManage,
     selectedAnnouncementVoice,
     playAnnouncementSequence,
     ttsSupported,
@@ -1815,7 +1815,7 @@ export default function AdminBellSystem() {
               </HStack>
               <HStack spacing={3} flexWrap="wrap">
                 <Button variant="outline" onClick={refresh} isLoading={loading} isDisabled={controlsDisabled} loadingText="Refreshing">Refresh</Button>
-                <Button colorScheme="blue" onClick={save} isDisabled={!bellDirty || !isAdmin || uploading || controlsDisabled} isLoading={saving} loadingText="Saving">Save</Button>
+                <Button colorScheme="blue" onClick={save} isDisabled={!bellDirty || !canManage || uploading || controlsDisabled} isLoading={saving} loadingText="Saving">Save</Button>
               </HStack>
             </HStack>
 
@@ -1886,7 +1886,7 @@ export default function AdminBellSystem() {
             variant="solid"
             onClick={handleOverride}
             isLoading={overrideActive}
-            isDisabled={!isAdmin || controlsDisabled}
+            isDisabled={!canManage || controlsDisabled}
             loadingText="Overriding"
           >
             Override: Play On-time Now
@@ -2029,7 +2029,7 @@ export default function AdminBellSystem() {
                         onClick={() => onPickFile(key)}
                         variant="outline"
                         isLoading={uploading && uploadKind === key}
-                        isDisabled={!isAdmin || controlsDisabled}
+                        isDisabled={!canManage || controlsDisabled}
                       >
                         Upload
                       </Button>
@@ -2047,7 +2047,7 @@ export default function AdminBellSystem() {
                         leftIcon={<FiTrash2 />}
                         onClick={() => clearSound(key)}
                         variant="ghost"
-                        isDisabled={!sound || uploading || !isAdmin || controlsDisabled}
+                        isDisabled={!sound || uploading || !canManage || controlsDisabled}
                       >
                         Clear
                       </Button>
@@ -2139,7 +2139,7 @@ export default function AdminBellSystem() {
 
       <Divider my={4} />
       <HStack justify="flex-end">
-        <Button colorScheme="blue" onClick={save} isDisabled={!bellDirty || !isAdmin || uploading || controlsDisabled} isLoading={saving}>Save Changes</Button>
+        <Button colorScheme="blue" onClick={save} isDisabled={!bellDirty || !canManage || uploading || controlsDisabled} isLoading={saving}>Save Changes</Button>
       </HStack>
           </TabPanel>
           <TabPanel p={0} pt={4}>
@@ -2150,7 +2150,7 @@ export default function AdminBellSystem() {
               </HStack>
               <HStack spacing={3} flexWrap="wrap">
                 <Button variant="outline" onClick={refresh} isLoading={loading} isDisabled={controlsDisabled} loadingText="Refreshing">Refresh</Button>
-                <Button colorScheme="blue" onClick={savePrayer} isDisabled={!prayerDirty || !isAdmin || prayerUploading || controlsDisabled} isLoading={prayerSaving} loadingText="Saving">Save</Button>
+                <Button colorScheme="blue" onClick={savePrayer} isDisabled={!prayerDirty || !canManage || prayerUploading || controlsDisabled} isLoading={prayerSaving} loadingText="Saving">Save</Button>
               </HStack>
             </HStack>
 
@@ -2231,7 +2231,7 @@ export default function AdminBellSystem() {
                     leftIcon={<FiPlus />}
                     onClick={addPrayerTime}
                     variant="outline"
-                    isDisabled={!isAdmin || controlsDisabled}
+                    isDisabled={!canManage || controlsDisabled}
                   >
                     Add time
                   </Button>
@@ -2297,7 +2297,7 @@ export default function AdminBellSystem() {
                           leftIcon={<FiTrash2 />}
                           variant="ghost"
                           onClick={() => removePrayerTime(index)}
-                          isDisabled={!isAdmin || controlsDisabled}
+                          isDisabled={!canManage || controlsDisabled}
                         >
                           Remove
                         </Button>
@@ -2347,7 +2347,7 @@ export default function AdminBellSystem() {
                                 onClick={() => onPickPrayerFile(slot.id)}
                                 variant="outline"
                                 isLoading={prayerUploading && prayerUploadSlot === slot.id}
-                                isDisabled={!isAdmin || controlsDisabled}
+                                isDisabled={!canManage || controlsDisabled}
                               >
                                 Upload
                               </Button>
@@ -2365,7 +2365,7 @@ export default function AdminBellSystem() {
                                 leftIcon={<FiTrash2 />}
                                 onClick={() => clearPrayerSound(slot.id)}
                                 variant="ghost"
-                                isDisabled={!sound || prayerUploading || !isAdmin || controlsDisabled}
+                                isDisabled={!sound || prayerUploading || !canManage || controlsDisabled}
                               >
                                 Clear
                               </Button>
@@ -2470,7 +2470,7 @@ export default function AdminBellSystem() {
 
             <Divider my={4} />
             <HStack justify="flex-end">
-              <Button colorScheme="blue" onClick={savePrayer} isDisabled={!prayerDirty || !isAdmin || prayerUploading || controlsDisabled} isLoading={prayerSaving}>Save Changes</Button>
+              <Button colorScheme="blue" onClick={savePrayer} isDisabled={!prayerDirty || !canManage || prayerUploading || controlsDisabled} isLoading={prayerSaving}>Save Changes</Button>
             </HStack>
           </TabPanel>
           <TabPanel p={0} pt={4}>
@@ -2719,7 +2719,7 @@ export default function AdminBellSystem() {
                       leftIcon={<FiSend />}
                       onClick={sendAnnouncement}
                       isLoading={announceSending}
-                      isDisabled={!announcementMessage || !isAdmin}
+                      isDisabled={!announcementMessage || !canManage}
                       loadingText="Sending"
                     >
                       Announce Now

@@ -98,7 +98,7 @@ function App() {
               <Route path="/admin/academic-calendar" element={<RequireAdmin><AdminAcademicCalendar /></RequireAdmin>} />
               <Route path="/admin/settings" element={<RequireAdmin><AdminSettings /></RequireAdmin>} />
               <Route path="/admin/ai-labs" element={<RequireAdmin><AdminAiLabs /></RequireAdmin>} />
-              <Route path="/admin/bell-system" element={<RequireAdmin><AdminBellSystem /></RequireAdmin>} />
+              <Route path="/admin/bell-system" element={<RequireAdmin extraRoles={['alerter']}><AdminBellSystem /></RequireAdmin>} />
               <Route path="/admin/blocks" element={<RequireAdmin><AdminBlockSettings /></RequireAdmin>} />
               <Route path="/admin/grades-submission" element={<RequireRole roles={['admin','manager','registrar']} allowDeptMapping><AdminGradesSubmission /></RequireRole>} />
               <Route path="/admin/v2/grades-submission" element={<RequireRole roles={['admin','manager','registrar']} allowDeptMapping><AdminGradesSubmission /></RequireRole>} />

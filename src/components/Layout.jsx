@@ -49,7 +49,7 @@ import FirstVisitGuestModal from './FirstVisitGuestModal';
 import { openModal as openGuestModal, closeModal as closeGuestModal, setGuest as setGuestAction } from '../store/guestSlice';
 import { touchGuestThunk } from '../store/guestSlice';
 
-function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, onOpenChangePwd, onOpenProfile }) {
+function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, onOpenChangePwd, onOpenProfile, showSidebarControls = true }) {
   const { colorMode, toggleColorMode } = useColorMode();
   const bg = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
@@ -81,13 +81,15 @@ function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, 
       className="glass"
     >
       <HStack spacing={3} align="center">
-        <IconButton
-          aria-label="Open menu"
-          display={{ base: 'inline-flex', md: 'none' }}
-          icon={<FiMenu />}
-          variant="ghost"
-          onClick={onOpenMenu}
-        />
+        {showSidebarControls && (
+          <IconButton
+            aria-label="Open menu"
+            display={{ base: 'inline-flex', md: 'none' }}
+            icon={<FiMenu />}
+            variant="ghost"
+            onClick={onOpenMenu}
+          />
+        )}
         
         <Box>
           <Text fontWeight="800" fontSize={{ base: 'sm', md: 'md' }} noOfLines={1}>
@@ -99,13 +101,15 @@ function Topbar({ onOpenMenu, onToggleSidebar, onOpenLogin, onLogout, authUser, 
         </Box>
       </HStack>
       <HStack>
-        <IconButton
-          aria-label="Toggle sidebar"
-          display={{ base: 'none', md: 'inline-flex' }}
-          icon={<FiSidebar />}
-          variant="ghost"
-          onClick={onToggleSidebar}
-        />
+        {showSidebarControls && (
+          <IconButton
+            aria-label="Toggle sidebar"
+            display={{ base: 'none', md: 'inline-flex' }}
+            icon={<FiSidebar />}
+            variant="ghost"
+            onClick={onToggleSidebar}
+          />
+        )}
         <IconButton
           aria-label="Toggle color mode"
           onClick={toggleColorMode}
@@ -190,6 +194,10 @@ export default function Layout({ children }) {
   const rdispatch = useRDispatch();
   const guest = useRSelector(s => s.guest);
   const user = useSelector(s => s.auth.user);
+  const roleStr = String(user?.role || '').toLowerCase();
+  const isAlerter = roleStr === 'alerter';
+  const defaultAuthedRoute = isAlerter ? '/admin/bell-system' : '/';
+  const isBellSystemRoute = /^\/admin\/bell-system$/.test(loc.pathname || '');
   const [sidebarVisible, setSidebarVisible] = React.useState(() => {
     try {
       const v = localStorage.getItem('ui:sidebarVisible');
@@ -219,7 +227,7 @@ export default function Layout({ children }) {
       if (user) {
         // Already logged in: ensure modal is closed and redirect to home
         if (loginDisc.isOpen) loginDisc.onClose();
-        navigate('/', { replace: true });
+        navigate(defaultAuthedRoute, { replace: true });
         return;
       }
       if (!loginDisc.isOpen) loginDisc.onOpen();
@@ -232,10 +240,16 @@ export default function Layout({ children }) {
     try {
       const atLogin = String(loc?.pathname || '') === '/login';
       if (atLogin && user && !loginDisc.isOpen) {
-        navigate('/', { replace: true });
+        navigate(defaultAuthedRoute, { replace: true });
       }
     } catch {}
-  }, [loginDisc.isOpen, loc.pathname, navigate, user]);
+  }, [defaultAuthedRoute, loginDisc.isOpen, loc.pathname, navigate, user]);
+
+  React.useEffect(() => {
+    if (!user || !isAlerter) return;
+    if (isBellSystemRoute) return;
+    navigate('/admin/bell-system', { replace: true });
+  }, [isAlerter, isBellSystemRoute, navigate, user]);
 
   // Guest tracking: on route change, always touch with current route; prompt if no record
   React.useEffect(() => {
@@ -303,6 +317,7 @@ export default function Layout({ children }) {
   }, [isSharePublic]);
 
   const splash = showSplash;
+  const showSidebar = !isAlerter;
 
   if (isUnauthorizedRoute) {
     // Dedicated unauthorized view: no sidebar, custom header + footer
@@ -485,20 +500,22 @@ export default function Layout({ children }) {
   return (
     <Flex minH="100vh" align="stretch" bg={bg}>
       <RouteProgress />
-      <AnimatePresence initial={false}>
-        <Box
-          as={motion.aside}
-          display={{ base: 'none', md: 'block' }}
-          w={{ base: 0, md: sidebarVisible ? '280px' : 0, lg: sidebarVisible ? '320px' : 0 }}
-          initial={{ x: '-100%', opacity: 0 }}
-          animate={{ x: sidebarVisible ? 0 : '-100%', opacity: sidebarVisible ? 1 : 0 }}
-          exit={{ x: '-100%', opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 260, damping: 22, bounce: 0.3 }}
-          overflow="hidden"
-        >
-          <Sidebar />
-        </Box>
-      </AnimatePresence>
+      {showSidebar && (
+        <AnimatePresence initial={false}>
+          <Box
+            as={motion.aside}
+            display={{ base: 'none', md: 'block' }}
+            w={{ base: 0, md: sidebarVisible ? '280px' : 0, lg: sidebarVisible ? '320px' : 0 }}
+            initial={{ x: '-100%', opacity: 0 }}
+            animate={{ x: sidebarVisible ? 0 : '-100%', opacity: sidebarVisible ? 1 : 0 }}
+            exit={{ x: '-100%', opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 22, bounce: 0.3 }}
+            overflow="hidden"
+          >
+            <Sidebar />
+          </Box>
+        </AnimatePresence>
+      )}
       <Box flex="1">
         <Topbar
           onOpenMenu={menuDisc.onOpen}
@@ -508,16 +525,19 @@ export default function Layout({ children }) {
           authUser={user}
           onOpenChangePwd={changePwdDisc.onOpen}
           onOpenProfile={profileDisc.onOpen}
+          showSidebarControls={showSidebar}
         />
-        <Drawer isOpen={menuDisc.isOpen} placement="left" onClose={menuDisc.onClose} size="xs">
-          <DrawerOverlay />
-          <DrawerContent>
-            <DrawerCloseButton />
-            <DrawerBody px={0}>
-              <Sidebar mobile onNavigate={menuDisc.onClose} />
-            </DrawerBody>
-          </DrawerContent>
-        </Drawer>
+        {showSidebar && (
+          <Drawer isOpen={menuDisc.isOpen} placement="left" onClose={menuDisc.onClose} size="xs">
+            <DrawerOverlay />
+            <DrawerContent>
+              <DrawerCloseButton />
+              <DrawerBody px={0}>
+                <Sidebar mobile onNavigate={menuDisc.onClose} />
+              </DrawerBody>
+            </DrawerContent>
+          </Drawer>
+        )}
         <Box as="main" px={{ base: 2, md: 2 }} py={3} maxW="100%" mx="auto">
           {splash ? <SplashScreen /> : children}
         </Box>
