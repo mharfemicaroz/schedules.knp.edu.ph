@@ -213,6 +213,9 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             {(isAdmin || isChecker) && (
               <NavItem to="/admin/attendance" icon={FiCheckSquare} onClick={onNavigate} chipLabel={attendanceChip}>Attendance</NavItem>
             )}
+            {(isAdmin || isChecker || isSa) && (
+              <NavItem to="/admin/room-attendance" icon={FiMapPin} onClick={onNavigate}>Room Attendance</NavItem>
+            )}
             {isAdmin && (
               <NavItem to="/admin/meet-classes" icon={FiVideo} onClick={onNavigate}>Meet Classes</NavItem>
             )}
