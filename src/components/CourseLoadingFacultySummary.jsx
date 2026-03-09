@@ -30,6 +30,23 @@ function normalizeName(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function isNSTPCourse(course) {
+  const text = [
+    course?.courseTitle,
+    course?.course_title,
+    course?.title,
+    course?.courseName,
+    course?.course_name,
+    course?.code
+  ]
+    .filter(Boolean)
+    .map(String)
+    .join(' ')
+    .toUpperCase();
+  if (!text) return false;
+  return text.includes('NSTP');
+}
+
 function shortTerm(term) {
   const v = String(term || '').trim().toLowerCase();
   if (v.startsWith('1')) return '1st';
@@ -46,6 +63,61 @@ function timeKeyOf(r) {
   const tr = parseTimeBlockToMinutes(raw);
   if (Number.isFinite(tr.start) && Number.isFinite(tr.end)) return `${tr.start}-${tr.end}`;
   return raw.toLowerCase();
+}
+
+function emptyTermUnits() {
+  return { '1st': 0, '2nd': 0, 'Sem': 0 };
+}
+
+function buildFacultyCourseStats(courses = []) {
+  const out = new Map();
+  const ensure = (key) => {
+    if (!out.has(key)) {
+      out.set(key, {
+        units: 0,
+        termUnits: emptyTermUnits(),
+        nstpUnits: 0,
+        nstpTermUnits: emptyTermUnits(),
+        courseCount: 0,
+        seen: new Set()
+      });
+    }
+    return out.get(key);
+  };
+  const add = (key, seenKey, units, termKey, isNstp) => {
+    if (!key) return;
+    const entry = ensure(key);
+    if (entry.seen.has(seenKey)) return;
+    entry.seen.add(seenKey);
+    entry.units += units;
+    entry.courseCount += 1;
+    if (termKey && Object.prototype.hasOwnProperty.call(entry.termUnits, termKey)) {
+      entry.termUnits[termKey] += units;
+    }
+    if (isNstp) {
+      entry.nstpUnits += units;
+      if (termKey && Object.prototype.hasOwnProperty.call(entry.nstpTermUnits, termKey)) {
+        entry.nstpTermUnits[termKey] += units;
+      }
+    }
+  };
+  (courses || []).forEach((r) => {
+    const fid = r.facultyId ?? r.faculty_id;
+    const name = r.facultyName || r.faculty || r.instructor || '';
+    const code = String(r.code || r.courseName || '').trim().toLowerCase();
+    const section = normalizeName(r.section || r.blockCode || '');
+    if (!code || !section) return;
+    const termKey = shortTerm(r.term || r.semester || r.sem);
+    const tk = timeKeyOf(r);
+    const seenKey = [code, section, termKey || 'n/a', tk || ''].join('|');
+    const units = Number(r.unit ?? r.units ?? r.hours ?? 0) || 0;
+    const isNstp = isNSTPCourse(r);
+    const idKey = fid != null && fid !== '' ? `id:${fid}` : '';
+    const nameKey = name ? `nm:${normalizeName(name)}` : '';
+    if (idKey) add(idKey, seenKey, units, termKey, isNstp);
+    if (nameKey && nameKey !== idKey) add(nameKey, seenKey, units, termKey, isNstp);
+  });
+  return out;
 }
 
 // Same overload split logic as CourseLoading faculty print utils
@@ -69,10 +141,21 @@ function splitOverload(total) {
   return { first: candidates[0].a, second: candidates[0].b };
 }
 
-function fmtHours(units) {
-  if (!Number.isFinite(units)) return '0';
-  const rounded = Math.round(units * 100) / 100;
+function fmtHours(hours) {
+  if (!Number.isFinite(hours)) return '0';
+  const rounded = Math.round(hours * 100) / 100;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
+
+function unitsToHours(units) {
+  if (!Number.isFinite(units)) return '0';
+  return fmtHours(units / 3);
+}
+
+function formatTermPrint(units, hours, nstpUnits, nstpHours) {
+  const base = `${units}u / ${hours}h`;
+  if (Number(nstpUnits) > 0) return `${base} (NSTP ${nstpUnits}u/${nstpHours}h Saturday)`;
+  return base;
 }
 
 function buildDeptOptions(faculties = []) {
@@ -109,6 +192,7 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
   const muted = useColorModeValue('gray.600', 'gray.300');
   const accentBg = useColorModeValue('blue.50', 'blue.900');
   const accentBorder = useColorModeValue('blue.200', 'blue.700');
+  const nstpTone = useColorModeValue('orange.600', 'orange.300');
   const [serverRows, setServerRows] = React.useState([]);
   const [serverLoading, setServerLoading] = React.useState(false);
   const [serverError, setServerError] = React.useState('');
@@ -128,6 +212,8 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
     };
     const overloadFirst = num(r.overloadFirstUnits ?? r.overloadFirst ?? r.overload_first);
     const overloadSecond = num(r.overloadSecondUnits ?? r.overloadSecond ?? r.overload_second);
+    const overloadFirstHoursRaw = r.overloadFirstHours ?? r.overload_first_hours;
+    const overloadSecondHoursRaw = r.overloadSecondHours ?? r.overload_second_hours;
     const loadUnits = num(r.loadUnits ?? r.load_units ?? r.totalUnits ?? r.total_units);
     const releaseUnits = num(r.releaseUnits ?? r.release_units ?? r.loadReleaseUnits ?? r.load_release_units);
     const courseCount = num(r.courseCount ?? r.courses ?? r.countCourses ?? r.count_courses);
@@ -144,12 +230,17 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
       overloadUnits: num(r.overloadUnits ?? r.overload_units ?? r.overload),
       overloadFirst,
       overloadSecond,
-      overloadFirstHours: fmtHours(r.overloadFirstHours ?? (overloadFirst / 3)),
-      overloadSecondHours: fmtHours(r.overloadSecondHours ?? (overloadSecond / 3)),
+      overloadFirstHours: overloadFirstHoursRaw != null ? fmtHours(num(overloadFirstHoursRaw)) : unitsToHours(overloadFirst),
+      overloadSecondHours: overloadSecondHoursRaw != null ? fmtHours(num(overloadSecondHoursRaw)) : unitsToHours(overloadSecond),
       courseCount,
       termUnits
     };
   }, []);
+
+  const courseStatsByKey = React.useMemo(
+    () => buildFacultyCourseStats(courses || []),
+    [courses]
+  );
 
   React.useEffect(() => {
     const sy = String(settingsLoad?.school_year || '').trim();
@@ -195,39 +286,37 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
     return (faculties || []).map((f, idx) => {
       const fid = f.id != null ? String(f.id) : '';
       const fname = f.name || f.faculty || f.full_name || f.instructor || '';
-      const fnameNorm = normalizeName(fname);
       const deptVal = f.department || f.dept || '';
       const empVal = f.employment || '';
       const releaseUnits = Number(f.load_release_units ?? f.loadReleaseUnits ?? f.loadRelease ?? 0) || 0;
       const isFullTime = /full\s*-?\s*time/i.test(String(empVal || ''));
       const isPartTime = !isFullTime && /part\s*-?\s*time/i.test(String(empVal || ''));
-      const seen = new Set();
-      let units = 0;
-      let courseCount = 0;
-      const termUnits = { '1st': 0, '2nd': 0, 'Sem': 0 };
-      for (const r of (courses || [])) {
-        const rid = r.facultyId != null ? String(r.facultyId) : (r.faculty_id != null ? String(r.faculty_id) : '');
-        const rname = normalizeName(r.facultyName || r.faculty || r.instructor || '');
-        if (!((fid && rid && fid === rid) || (fnameNorm && rname === fnameNorm))) continue;
-        const code = String(r.code || r.courseName || '').trim().toLowerCase();
-        const section = normalizeName(r.section || r.blockCode || '');
-        if (!code || !section) continue;
-        const term = shortTerm(r.term || r.semester || r.sem);
-        const tk = timeKeyOf(r);
-        const key = [code, section, term || 'n/a', tk || ''].join('|');
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const val = Number(r.unit ?? r.units ?? r.hours ?? 0) || 0;
-        units += val;
-        courseCount += 1;
-        if (term && Object.prototype.hasOwnProperty.call(termUnits, term)) {
-          termUnits[term] += val;
+
+      const stats = (() => {
+        if (fid) {
+          const byId = courseStatsByKey.get(`id:${fid}`);
+          if (byId) return byId;
         }
-      }
+        const nameKey = normalizeName(fname);
+        if (nameKey) return courseStatsByKey.get(`nm:${nameKey}`) || null;
+        return null;
+      })();
+
+      const units = Number(stats?.units ?? 0) || 0;
+      const termUnits = stats?.termUnits ? { ...stats.termUnits } : emptyTermUnits();
+      const nstpUnits = Number(stats?.nstpUnits ?? 0) || 0;
+      const nstpTermUnits = stats?.nstpTermUnits ? { ...stats.nstpTermUnits } : emptyTermUnits();
+      const courseCount = Number(stats?.courseCount ?? 0) || 0;
+      const nonNstpUnits = Math.max(0, units - nstpUnits);
+
       const baseline = Math.max(0, 24 - releaseUnits);
-      const overloadUnits = Math.max(0, units - baseline);
-      const baseUnitsForSplit = overloadUnits > 0 ? overloadUnits : (isPartTime ? units : 0);
+      const overloadUnits = Math.max(0, nonNstpUnits - baseline);
+      const baseUnitsForSplit = overloadUnits > 0 ? overloadUnits : (isPartTime ? nonNstpUnits : 0);
       const { first: overloadFirst, second: overloadSecond } = splitOverload(baseUnitsForSplit);
+
+      const nstpFirstUnits = nstpTermUnits['1st'] + nstpTermUnits['Sem'];
+      const nstpSecondUnits = nstpTermUnits['2nd'] + nstpTermUnits['Sem'];
+
       return {
         id: fid || fname || idx,
         facultyId: fid || null,
@@ -241,25 +330,99 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
         overloadUnits,
         overloadFirst,
         overloadSecond,
-        overloadFirstHours: fmtHours(overloadFirst),
-        overloadSecondHours: fmtHours(overloadSecond),
+        overloadFirstHours: unitsToHours(overloadFirst),
+        overloadSecondHours: unitsToHours(overloadSecond),
         courseCount,
-        termUnits
+        termUnits,
+        nstpUnits,
+        nstpTermUnits,
+        nstpFirstUnits,
+        nstpSecondUnits,
+        nstpFirstHours: unitsToHours(nstpFirstUnits),
+        nstpSecondHours: unitsToHours(nstpSecondUnits)
       };
     });
-  }, [faculties, courses]);
+  }, [faculties, courseStatsByKey]);
 
   const baseRows = React.useMemo(
     () => (serverRows && serverRows.length ? serverRows : localRows),
     [serverRows, localRows]
   );
 
-  const deptOptions = React.useMemo(() => buildDeptOptions(baseRows.length ? baseRows : faculties), [baseRows, faculties]);
-  const employmentOptions = React.useMemo(() => buildEmploymentOptions(baseRows.length ? baseRows : faculties), [baseRows, faculties]);
+  const decoratedRows = React.useMemo(() => {
+    return (baseRows || []).map((r, idx) => {
+      const fid = r.facultyId != null ? String(r.facultyId) : '';
+      const fname = r.faculty || r.name || '';
+      const stats = (() => {
+        if (fid) {
+          const byId = courseStatsByKey.get(`id:${fid}`);
+          if (byId) return byId;
+        }
+        const nameKey = normalizeName(fname);
+        if (nameKey) return courseStatsByKey.get(`nm:${nameKey}`) || null;
+        return null;
+      })();
+
+      const hasStats = !!stats;
+      const loadUnits = Number(r.loadUnits ?? 0) || 0;
+      const releaseUnits = Number(r.releaseUnits ?? 0) || 0;
+      const empVal = r.employment || '';
+      const isFullTime = /full\s*-?\s*time/i.test(String(empVal || ''));
+      const isPartTime = !isFullTime && /part\s*-?\s*time/i.test(String(empVal || ''));
+
+      const termUnits = (r.termUnits && (r.termUnits['1st'] || r.termUnits['2nd'] || r.termUnits.Sem))
+        ? r.termUnits
+        : (stats?.termUnits ? { ...stats.termUnits } : (r.termUnits || emptyTermUnits()));
+      const nstpUnits = Number(stats?.nstpUnits ?? 0) || 0;
+      const nstpTermUnits = stats?.nstpTermUnits ? { ...stats.nstpTermUnits } : emptyTermUnits();
+
+      let overloadUnits = Number(r.overloadUnits ?? r.overload ?? 0) || 0;
+      let overloadFirst = Number(r.overloadFirst ?? 0) || 0;
+      let overloadSecond = Number(r.overloadSecond ?? 0) || 0;
+      let overloadFirstHours = r.overloadFirstHours ?? unitsToHours(overloadFirst);
+      let overloadSecondHours = r.overloadSecondHours ?? unitsToHours(overloadSecond);
+
+      if (hasStats) {
+        const nonNstpUnits = Math.max(0, loadUnits - nstpUnits);
+        const baseline = Math.max(0, 24 - releaseUnits);
+        overloadUnits = Math.max(0, nonNstpUnits - baseline);
+        const baseUnitsForSplit = overloadUnits > 0 ? overloadUnits : (isPartTime ? nonNstpUnits : 0);
+        const split = splitOverload(baseUnitsForSplit);
+        overloadFirst = split.first;
+        overloadSecond = split.second;
+        overloadFirstHours = unitsToHours(overloadFirst);
+        overloadSecondHours = unitsToHours(overloadSecond);
+      }
+
+      const nstpFirstUnits = nstpTermUnits['1st'] + nstpTermUnits['Sem'];
+      const nstpSecondUnits = nstpTermUnits['2nd'] + nstpTermUnits['Sem'];
+
+      return {
+        ...r,
+        id: r.id ?? fid ?? fname ?? idx,
+        termUnits,
+        nstpUnits,
+        nstpTermUnits,
+        nstpFirstUnits,
+        nstpSecondUnits,
+        nstpFirstHours: unitsToHours(nstpFirstUnits),
+        nstpSecondHours: unitsToHours(nstpSecondUnits),
+        overload: overloadUnits,
+        overloadUnits,
+        overloadFirst,
+        overloadSecond,
+        overloadFirstHours,
+        overloadSecondHours
+      };
+    });
+  }, [baseRows, courseStatsByKey]);
+
+  const deptOptions = React.useMemo(() => buildDeptOptions(decoratedRows.length ? decoratedRows : faculties), [decoratedRows, faculties]);
+  const employmentOptions = React.useMemo(() => buildEmploymentOptions(decoratedRows.length ? decoratedRows : faculties), [decoratedRows, faculties]);
 
 const rows = React.useMemo(() => {
   const ql = q.trim().toLowerCase();
-  const filtered = (baseRows || [])
+  const filtered = (decoratedRows || [])
     .filter(r => (!ql || [r.faculty, r.department, r.employment].some(x => String(x || '').toLowerCase().includes(ql))))
     .filter(r => (!dept || String(r.department || '').toLowerCase() === String(dept || '').toLowerCase()))
     .filter(r => (!employment || String(r.employment || '').toLowerCase() === String(employment || '').toLowerCase()));
@@ -306,7 +469,7 @@ const rows = React.useMemo(() => {
 
     return 0;
   });
-}, [baseRows, q, dept, employment, sortKey, sortDir]);
+}, [decoratedRows, q, dept, employment, sortKey, sortDir]);
 
 
   const totals = React.useMemo(() => {
@@ -392,8 +555,8 @@ const rows = React.useMemo(() => {
         r.employment,
         String(r.loadUnits),
         String(r.overloadUnits ?? r.overload),
-        `${r.overloadFirst}u / ${r.overloadFirstHours}h`,
-        `${r.overloadSecond}u / ${r.overloadSecondHours}h`
+        formatTermPrint(r.overloadFirst, r.overloadFirstHours, r.nstpFirstUnits, r.nstpFirstHours),
+        formatTermPrint(r.overloadSecond, r.overloadSecondHours, r.nstpSecondUnits, r.nstpSecondHours)
       ]);
 
     const subtitle = [
@@ -529,10 +692,16 @@ const rows = React.useMemo(() => {
                   <Box>
                     <Text fontSize="xs" color={muted}>1st Term</Text>
                     <Text fontWeight="700">{r.overloadFirst}u / {r.overloadFirstHours}h</Text>
+                    {r.nstpFirstUnits > 0 && (
+                      <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpFirstUnits}u / {r.nstpFirstHours}h Saturday</Text>
+                    )}
                   </Box>
                   <Box>
                     <Text fontSize="xs" color={muted}>2nd Term</Text>
                     <Text fontWeight="700">{r.overloadSecond}u / {r.overloadSecondHours}h</Text>
+                    {r.nstpSecondUnits > 0 && (
+                      <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpSecondUnits}u / {r.nstpSecondHours}h Saturday</Text>
+                    )}
                   </Box>
                   <Box>
                     <Text fontSize="xs" color={muted}>Load Release</Text>
@@ -603,10 +772,16 @@ const rows = React.useMemo(() => {
                 <Td isNumeric>
                   <Text fontWeight="700">{r.overloadFirst}u</Text>
                   <Text fontSize="xs" color={muted}>{r.overloadFirstHours} hrs</Text>
+                  {r.nstpFirstUnits > 0 && (
+                    <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpFirstUnits}u / {r.nstpFirstHours}h Saturday</Text>
+                  )}
                 </Td>
                 <Td isNumeric>
                   <Text fontWeight="700">{r.overloadSecond}u</Text>
                   <Text fontSize="xs" color={muted}>{r.overloadSecondHours} hrs</Text>
+                  {r.nstpSecondUnits > 0 && (
+                    <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpSecondUnits}u / {r.nstpSecondHours}h Saturday</Text>
+                  )}
                 </Td>
                 <Td isNumeric>{r.courseCount}</Td>
               </Tr>

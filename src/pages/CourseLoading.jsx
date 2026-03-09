@@ -473,6 +473,16 @@ function isSemestralCourseLike(row) {
   return false;
 }
 
+function isNSTPCourse(row) {
+  const text = [row?.course_name, row?.courseName, row?.code, row?.course_title, row?.courseTitle, row?.title]
+    .filter(Boolean)
+    .map(String)
+    .join(' ')
+    .toUpperCase();
+  if (!text) return false;
+  return text.includes('NSTP');
+}
+
 // --- UI subcomponents (unchanged structure) ---
 function BlockList({ items, selectedId, onSelect, loading, onProgramChange, hideFilters = false }) {
   const border = useColorModeValue('gray.200','gray.700');
@@ -2090,10 +2100,6 @@ export default function CourseLoading() {
       String(r.room || ''),
       String(r.section || r.blockCode || ''),
     ]);
-    const totalUnits = sorted.reduce((sum, r) => {
-      const v = Number(r.unit ?? r.units ?? 0);
-      return sum + (Number.isFinite(v) ? v : 0);
-    }, 0);
     // Term-wise unit subtotals for faculty
     const normShortF = (t) => {
       const v = String(t || '').trim().toLowerCase();
@@ -2103,14 +2109,32 @@ export default function CourseLoading() {
       if (v.startsWith('s')) return 'Sem';
       return '';
     };
-    const termSumsF = { '1st': 0, '2nd': 0, 'Sem': 0 };
-    sorted.forEach(r => {
-      const k = normShortF(r.term);
-      if (k && Object.prototype.hasOwnProperty.call(termSumsF, k)) {
-        const u = Number(r.unit ?? r.units ?? 0);
-        if (Number.isFinite(u)) termSumsF[k] += u;
+    const totals = sorted.reduce((acc, r) => {
+      const u = Number(r.unit ?? r.units ?? 0);
+      if (!Number.isFinite(u)) return acc;
+      acc.totalUnits += u;
+      const termKey = normShortF(r.term);
+      if (termKey && Object.prototype.hasOwnProperty.call(acc.termSums, termKey)) {
+        acc.termSums[termKey] += u;
       }
+      if (isNSTPCourse(r)) {
+        acc.nstpUnits += u;
+        if (termKey && Object.prototype.hasOwnProperty.call(acc.nstpTermSums, termKey)) {
+          acc.nstpTermSums[termKey] += u;
+        }
+      }
+      return acc;
+    }, {
+      totalUnits: 0,
+      nstpUnits: 0,
+      termSums: { '1st': 0, '2nd': 0, 'Sem': 0 },
+      nstpTermSums: { '1st': 0, '2nd': 0, 'Sem': 0 }
     });
+    const totalUnits = totals.totalUnits;
+    const nstpUnits = totals.nstpUnits;
+    const termSumsF = totals.termSums;
+    const nstpTermSums = totals.nstpTermSums;
+    const nonNstpUnits = Math.max(0, totalUnits - nstpUnits);
     const summaryPairsF = [];
     if (termSumsF['1st'] > 0) summaryPairsF.push(['1st Term Units', termSumsF['1st']]);
     if (termSumsF['2nd'] > 0) summaryPairsF.push(['2nd Term Units', termSumsF['2nd']]);
@@ -2127,7 +2151,7 @@ export default function CourseLoading() {
     // Overload breakdown by term (auto-split, prioritize 1st term if odd)
     const releaseUnits = Number(f.loadReleaseUnits ?? f.load_release_units ?? 0) || 0;
     const baselineUnits = Math.max(0, 24 - releaseUnits);
-    const overloadUnits = Math.max(0, totalUnits - baselineUnits);
+    const overloadUnits = Math.max(0, nonNstpUnits - baselineUnits);
     const isFullTime = /full\s*-?\s*time/i.test(String(f.employment || ''));
     const isPartTime = !isFullTime && /part\s*-?\s*time/i.test(String(f.employment || ''));
     const splitOverload = (total) => {
@@ -2149,7 +2173,7 @@ export default function CourseLoading() {
       });
       return { first: candidates[0].a, second: candidates[0].b };
     };
-    const baseUnitsForSplit = overloadUnits > 0 ? overloadUnits : (isPartTime ? totalUnits : 0);
+    const baseUnitsForSplit = overloadUnits > 0 ? overloadUnits : (isPartTime ? nonNstpUnits : 0);
     const { first: overloadFirstUnits, second: overloadSecondUnits } = splitOverload(baseUnitsForSplit);
     const fmtHours = (u) => {
       const hrs = u / 3;
@@ -2159,20 +2183,32 @@ export default function CourseLoading() {
     };
     const labelFirst = overloadUnits > 0 ? 'Overload 1st Term' : 'Load 1st Term';
     const labelSecond = overloadUnits > 0 ? 'Overload 2nd Term' : 'Load 2nd Term';
-    const overloadHtml = baseUnitsForSplit > 0
-      ? `<table class="prt-table"><tbody>
-          <tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(fmtHours(overloadFirstUnits))} hrs)</td>
-          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(fmtHours(overloadSecondUnits))} hrs)</td></tr>
-        </tbody></table>`
+    const overloadRows = [];
+    if (baseUnitsForSplit > 0) {
+      overloadRows.push(`<tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(fmtHours(overloadFirstUnits))} hrs)</td>
+          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(fmtHours(overloadSecondUnits))} hrs)</td></tr>`);
+    }
+    if (nstpUnits > 0) {
+      const nstpFirstUnits = nstpTermSums['1st'] + nstpTermSums['Sem'];
+      const nstpSecondUnits = nstpTermSums['2nd'] + nstpTermSums['Sem'];
+      overloadRows.push(`<tr><th>NSTP Hrs 1st Term</th><td>${esc(String(nstpFirstUnits))} units (${esc(fmtHours(nstpFirstUnits))} hrs) per Saturday</td>
+          <th>NSTP Hrs 2nd Term</th><td>${esc(String(nstpSecondUnits))} units (${esc(fmtHours(nstpSecondUnits))} hrs) per Saturday</td></tr>`);
+    }
+    const overloadHtml = overloadRows.length
+      ? `<table class="prt-table"><tbody>${overloadRows.join('')}</tbody></table>`
       : '';
 
     const scheduleType = 'Regular Schedule';
     const headingHtml = `
       <p class='prt-fac-name'>${esc(f.name || f.faculty || '')}</p>`;
+    const nstpMetaRow = nstpUnits > 0
+      ? `<tr><th>NSTP Units</th><td>${esc(String(nstpUnits))}</td><th>Load Units (Non-NSTP)</th><td>${esc(String(nonNstpUnits))}</td></tr>`
+      : '';
     const metaHtml = `<table class="prt-table"><tbody>
       <tr><th>Department</th><td>${esc(f.department || f.dept || '')}</td><th>Employment</th><td>${esc(f.employment || '')}</td></tr>
       <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
       <tr><th>Load Release Units</th><td>${esc(String(releaseUnits))}</td><th>Total Load Units</th><td>${esc(String(totalUnits))}</td></tr>
+      ${nstpMetaRow}
       <tr><th>Overload Units</th><td>${esc(String(overloadUnits))}</td><th>Courses</th><td>${esc(String(list.length))}</td></tr>
       <tr><th>Schedule Type</th><td colspan="3">${esc(scheduleType)}</td></tr>
     </tbody></table>`;
