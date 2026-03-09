@@ -1,6 +1,6 @@
 ﻿import React from 'react';
 import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGrid, Button, Icon, Popover, PopoverTrigger,PopoverContent, PopoverArrow, PopoverCloseButton, PopoverBody, Divider, Avatar, useDisclosure, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider, Tag, TagLabel, Wrap, WrapItem, useBreakpointValue } from '@chakra-ui/react';
-import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiDownload, FiShare2, FiExternalLink, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiDownload, FiShare2, FiExternalLink, FiChevronLeft, FiChevronRight, FiCheck, FiX, FiAlertCircle, FiInfo } from 'react-icons/fi';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
 import { selectSettings } from '../store/settingsSlice';
@@ -15,6 +15,7 @@ import { loginThunk, logoutThunk, changePasswordThunk, updateProfileThunk } from
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import ProfileModal from '../components/ProfileModal';
 import LoginModal from '../components/LoginModal';
+import AttendanceFormModal from '../components/AttendanceFormModal';
 import { Link as RouterLink } from 'react-router-dom';
 import { usePublicView } from '../utils/uiFlags';
 
@@ -73,12 +74,15 @@ export default function RoomAttendance() {
   const footerBg = headerBg;
   const isPublic = usePublicView();
   const loginModal = useDisclosure();
+  const attendModal = useDisclosure();
   const changePwdModal = useDisclosure();
   const profileModal = useDisclosure();
   const toast = useToast();
+  const [attendanceInitial, setAttendanceInitial] = React.useState(null);
 
   const roleStr = String(authUser?.role || '').toLowerCase();
   const canAttend = !!authUser && (roleStr === 'admin' || roleStr === 'manager' || roleStr === 'checker');
+  const isAdmin = !!authUser && roleStr === 'admin';
 
   const days = getCurrentWeekDays();
   const today = new Date(); today.setHours(0,0,0,0);
@@ -295,6 +299,15 @@ export default function RoomAttendance() {
     100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.0); }
   `;
 
+  const statusMeta = React.useCallback((status) => {
+    const v = String(status || '').toLowerCase();
+    if (v === 'present') return { icon: FiCheck, color: 'green.500', label: 'Present' };
+    if (v === 'absent') return { icon: FiX, color: 'red.500', label: 'Absent' };
+    if (v === 'late') return { icon: FiAlertCircle, color: 'orange.500', label: 'Late' };
+    if (v === 'excused') return { icon: FiInfo, color: 'blue.500', label: 'Excused' };
+    return null;
+  }, []);
+
   const [bySched, setBySched] = React.useState({});
   const loadAttendance = React.useCallback(async () => {
     try {
@@ -307,6 +320,12 @@ export default function RoomAttendance() {
     } catch { setBySched({}); }
   }, [selectedIso]);
   React.useEffect(() => { (async () => { try { await loadAttendance(); } catch {} })(); }, [loadAttendance, selectedIso]);
+
+  const openAttendanceModal = React.useCallback((scheduleId, status) => {
+    if (!scheduleId) return;
+    setAttendanceInitial({ scheduleId, status: status || 'present', date: selectedIso });
+    attendModal.onOpen();
+  }, [selectedIso, attendModal]);
 
   // Realtime auto-refresh similar to VisualMap
   const [rtEnabled, setRtEnabled] = React.useState(false);
@@ -911,25 +930,57 @@ export default function RoomAttendance() {
                       ) : (
                         <Wrap spacing={2}>
                           {arr.map((b) => {
-          const candidates = (filteredSchedules || []).filter(c => {
-            const blk = c.section || c.blockCode || c.block_code;
-            if (String(blk) !== String(b)) return false;
-            const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
-            const termOk = termMatches(c.term);
-            return termOk && daysArr.includes(selectedDayCode) && withinSlot(c, slots[slotIndex]);
+                            const candidates = (filteredSchedules || []).filter(c => {
+                              const blk = c.section || c.blockCode || c.block_code;
+                              if (String(blk) !== String(b)) return false;
+                              const daysArr = Array.isArray(c.f2fDays) ? c.f2fDays : String(c.f2fSched || c.f2fsched || c.day).split(',').map(s=>s.trim()).filter(Boolean);
+                              const termOk = termMatches(c.term);
+                              return termOk && daysArr.includes(selectedDayCode) && withinSlot(c, slots[slotIndex]);
                             });
-                            let chosen = null;
-                            candidates.forEach(c => { const st = bySched[c.id]; if (st) chosen = st; });
-                            const borderColor = (!canAttend || !chosen) ? undefined : (chosen==='present' ? 'green.400' : chosen==='absent' ? 'red.400' : chosen==='late' ? 'orange.400' : chosen==='excused' ? 'blue.400' : undefined);
-                            const anim = canAttend && chosen==='present' ? `${presentPulse} 1.8s ease-out infinite` : undefined;
+                            const chosenSchedule = candidates.find(c => bySched[c.id]);
+                            const statusVal = String(chosenSchedule ? bySched[chosenSchedule.id] : '').toLowerCase();
+                            const primarySchedule = chosenSchedule || candidates[0];
+                            const scheduleId = primarySchedule?.id;
+                            const statusInfo = canAttend ? statusMeta(statusVal) : null;
+                            const borderColor = (!canAttend || !statusVal) ? undefined : (statusVal==='present' ? 'green.400' : statusVal==='absent' ? 'red.400' : statusVal==='late' ? 'orange.400' : statusVal==='excused' ? 'blue.400' : undefined);
+                            const anim = canAttend && statusVal==='present' ? `${presentPulse} 1.8s ease-out infinite` : undefined;
+                            const canClick = !!scheduleId && isAdmin;
+                            const tagSx = {
+                              ...(anim ? { animation: anim } : {}),
+                              ...(canClick ? { cursor: 'pointer', transition: 'transform 120ms ease, box-shadow 120ms ease', '&:hover': { transform: 'translateY(-1px)', boxShadow: 'sm' } } : {}),
+                            };
                             const hasCand = candidates.length > 0;
                             const fac = hasCand ? ((candidates[0].faculty || candidates[0].instructor || '') || '') : '';
                             const codeVal = hasCand ? (candidates[0].code || candidates[0].courseName || '') : '';
                             return (
                               <WrapItem key={`m-${r}-${sess}-${b}`}>
                                 <VStack spacing={1} align="start">
-                                  <Tag variant="subtle" colorScheme={schemeForBlockCode(b)} rounded="full" px={4} py={1.5} display="inline-block" maxW="100%" style={{ fontSize: '12px', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }} borderWidth={borderColor ? '2px' : undefined} borderColor={borderColor} sx={anim ? { animation: anim } : undefined}>
-                                    <TagLabel display="block" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{b}</TagLabel>
+                                  <Tag
+                                    variant="subtle"
+                                    colorScheme={schemeForBlockCode(b)}
+                                    rounded="full"
+                                    px={4}
+                                    py={1.5}
+                                    display="inline-block"
+                                    maxW="100%"
+                                    style={{ fontSize: '12px', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                                    borderWidth={borderColor ? '2px' : undefined}
+                                    borderColor={borderColor}
+                                    sx={Object.keys(tagSx).length ? tagSx : undefined}
+                                    onClick={canClick ? () => openAttendanceModal(scheduleId, statusVal) : undefined}
+                                    onKeyDown={canClick ? (e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        openAttendanceModal(scheduleId, statusVal);
+                                      }
+                                    } : undefined}
+                                    role={canClick ? 'button' : undefined}
+                                    tabIndex={canClick ? 0 : undefined}
+                                  >
+                                    <HStack spacing={1}>
+                                      <TagLabel display="block" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{b}</TagLabel>
+                                      {statusInfo ? <Icon as={statusInfo.icon} color={statusInfo.color} boxSize="12px" /> : null}
+                                    </HStack>
                                   </Tag>
                                   <Text fontSize="10px" color={subtle}>{hasCand ? `${fac}${codeVal ? ' · ' + codeVal : ''}` : 'No teacher available'}</Text>
                               </VStack>
@@ -989,10 +1040,18 @@ export default function RoomAttendance() {
                                       const termOk = termMatches(c.term);
                                       return termOk && daysArr.includes(selectedDayCode) && withinSlot(c, slots[slotIndex]);
                                     });
-                                    let chosen = null;
-                                    candidates.forEach(c => { const st = bySched[c.id]; if (st) chosen = st; });
-                                    const borderColor = (!canAttend || !chosen) ? undefined : (chosen==='present' ? 'green.400' : chosen==='absent' ? 'red.400' : chosen==='late' ? 'orange.400' : chosen==='excused' ? 'blue.400' : undefined);
-                                    const anim = canAttend && chosen==='present' ? `${presentPulse} 1.8s ease-out infinite` : undefined;
+                                    const chosenSchedule = candidates.find(c => bySched[c.id]);
+                                    const statusVal = String(chosenSchedule ? bySched[chosenSchedule.id] : '').toLowerCase();
+                                    const primarySchedule = chosenSchedule || candidates[0];
+                                    const scheduleId = primarySchedule?.id;
+                                    const statusInfo = canAttend ? statusMeta(statusVal) : null;
+                                    const borderColor = (!canAttend || !statusVal) ? undefined : (statusVal==='present' ? 'green.400' : statusVal==='absent' ? 'red.400' : statusVal==='late' ? 'orange.400' : statusVal==='excused' ? 'blue.400' : undefined);
+                                    const anim = canAttend && statusVal==='present' ? `${presentPulse} 1.8s ease-out infinite` : undefined;
+                                    const canClick = !!scheduleId && isAdmin;
+                                    const tagSx = {
+                                      ...(anim ? { animation: anim } : {}),
+                                      ...(canClick ? { cursor: 'pointer', transition: 'transform 120ms ease, box-shadow 120ms ease', '&:hover': { transform: 'translateY(-1px)', boxShadow: 'sm' } } : {}),
+                                    };
                                     if (candidates.length === 0) {
                                       return (
                                         <VStack key={`${sess}-${r}-${b}-${partIdx}`} spacing={1} align="start">
@@ -1007,8 +1066,32 @@ export default function RoomAttendance() {
                                     const codeVal = (candidates[0].code || candidates[0].courseName || '') || '';
                                     return (
                                       <VStack key={`${sess}-${r}-${b}-${partIdx}`} spacing={1} align="start">
-                                        <Tag variant="subtle" colorScheme={schemeForBlockCode(b)} rounded="full" px={6} py={2} display="inline-block" maxW="100%" style={{ fontSize: '12px', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }} borderWidth={borderColor ? '2px' : undefined} borderColor={borderColor} sx={anim ? { animation: anim } : undefined}>
-                                          <TagLabel display="block" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{b}</TagLabel>
+                                        <Tag
+                                          variant="subtle"
+                                          colorScheme={schemeForBlockCode(b)}
+                                          rounded="full"
+                                          px={6}
+                                          py={2}
+                                          display="inline-block"
+                                          maxW="100%"
+                                          style={{ fontSize: '12px', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                                          borderWidth={borderColor ? '2px' : undefined}
+                                          borderColor={borderColor}
+                                          sx={Object.keys(tagSx).length ? tagSx : undefined}
+                                          onClick={canClick ? () => openAttendanceModal(scheduleId, statusVal) : undefined}
+                                          onKeyDown={canClick ? (e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                              e.preventDefault();
+                                              openAttendanceModal(scheduleId, statusVal);
+                                            }
+                                          } : undefined}
+                                          role={canClick ? 'button' : undefined}
+                                          tabIndex={canClick ? 0 : undefined}
+                                        >
+                                          <HStack spacing={1}>
+                                            <TagLabel display="block" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{b}</TagLabel>
+                                            {statusInfo ? <Icon as={statusInfo.icon} color={statusInfo.color} boxSize="12px" /> : null}
+                                          </HStack>
                                         </Tag>
                                         <Text fontSize="10px" color={subtle}>{`${fac}${codeVal ? ' · ' + codeVal : ''}`}</Text>
                                       </VStack>
@@ -1039,6 +1122,18 @@ export default function RoomAttendance() {
 
       {/* Modals */}
       <LoginModal isOpen={loginModal.isOpen} onClose={loginModal.onClose} onSubmit={onLoginSubmit} />
+      <AttendanceFormModal
+        isOpen={attendModal.isOpen}
+        onClose={() => { attendModal.onClose(); setAttendanceInitial(null); }}
+        initial={attendanceInitial}
+        lockSchedule
+        onSaved={() => {
+          toast({ title: 'Attendance saved', status: 'success' });
+          loadAttendance();
+          attendModal.onClose();
+          setAttendanceInitial(null);
+        }}
+      />
       <ChangePasswordModal isOpen={changePwdModal.isOpen} onClose={changePwdModal.onClose} onSubmit={async (p) => { try { await dispatch(changePasswordThunk(p)).unwrap(); toast({ title: 'Password changed', status: 'success' }); changePwdModal.onClose(); } catch (e) { toast({ title: 'Failed', description: e?.message || 'Unable to change password', status: 'error' }); } }} />
       <ProfileModal isOpen={profileModal.isOpen} onClose={profileModal.onClose} user={authUser} onSubmit={async (p) => { try { await dispatch(updateProfileThunk(p)).unwrap(); toast({ title: 'Profile updated', status: 'success' }); profileModal.onClose(); } catch (e) { toast({ title: 'Failed', description: e?.message || 'Unable to update profile', status: 'error' }); } }} />
     </Box>
