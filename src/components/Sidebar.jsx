@@ -48,10 +48,11 @@ export default function Sidebar({ mobile = false, onNavigate }) {
 
   const roleStr = String(authUser?.role || '').toLowerCase();
   const isAdmin = !!authUser && (roleStr === 'admin' || roleStr === 'manager');
+  const isSa = !!authUser && roleStr === 'sa';
   const isRegistrar = !!authUser && roleStr === 'registrar';
   const isChecker = !!authUser && roleStr === 'checker';
   const isOsas = !!authUser && roleStr === 'osas';
-  const isUser = !!authUser && !isAdmin && !isChecker && !isOsas;
+  const isUser = !!authUser && !isAdmin && !isChecker && !isOsas && !isSa;
 
   // Load current user's department mappings (used to gate Course Loading visibility for non-admins)
   React.useEffect(() => {
@@ -206,7 +207,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
             <NavItem to="/reports/faculty-summary" icon={FiFileText} onClick={onNavigate}>Faculty Summary</NavItem>
           </>
         )} */}
-        {(isAdmin || isChecker || isRegistrar || hasDeptMapping || isOsas) && (
+        {(isAdmin || isChecker || isRegistrar || hasDeptMapping || isOsas || isSa) && (
           <>
             <Text fontSize="sm" fontWeight="700" color={sectionHeaderColor} px={2} mt={4} mb={1}>Admin</Text>
             {(isAdmin || isChecker) && (
@@ -252,6 +253,9 @@ export default function Sidebar({ mobile = false, onNavigate }) {
                 {/* <NavItem to="/admin/conflicts" icon={FiAlertTriangle} onClick={onNavigate} badgeCount={conflictCount} chipLabel={viewChip}>Conflict Schedules</NavItem>
                 <NavItem to="/admin/unassigned" icon={FiUserX} onClick={onNavigate} badgeCount={unassignedCount} chipLabel={viewChip}>Unassigned Schedules</NavItem> */}
               </>
+            )}
+            {isSa && (
+              <NavItem to="/admin/bell-system" icon={FiBell} onClick={onNavigate}>Automated Bell System</NavItem>
             )}
           </>
         )}

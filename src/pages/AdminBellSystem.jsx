@@ -453,7 +453,7 @@ export default function AdminBellSystem() {
   const settings = useSelector(selectSettings);
   const authUser = useSelector(s => s.auth.user);
   const roleStr = String(authUser?.role || '').toLowerCase();
-  const canManage = roleStr === 'admin' || roleStr === 'alerter';
+  const canManage = roleStr === 'admin' || roleStr === 'alerter' || roleStr === 'sa';
 
   const border = useColorModeValue('gray.200', 'gray.700');
   const bg = useColorModeValue('white', 'gray.800');

@@ -90,7 +90,7 @@ function App() {
               <Route path="/admin/unassigned" element={<RequireAdmin><UnassignedSchedules /></RequireAdmin>} />
               <Route path="/admin/attendance" element={<RequireRole roles={['admin','manager','checker']}><Attendance /></RequireRole>} />
               <Route path="/admin/attendance/print" element={<RequireRole roles={['admin','manager','checker']}><AttendancePrint /></RequireRole>} />
-              <Route path="/admin/room-attendance" element={<RequireRole roles={['admin','manager','checker']}><RoomAttendance /></RequireRole>} />
+              <Route path="/admin/room-attendance" element={<RequireRole roles={['admin','manager','checker','sa']}><RoomAttendance /></RequireRole>} />
               <Route path="/admin/meet-classes" element={<RequireAdmin><MeetClasses /></RequireAdmin>} />
               <Route path="/admin/faculty" element={<RequireAdmin><AdminFaculty /></RequireAdmin>} />
               <Route path="/admin/prospectus" element={<RequireAdmin><AdminProspectus /></RequireAdmin>} />
@@ -98,7 +98,7 @@ function App() {
               <Route path="/admin/academic-calendar" element={<RequireAdmin><AdminAcademicCalendar /></RequireAdmin>} />
               <Route path="/admin/settings" element={<RequireAdmin><AdminSettings /></RequireAdmin>} />
               <Route path="/admin/ai-labs" element={<RequireAdmin><AdminAiLabs /></RequireAdmin>} />
-              <Route path="/admin/bell-system" element={<RequireAdmin extraRoles={['alerter']}><AdminBellSystem /></RequireAdmin>} />
+              <Route path="/admin/bell-system" element={<RequireAdmin extraRoles={['alerter','sa']}><AdminBellSystem /></RequireAdmin>} />
               <Route path="/admin/blocks" element={<RequireAdmin><AdminBlockSettings /></RequireAdmin>} />
               <Route path="/admin/grades-submission" element={<RequireRole roles={['admin','manager','registrar']} allowDeptMapping><AdminGradesSubmission /></RequireRole>} />
               <Route path="/admin/v2/grades-submission" element={<RequireRole roles={['admin','manager','registrar']} allowDeptMapping><AdminGradesSubmission /></RequireRole>} />

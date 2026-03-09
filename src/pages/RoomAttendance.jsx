@@ -81,8 +81,8 @@ export default function RoomAttendance() {
   const [attendanceInitial, setAttendanceInitial] = React.useState(null);
 
   const roleStr = String(authUser?.role || '').toLowerCase();
-  const canAttend = !!authUser && (roleStr === 'admin' || roleStr === 'manager' || roleStr === 'checker');
-  const isAdmin = !!authUser && roleStr === 'admin';
+  const canAttend = !!authUser && (roleStr === 'admin' || roleStr === 'manager' || roleStr === 'checker' || roleStr === 'sa');
+  const isAdmin = !!authUser && (roleStr === 'admin' || roleStr === 'sa');
 
   const days = getCurrentWeekDays();
   const today = new Date(); today.setHours(0,0,0,0);
