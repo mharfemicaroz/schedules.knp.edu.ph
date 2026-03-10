@@ -152,6 +152,11 @@ function unitsToHours(units) {
   return fmtHours(units / 3);
 }
 
+function nstpUnitsToHours(units) {
+  if (!Number.isFinite(units)) return '0';
+  return fmtHours((units / 3) * 2);
+}
+
 function formatTermPrint(units, hours, nstpUnits, nstpHours) {
   const base = `${units}u / ${hours}h`;
   if (Number(nstpUnits) > 0) return `${base} (NSTP ${nstpUnits}u/${nstpHours}h Saturday)`;
@@ -338,8 +343,8 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
         nstpTermUnits,
         nstpFirstUnits,
         nstpSecondUnits,
-        nstpFirstHours: unitsToHours(nstpFirstUnits),
-        nstpSecondHours: unitsToHours(nstpSecondUnits)
+        nstpFirstHours: nstpUnitsToHours(nstpFirstUnits),
+        nstpSecondHours: nstpUnitsToHours(nstpSecondUnits)
       };
     });
   }, [faculties, courseStatsByKey]);
@@ -405,8 +410,8 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
         nstpTermUnits,
         nstpFirstUnits,
         nstpSecondUnits,
-        nstpFirstHours: unitsToHours(nstpFirstUnits),
-        nstpSecondHours: unitsToHours(nstpSecondUnits),
+        nstpFirstHours: nstpUnitsToHours(nstpFirstUnits),
+        nstpSecondHours: nstpUnitsToHours(nstpSecondUnits),
         overload: overloadUnits,
         overloadUnits,
         overloadFirst,
