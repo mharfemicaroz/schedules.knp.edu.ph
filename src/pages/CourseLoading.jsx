@@ -2175,24 +2175,26 @@ export default function CourseLoading() {
     };
     const baseUnitsForSplit = overloadUnits > 0 ? overloadUnits : (isPartTime ? nonNstpUnits : 0);
     const { first: overloadFirstUnits, second: overloadSecondUnits } = splitOverload(baseUnitsForSplit);
-    const fmtHours = (u) => {
-      const hrs = u / 3;
+    const fmtHours = (u, perUnit = 1 / 3) => {
+      const hrs = Number(u) * perUnit;
       if (!Number.isFinite(hrs)) return '0';
       const rounded = Math.round(hrs * 100) / 100;
       return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
     };
+    const fmtLoadHours = (u) => fmtHours(u, 1 / 3);
+    const fmtNstpHours = (u) => fmtHours(u, 1);
     const labelFirst = overloadUnits > 0 ? 'Overload 1st Term' : 'Load 1st Term';
     const labelSecond = overloadUnits > 0 ? 'Overload 2nd Term' : 'Load 2nd Term';
     const overloadRows = [];
     if (baseUnitsForSplit > 0) {
-      overloadRows.push(`<tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(fmtHours(overloadFirstUnits))} hrs)</td>
-          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(fmtHours(overloadSecondUnits))} hrs)</td></tr>`);
+      overloadRows.push(`<tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(fmtLoadHours(overloadFirstUnits))} hrs)</td>
+          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(fmtLoadHours(overloadSecondUnits))} hrs)</td></tr>`);
     }
     if (nstpUnits > 0) {
       const nstpFirstUnits = nstpTermSums['1st'] + nstpTermSums['Sem'];
       const nstpSecondUnits = nstpTermSums['2nd'] + nstpTermSums['Sem'];
-      overloadRows.push(`<tr><th>NSTP Hrs 1st Term</th><td>${esc(String(nstpFirstUnits))} units (${esc(fmtHours(nstpFirstUnits))} hrs) per Saturday</td>
-          <th>NSTP Hrs 2nd Term</th><td>${esc(String(nstpSecondUnits))} units (${esc(fmtHours(nstpSecondUnits))} hrs) per Saturday</td></tr>`);
+      overloadRows.push(`<tr><th>NSTP Hrs 1st Term</th><td>${esc(String(nstpFirstUnits))} units (${esc(fmtNstpHours(nstpFirstUnits))} hrs) per Saturday</td>
+          <th>NSTP Hrs 2nd Term</th><td>${esc(String(nstpSecondUnits))} units (${esc(fmtNstpHours(nstpSecondUnits))} hrs) per Saturday</td></tr>`);
     }
     const overloadHtml = overloadRows.length
       ? `<table class="prt-table"><tbody>${overloadRows.join('')}</tbody></table>`

@@ -154,7 +154,7 @@ function unitsToHours(units) {
 
 function nstpUnitsToHours(units) {
   if (!Number.isFinite(units)) return '0';
-  return fmtHours((units / 3) * 2);
+  return fmtHours(units);
 }
 
 function formatTermPrint(units, hours, nstpUnits, nstpHours) {
