@@ -83,7 +83,21 @@ function normRoom(s) {
   return String(s || '').trim().replace(/\s+/g, ' ').toUpperCase();
 }
 
+function roomExportPrefix(room) {
+  const raw = normRoom(room);
+  const match = raw.match(/^(BP|NB|OB|EB)(?=\d|\s|-|_|\/|$)/);
+  return match ? match[1] : 'OTHER';
+}
+
+function compareRoomNames(a, b) {
+  return String(a || '').localeCompare(String(b || ''), undefined, {
+    numeric: true,
+    sensitivity: 'base'
+  });
+}
+
 const ROOM_SPLIT_THRESHOLD = 10;
+const ROOM_EXPORT_ORDER = ['BP', 'NB', 'OB', 'EB'];
 
 const normalizeSem = (val) => {
   const v = String(val || '').trim().toLowerCase();
@@ -532,38 +546,8 @@ export default function RoomAttendance() {
   function onPrint() {
     const label = formatDayLabel(new Date(selectedDate));
     const timeSlots = slots;
-    const roomsSorted = [...rooms].sort((a, b) => String(a).localeCompare(String(b)));
-
-    const groups = (() => {
-      const out = [[], [], []];
-      roomsSorted.forEach((r, i) => out[i % 3].push(r));
-      return out.filter((g) => g.length);
-    })();
-
-    const getCell = (room, slot) => {
-      const candidates = (filteredSchedules || []).filter((c) => {
-        const rs = getRoomsForDay(c, selectedDayCode);
-        if (!rs.find((rr) => normRoom(rr) === normRoom(room))) return false;
-        const termOk = termMatches(c.term);
-        return termOk && withinSlot(c, slot);
-      });
-
-      if (!candidates.length) return { faculty: '', status: '', course: '', title: '' };
-
-      const info = candidates[0];
-      const sid = Number(info.id);
-      const status = (bySched[sid] || '').toString();
-
-      return {
-        faculty: info.faculty || info.instructor || '',
-        status: status ? status.toUpperCase() : '',
-        course: info.courseName || '',
-        title: info.courseTitle || '',
-        term: info.term || '',
-        time: info.time || '',
-        program: info.programcode || info.program || ''
-      };
-    };
+    const groups = roomExportGroups;
+    const getCell = (room, slotIdx) => exportCellMap.get(`${normRoom(room)}::${slotIdx}`) || { faculty: '', status: '', course: '', title: '' };
 
     const programBg = (prog) => {
       const p = String(prog || '').toUpperCase();
@@ -578,7 +562,7 @@ export default function RoomAttendance() {
 
     const styles = `
       <style>
-        @page { size: 13in 8.5in; margin: 10mm; }
+        @page { size: A4 landscape; margin: 6mm; }
         body { font-family: Arial, sans-serif; color: #111; }
         .toolbar { position: sticky; top: 0; background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 8px 10px; display: flex; gap: 8px; z-index: 5; }
         .toolbar button { background: #2563eb; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; font-weight: 700; cursor: pointer; }
@@ -586,7 +570,7 @@ export default function RoomAttendance() {
         @media print { .toolbar { display: none; } }
         .section { page-break-inside: avoid; page-break-before: always; margin-top: 0; padding-top: 0; }
         .section:first-child { page-break-before: auto; padding-top: 0; }
-        .section::before { content: ''; display: block; height: 24mm; }
+        .section::before { content: ''; display: block; height: 10mm; }
         .section:first-child::before { height: 0; }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         th, td { border: 1px solid #777; padding: 3px 4px; vertical-align: top; }
@@ -603,31 +587,35 @@ export default function RoomAttendance() {
         .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
         .head .left { font-size: 11px; font-weight: 700; }
         .head .right { font-size: 10px; color: #555; }
+        .section-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
       </style>
     `;
 
     const groupHtml = groups
-      .map((grp) => {
+      .map((group) => {
+        const grp = group.rooms;
+        const headFontSize = grp.length >= 14 ? 8 : grp.length >= 10 ? 9 : 10;
+        const cellFontSize = grp.length >= 14 ? 7 : grp.length >= 10 ? 8 : 9;
         const thead = `
           <thead>
             <tr>
-              <th class="slot">Time</th>
-              ${grp.map((r) => `<th style="width: calc((100% - 70px)/${grp.length})">${r}</th>`).join('')}
+              <th class="slot" style="font-size:${headFontSize}px">Time</th>
+              ${grp.map((r) => `<th style="width: calc((100% - 70px)/${grp.length}); font-size:${headFontSize}px">${r}</th>`).join('')}
             </tr>
           </thead>
         `;
 
         const body = timeSlots
-          .map((sl) => {
+          .map((sl, slotIdx) => {
             return `
               <tr>
                 <td class="slot">${sl.label}</td>
                 ${grp
                   .map((r) => {
-                    const info = getCell(r, sl);
+                    const info = getCell(r, slotIdx);
                     const st = (info.status || '').toLowerCase();
                     const bg = programBg(info.program);
-                    return `<td class="cell" style="background:${bg};width: calc((100% - 70px)/${grp.length})">
+                    return `<td class="cell" style="background:${bg};width: calc((100% - 70px)/${grp.length}); font-size:${cellFontSize}px">
                       ${info.faculty ? `<div class="faculty">${info.faculty}</div>` : `<div class="meta">&nbsp;</div>`}
                       ${(info.course || info.title) ? `<div class="meta">${info.course || ''}${info.title ? '-' + info.title : ''}</div>` : ''}
                       ${(info.term || info.time) ? `<div class="meta">${info.term ? 'Term: ' + info.term : ''}${info.time ? (info.term ? ' · ' : '') + info.time : ''}</div>` : ''}
@@ -643,6 +631,7 @@ export default function RoomAttendance() {
 
         return `
           <div class="section">
+            <div class="section-title">${group.label}</div>
             <table>${thead}<tbody>${body}</tbody></table>
           </div>
         `;
@@ -668,13 +657,7 @@ export default function RoomAttendance() {
   async function onDownloadXlsx() {
     const label = formatDayLabel(new Date(selectedDate));
     const timeSlots = slots;
-    const roomsSorted = [...rooms].sort((a, b) => String(a).localeCompare(String(b)));
-
-    const groups = (() => {
-      const out = [[], [], []];
-      roomsSorted.forEach((r, i) => out[i % 3].push(r));
-      return out.filter((g) => g.length);
-    })();
+    const groups = roomExportGroups;
 
     const programFill = (prog) => {
       const p = String(prog || '').toUpperCase();
@@ -692,36 +675,43 @@ export default function RoomAttendance() {
     wb.created = new Date();
 
     for (let gi = 0; gi < groups.length; gi++) {
-      const grp = groups[gi];
-      const ws = wb.addWorksheet(`Rooms ${gi + 1}`);
+      const group = groups[gi];
+      const grp = group.rooms;
+      const ws = wb.addWorksheet(group.label.slice(0, 31));
+      ws.pageSetup = {
+        paperSize: 9,
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        horizontalCentered: true,
+        margins: {
+          left: 0.2,
+          right: 0.2,
+          top: 0.25,
+          bottom: 0.25,
+          header: 0.12,
+          footer: 0.12
+        }
+      };
 
-      const title = `Attendance Sheet - Day: ${label}`;
+      const title = `Attendance Sheet - ${group.label} - Day: ${label}`;
       ws.addRow([title]);
       const header = ['Time', ...grp];
       ws.addRow(header);
 
-      timeSlots.forEach((sl) => {
+      timeSlots.forEach((sl, slotIdx) => {
         const rowVals = [sl.label];
         grp.forEach((r) => {
-          const candidates = (filteredSchedules || []).filter((c) => {
-            const rs = getRoomsForDay(c, selectedDayCode);
-            if (!rs.find((rr) => normRoom(rr) === normRoom(r))) return false;
-            const termOk = termMatches(c.term);
-            return termOk && withinSlot(c, sl);
-          });
-
-          if (!candidates.length) {
+          const info = exportCellMap.get(`${normRoom(r)}::${slotIdx}`);
+          if (!info) {
             rowVals.push('');
             return;
           }
-
-          const info = candidates[0];
-          const sid = Number(info.id);
-          const status = (bySched[sid] || '').toString();
           const parts = [];
           const faculty = info.faculty || info.instructor || '';
-          const course = info.code || info.courseName || '';
-          const titleC = info.courseTitle || '';
+          const course = info.course || info.courseName || '';
+          const titleC = info.title || info.courseTitle || '';
 
           if (faculty) parts.push(faculty);
           if (course || titleC) parts.push(`${course || ''}${titleC ? ' - ' + titleC : ''}`);
@@ -729,7 +719,7 @@ export default function RoomAttendance() {
           if (info.term) meta.push(`Term: ${info.term}`);
           if (info.time) meta.push(info.time);
           if (meta.length) parts.push(meta.join('  '));
-          if (status) parts.push(`Status: ${String(status).toUpperCase()}`);
+          if (info.status) parts.push(`Status: ${String(info.status).toUpperCase()}`);
           while (parts.length < 4) parts.push('');
           parts.push('Signature: ____________________');
           rowVals.push(parts.join('\n'));
@@ -777,7 +767,7 @@ export default function RoomAttendance() {
 
           if (c === 1) {
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isEven ? 'FFF5F7FA' : 'FFF8FAFC' } };
-            cell.font = { bold: true, color: { argb: 'FF333333' } };
+            cell.font = { bold: true, size: 9, color: { argb: 'FF333333' } };
             cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
           } else {
             const text = String(cell.value || '');
@@ -785,23 +775,13 @@ export default function RoomAttendance() {
             if (text) {
               const slIdx = r - 3;
               const roomName = grp[c - 2];
-              const sl = timeSlots[slIdx];
-              const candidates = (filteredSchedules || []).filter((rec) => {
-                const rs = getRoomsForDay(rec, selectedDayCode);
-                if (!rs.find((rr) => normRoom(rr) === normRoom(roomName))) return false;
-                const termOk = termMatches(rec.term);
-                return termOk && withinSlot(rec, sl);
-              });
-              if (candidates.length) {
-                const prog = candidates[0].programcode || candidates[0].program || '';
-                progColor = programFill(prog);
-              }
+              const info = exportCellMap.get(`${normRoom(roomName)}::${slIdx}`);
+              if (info) progColor = programFill(info.program);
             }
             const bg = progColor || (isEven ? 'FFFFFFFF' : 'FFFAFAFA');
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
           }
         }
-        row.height = 66;
       }
 
       for (let c = 1; c <= totalCols; c++) {
@@ -835,25 +815,27 @@ export default function RoomAttendance() {
       }
 
       ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 2 }];
+      ws.pageSetup.printTitlesRow = '1:2';
 
-      const colMax = new Array(totalCols).fill(0);
-      for (let r = 1; r <= ws.rowCount; r++) {
-        for (let c = 1; c <= totalCols; c++) {
-          const val = ws.getRow(r).getCell(c).value;
-          const s = val == null ? '' : String(val);
-          const lines = s.split('\n');
-          const maxLine = lines.reduce((m, l) => Math.max(m, l.length), 0);
-          colMax[c - 1] = Math.max(colMax[c - 1], maxLine);
-        }
+      const printableWidth = 110;
+      const timeColWidth = 11;
+      const roomColWidth = Math.max(8, Math.min(18, Math.floor((printableWidth - timeColWidth) / Math.max(1, grp.length))));
+      ws.getColumn(1).width = timeColWidth;
+      for (let c = 2; c <= totalCols; c++) {
+        ws.getColumn(c).width = roomColWidth;
       }
 
-      for (let c = 1; c <= totalCols; c++) {
-        const base = c === 1 ? 6 : 10;
-        const max = Math.min(50, Math.max(base, colMax[c - 1] + 2));
-        ws.getColumn(c).width = max;
-      }
+      const baseFontSize = grp.length >= 14 ? 7 : grp.length >= 10 ? 8 : 9;
+      const fitFontSize = (text, colWidth) => {
+        const lines = String(text || '').split('\n');
+        const longest = lines.reduce((m, line) => Math.max(m, line.length), 0);
+        const density = Math.max(lines.length, longest / Math.max(1, colWidth));
+        if (density > 5.5) return Math.max(6, baseFontSize - 2);
+        if (density > 4) return Math.max(7, baseFontSize - 1);
+        return baseFontSize;
+      };
 
-      const ptsPerLine = 14;
+      const ptsPerLine = 12;
       const extraPad = 6;
       for (let r = 3; r <= ws.rowCount; r++) {
         let maxLinesInRow = 1;
@@ -867,8 +849,12 @@ export default function RoomAttendance() {
             return sum + Math.max(1, Math.ceil(len / usable));
           }, 0);
           if (wrappedLines > maxLinesInRow) maxLinesInRow = wrappedLines;
+          if (c > 1) {
+            cell.font = { ...(cell.font || {}), size: fitFontSize(text, colWidth), color: { argb: 'FF111111' } };
+            cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true, shrinkToFit: true };
+          }
         }
-        ws.getRow(r).height = maxLinesInRow * ptsPerLine + extraPad;
+        ws.getRow(r).height = Math.min(90, maxLinesInRow * ptsPerLine + extraPad);
       }
     }
 
@@ -914,6 +900,69 @@ export default function RoomAttendance() {
     }
     return [rooms];
   }, [rooms]);
+  const roomExportGroups = React.useMemo(() => {
+    const buckets = new Map();
+    (rooms || []).forEach((roomName) => {
+      const prefix = roomExportPrefix(roomName);
+      if (!buckets.has(prefix)) buckets.set(prefix, []);
+      buckets.get(prefix).push(roomName);
+    });
+
+    const ordered = [];
+    ROOM_EXPORT_ORDER.forEach((prefix) => {
+      const list = (buckets.get(prefix) || []).slice().sort(compareRoomNames);
+      if (list.length) ordered.push({ key: prefix, label: `${prefix} Rooms`, rooms: list });
+      buckets.delete(prefix);
+    });
+
+    Array.from(buckets.entries())
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+      .forEach(([prefix, list]) => {
+        const sorted = list.slice().sort(compareRoomNames);
+        if (!sorted.length) return;
+        ordered.push({
+          key: prefix,
+          label: prefix === 'OTHER' ? 'Other Rooms' : `${prefix} Rooms`,
+          rooms: sorted
+        });
+      });
+
+    return ordered;
+  }, [rooms]);
+  const exportCellMap = React.useMemo(() => {
+    const map = new Map();
+    (filteredSchedules || []).forEach((record) => {
+      if (!termMatches(record.term)) return;
+      const dayRooms = getRoomsForDay(record, selectedDayCode);
+      if (!dayRooms.length) return;
+
+      const matchedSlots = [];
+      slots.forEach((slot, slotIdx) => {
+        if (withinSlot(record, slot)) matchedSlots.push(slotIdx);
+      });
+      if (!matchedSlots.length) return;
+
+      dayRooms.forEach((roomName) => {
+        const roomKey = normRoom(roomName);
+        matchedSlots.forEach((slotIdx) => {
+          const key = `${roomKey}::${slotIdx}`;
+          if (map.has(key)) return;
+          const sid = Number(record.id);
+          const status = (bySched[sid] || '').toString();
+          map.set(key, {
+            faculty: record.faculty || record.instructor || '',
+            status: status ? status.toUpperCase() : '',
+            course: record.code || record.courseName || '',
+            title: record.courseTitle || '',
+            term: record.term || '',
+            time: record.time || '',
+            program: record.programcode || record.program || ''
+          });
+        });
+      });
+    });
+    return map;
+  }, [filteredSchedules, termMatches, getRoomsForDay, selectedDayCode, slots, bySched]);
 
   const isMobile = useBreakpointValue({ base: true, md: false });
 
