@@ -342,6 +342,109 @@ function parseDateLoose(val) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function toLocalDateStart(val) {
+  const parsed = parseDateLoose(val);
+  if (!parsed) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+function normalizeCalendarSemester(val) {
+  const v = String(val || '').trim().toLowerCase();
+  if (!v) return '';
+  if (v.startsWith('1') || v.includes('first')) return '1st';
+  if (v.startsWith('2') || v.includes('second')) return '2nd';
+  if (v.includes('sem')) return 'Sem';
+  return '';
+}
+
+function resolveTermWindow(node = {}) {
+  const start =
+    toLocalDateStart(node.start) ||
+    (node.date_range ? toLocalDateStart(expandDateRange(node.date_range)[0]) : null);
+
+  let end =
+    toLocalDateStart(node.end) ||
+    (node.date_range ? toLocalDateStart(expandDateRange(node.date_range).slice(-1)[0]) : null);
+
+  (Array.isArray(node.activities) ? node.activities : []).forEach((activity) => {
+    if (activity?.date_range) {
+      expandDateRange(activity.date_range).forEach((dt) => {
+        const normalized = toLocalDateStart(dt);
+        if (normalized && (!end || normalized > end)) end = normalized;
+      });
+    }
+
+    const dates = Array.isArray(activity?.date) ? activity.date : [activity?.date].filter(Boolean);
+    dates.forEach((value) => {
+      const normalized = toLocalDateStart(value);
+      if (normalized && (!end || normalized > end)) end = normalized;
+    });
+  });
+
+  return start && end ? { start, end } : null;
+}
+
+export function getAcademicCalendarForSchoolYear(acadData, schoolYear = '') {
+  if (!acadData) return null;
+  if (acadData?.school_year && !acadData.academic_calendar) return acadData;
+
+  const list = Array.isArray(acadData)
+    ? acadData
+    : (acadData?.academic_calendar ? [acadData] : []);
+
+  if (!list.length) return null;
+
+  const preferredYear = String(schoolYear || '').trim();
+  if (preferredYear) {
+    const hit = list.find((item) => String(item?.academic_calendar?.school_year || '').trim() === preferredYear);
+    if (hit?.academic_calendar) return hit.academic_calendar;
+  }
+
+  return list[0]?.academic_calendar || null;
+}
+
+export function resolveAcademicCalendarTerm(academicCalendar, preferredSemester = '', baseDate = new Date()) {
+  const cal = academicCalendar?.academic_calendar ? academicCalendar.academic_calendar : academicCalendar;
+  const base = toLocalDateStart(baseDate);
+  if (!cal || !base) return null;
+
+  const preferred = normalizeCalendarSemester(preferredSemester);
+  const semesterNodes = preferred === '1st'
+    ? [cal.first_semester]
+    : preferred === '2nd'
+      ? [cal.second_semester]
+      : [cal.first_semester, cal.second_semester];
+
+  const windows = semesterNodes
+    .filter(Boolean)
+    .flatMap((semesterNode) => ([
+      { key: '1st', data: semesterNode?.first_term || {} },
+      { key: '2nd', data: semesterNode?.second_term || {} },
+    ]))
+    .map((termNode) => {
+      const window = resolveTermWindow(termNode.data);
+      return window ? { key: termNode.key, start: window.start, end: window.end } : null;
+    })
+    .filter(Boolean);
+
+  if (!windows.length) return null;
+
+  const active = windows
+    .filter((window) => window.start <= base && base <= window.end)
+    .sort((a, b) => {
+      const startDiff = b.start.getTime() - a.start.getTime();
+      if (startDiff !== 0) return startDiff;
+      return b.end.getTime() - a.end.getTime();
+    });
+
+  if (active.length) return active[0].key;
+
+  const sorted = windows.slice().sort((a, b) => a.start.getTime() - b.start.getTime());
+  const next = sorted.find((window) => base < window.start);
+  if (next) return next.key;
+  return sorted[sorted.length - 1].key;
+}
+
 export function findDayAnnotations(acadData, holidays, jsDate) {
   const result = { holiday: null, events: [], mode: 'default' };
   const dateYMD = toYMD(jsDate);

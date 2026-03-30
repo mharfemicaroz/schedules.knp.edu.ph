@@ -8,6 +8,7 @@ import { loadAllSchedules, loadAcademicCalendar } from '../store/dataThunks';
 import { getCurrentWeekDays, DAY_CODES, formatDayLabel } from '../utils/week';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
 import { buildTable, printContent } from '../utils/printDesign';
+import { getAcademicCalendarForSchoolYear, resolveAcademicCalendarTerm } from '../utils/scheduleUtils';
 import apiService from '../services/apiService';
 import ExcelJS from 'exceljs';
 import { keyframes } from '@emotion/react';
@@ -114,21 +115,7 @@ export default function RoomAttendance() {
     if (!acadData) { try { dispatch(loadAcademicCalendar()); } catch {} }
   }, [acadData, dispatch]);
 
-  // Term filter (UI). If autoTerm is available, enforce it and ignore semestral schedules.
-  const [termFilter, setTermFilter] = React.useState('all');
-  function termMatches(t) {
-    const norm = normalizeSem(t);
-    if (!norm) return true; // allow untagged
-    if (norm === 'Sem') return false; // exclude semestral here
-    if (autoTerm) {
-      return norm === autoTerm;
-    }
-    const f = String(termFilter || 'all').toLowerCase();
-    if (f === 'all') return true;
-    if (f.startsWith('1')) return norm === '1st';
-    if (f.startsWith('2')) return norm === '2nd';
-    return true;
-  }
+  const [termFilter, setTermFilter] = React.useState('auto');
 
   // Time slots (7:00 AM to 9:00 PM in 1-hour intervals)
   const slots = React.useMemo(() => {
@@ -166,82 +153,36 @@ export default function RoomAttendance() {
   }, [settings]);
 
   const resolvedCalendar = React.useMemo(() => {
-    if (!acadData) return null;
-    if (acadData?.school_year && !acadData.academic_calendar) return acadData;
-    const list = Array.isArray(acadData) ? acadData : (acadData?.academic_calendar ? [acadData] : []);
-    if (!list.length) return null;
-    if (prefSy) {
-      const hit = list.find((item) => String(item?.academic_calendar?.school_year || '').trim() === prefSy);
-      if (hit?.academic_calendar) return hit.academic_calendar;
-    }
-    return list[0]?.academic_calendar || null;
+    return getAcademicCalendarForSchoolYear(acadData, prefSy);
   }, [acadData, prefSy]);
 
   // Determine current term from academic calendar, based on today's date
   const autoTerm = React.useMemo(() => {
-    try {
-      const cal = resolvedCalendar;
-      if (!cal) return null;
-      const base = new Date(); base.setHours(0,0,0,0);
-      const parseDateVal = (val) => {
-        if (!val) return null;
-        const d = new Date(val);
-        return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      };
-      const expandDateRange = (token) => {
-        const m = String(token || '').match(/^([A-Za-z]+)\s+(\d+)-(\d+),\s*(\d{4})$/);
-        if (!m) return [];
-        const month = m[1]; const startD = parseInt(m[2], 10); const endD = parseInt(m[3], 10); const year = parseInt(m[4], 10);
-        const out = [];
-        for (let d = startD; d <= endD; d++) {
-          const dt = new Date(`${month} ${d}, ${year}`);
-          if (!isNaN(dt.getTime())) out.push(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()));
-        }
-        return out;
-      };
-      const endFromActivities = (acts = []) => {
-        let max = null;
-        acts.forEach(a => {
-          if (a.date_range) {
-            expandDateRange(a.date_range).forEach(dt => { if (!max || dt > max) max = dt; });
-          }
-          const dates = Array.isArray(a.date) ? a.date : [a.date].filter(Boolean);
-          dates.forEach(v => {
-            const dt = parseDateVal(v);
-            if (dt && (!max || dt > max)) max = dt;
-          });
-        });
-        return max;
-      };
-      const semKey = prefSem === '2nd' ? 'second_semester' : prefSem === '1st' ? 'first_semester' : null;
-      const semData = semKey ? cal?.[semKey] : (cal?.first_semester || cal?.second_semester);
-      if (!semData) return null;
-      const terms = [
-        { key: '1st', data: semData.first_term || {} },
-        { key: '2nd', data: semData.second_term || {} },
-      ];
-      const windows = terms.map(t => {
-        const start = parseDateVal(t.data.start) || (t.data.date_range ? expandDateRange(t.data.date_range)[0] : null);
-        let end = parseDateVal(t.data.end) || (t.data.date_range ? expandDateRange(t.data.date_range).pop() : null);
-        const actEnd = endFromActivities(t.data.activities);
-        if (!end || (actEnd && actEnd > end)) end = actEnd;
-        return { key: t.key, start, end };
-      }).filter(w => w.start && w.end);
-      if (!windows.length) return null;
-      const hit = windows.find(w => w.start <= base && base <= w.end);
-      if (hit) return hit.key;
-      const sorted = windows.slice().sort((a,b)=>a.start - b.start);
-      if (base < sorted[0].start) return sorted[0].key;
-      return sorted[sorted.length - 1].key;
-    } catch { return null; }
+    return resolveAcademicCalendarTerm(resolvedCalendar, prefSem, new Date());
   }, [resolvedCalendar, prefSem]);
+
+  const effectiveTermFilter = React.useMemo(() => {
+    if (termFilter === 'auto') return autoTerm || 'all';
+    return termFilter;
+  }, [termFilter, autoTerm]);
+
+  function termMatches(t) {
+    const norm = normalizeSem(t);
+    if (!norm) return true; // allow untagged
+    const f = String(effectiveTermFilter || 'all').toLowerCase();
+    if (f === 'all') return true;
+    if (f.startsWith('s')) return norm === 'Sem';
+    if (norm === 'Sem') return false;
+    if (f.startsWith('1')) return norm === '1st';
+    if (f.startsWith('2')) return norm === '2nd';
+    return true;
+  }
 
   const filteredSchedules = React.useMemo(() => {
     return (all || []).filter(c => {
       const syVal = String(c.school_year || c.schoolYear || c.sy || '').trim();
       if (prefSy && syVal && syVal !== prefSy) return false;
       const semVal = normalizeSem(c.semester || c.sem);
-      if (semVal === 'Sem') return false; // exclude semestral for this view
       if (prefSem && semVal && semVal !== prefSem) return false;
       return true;
     });
@@ -774,10 +715,11 @@ export default function RoomAttendance() {
                 {/* Term filter */}
                 <HStack spacing={2}>
                   <Text fontSize="xs" color={subtle}>Term</Text>
-                  <select value={termFilter} onChange={(e)=> setTermFilter(String(e.target.value||'all'))} style={{ fontSize: '12px', padding: '4px 6px', borderRadius: 6, border: `1px solid var(--chakra-colors-gray-300)` }}>
-                    <option value="all">All</option>
+                  <select value={termFilter} onChange={(e)=> setTermFilter(String(e.target.value||'auto'))} style={{ fontSize: '12px', padding: '4px 6px', borderRadius: 6, border: `1px solid var(--chakra-colors-gray-300)` }}>
+                    <option value="auto">Auto{autoTerm ? ` (${autoTerm})` : ''}</option>
                     <option value="1st">1st</option>
                     <option value="2nd">2nd</option>
+                    <option value="all">All</option>
                     <option value="sem">Sem</option>
                   </select>
                 </HStack>

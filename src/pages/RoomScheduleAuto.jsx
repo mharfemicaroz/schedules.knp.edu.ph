@@ -7,6 +7,7 @@ import { Box, VStack, HStack, Heading, Text, Badge, useColorModeValue, SimpleGri
 import { FiClock, FiBookOpen, FiUser, FiTag, FiPrinter, FiCalendar, FiKey, FiLogOut, FiChevronLeft, FiChevronRight, FiSearch } from 'react-icons/fi';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
 import { buildTable, printContent } from '../utils/printDesign';
+import { getAcademicCalendarForSchoolYear, resolveAcademicCalendarTerm } from '../utils/scheduleUtils';
 import apiService from '../services/apiService';
 import LoginModal from '../components/LoginModal';
 import AttendanceFormModal from '../components/AttendanceFormModal';
@@ -148,73 +149,11 @@ export default function RoomScheduleAuto() {
   }, [settings]);
 
   const resolvedCalendar = useMemo(() => {
-    if (!acadData) return null;
-    if (acadData?.school_year && !acadData.academic_calendar) return acadData;
-    const list = Array.isArray(acadData) ? acadData : (acadData?.academic_calendar ? [acadData] : []);
-    if (!list.length) return null;
-    if (prefSy) {
-      const hit = list.find((item) => String(item?.academic_calendar?.school_year || '').trim() === prefSy);
-      if (hit?.academic_calendar) return hit.academic_calendar;
-    }
-    return list[0]?.academic_calendar || null;
+    return getAcademicCalendarForSchoolYear(acadData, prefSy);
   }, [acadData, prefSy]);
 
   const autoTerm = useMemo(() => {
-    try {
-      const cal = resolvedCalendar;
-      if (!cal) return null;
-      const base = new Date(); base.setHours(0,0,0,0);
-      const parseDateVal = (val) => {
-        if (!val) return null;
-        const d = new Date(val);
-        return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      };
-      const expandDateRange = (token) => {
-        const m = String(token || '').match(/^([A-Za-z]+)\s+(\d+)-(\d+),\s*(\d{4})$/);
-        if (!m) return [];
-        const month = m[1]; const startD = parseInt(m[2], 10); const endD = parseInt(m[3], 10); const year = parseInt(m[4], 10);
-        const out = [];
-        for (let d = startD; d <= endD; d++) {
-          const dt = new Date(`${month} ${d}, ${year}`);
-          if (!isNaN(dt.getTime())) out.push(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()));
-        }
-        return out;
-      };
-      const endFromActivities = (acts = []) => {
-        let max = null;
-        acts.forEach(a => {
-          if (a.date_range) {
-            expandDateRange(a.date_range).forEach(dt => { if (!max || dt > max) max = dt; });
-          }
-          const dates = Array.isArray(a.date) ? a.date : [a.date].filter(Boolean);
-          dates.forEach(v => {
-            const dt = parseDateVal(v);
-            if (dt && (!max || dt > max)) max = dt;
-          });
-        });
-        return max;
-      };
-      const semKey = prefSem === '2nd' ? 'second_semester' : prefSem === '1st' ? 'first_semester' : null;
-      const semData = semKey ? cal?.[semKey] : (cal?.first_semester || cal?.second_semester);
-      if (!semData) return null;
-      const terms = [
-        { key: '1st', data: semData.first_term || {} },
-        { key: '2nd', data: semData.second_term || {} },
-      ];
-      const windows = terms.map(t => {
-        const start = parseDateVal(t.data.start) || (t.data.date_range ? expandDateRange(t.data.date_range)[0] : null);
-        let end = parseDateVal(t.data.end) || (t.data.date_range ? expandDateRange(t.data.date_range).pop() : null);
-        const actEnd = endFromActivities(t.data.activities);
-        if (!end || (actEnd && actEnd > end)) end = actEnd;
-        return { key: t.key, start, end };
-      }).filter(w => w.start && w.end);
-      if (!windows.length) return null;
-      const hit = windows.find(w => w.start <= base && base <= w.end);
-      if (hit) return hit.key;
-      const sorted = windows.slice().sort((a,b)=>a.start - b.start);
-      if (base < sorted[0].start) return sorted[0].key;
-      return sorted[sorted.length - 1].key;
-    } catch { return null; }
+    return resolveAcademicCalendarTerm(resolvedCalendar, prefSem, new Date());
   }, [resolvedCalendar, prefSem]);
 
   const termMatches = React.useCallback((t) => {
