@@ -657,7 +657,7 @@ export default function RoomAttendance() {
   async function onDownloadXlsx() {
     const label = formatDayLabel(new Date(selectedDate));
     const timeSlots = slots;
-    const groups = roomExportGroups;
+    const groups = worksheetExportGroups;
 
     const programFill = (prog) => {
       const p = String(prog || '').toUpperCase();
@@ -929,6 +929,23 @@ export default function RoomAttendance() {
 
     return ordered;
   }, [rooms]);
+  const worksheetExportGroups = React.useMemo(() => {
+    const takeRooms = (...keys) => keys.flatMap((key) => roomExportGroups.find((group) => group.key === key)?.rooms || []);
+    const grouped = [];
+
+    const bpNbRooms = takeRooms('BP', 'NB');
+    if (bpNbRooms.length) grouped.push({ key: 'BP_NB', label: 'BP + NB Rooms', rooms: bpNbRooms });
+
+    const obEbRooms = takeRooms('OB', 'EB');
+    if (obEbRooms.length) grouped.push({ key: 'OB_EB', label: 'OB + EB Rooms', rooms: obEbRooms });
+
+    const otherRooms = roomExportGroups
+      .filter((group) => !ROOM_EXPORT_ORDER.includes(group.key))
+      .flatMap((group) => group.rooms || []);
+    if (otherRooms.length) grouped.push({ key: 'OTHER', label: 'Other Rooms', rooms: otherRooms });
+
+    return grouped;
+  }, [roomExportGroups]);
   const exportCellMap = React.useMemo(() => {
     const map = new Map();
     (filteredSchedules || []).forEach((record) => {
