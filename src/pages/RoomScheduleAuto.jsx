@@ -26,6 +26,7 @@ function termLabelOf(s) {
   const t = String(s || '').toLowerCase();
   if (/1(st)?|first/.test(t)) return '1st';
   if (/2(nd)?|second/.test(t)) return '2nd';
+  if (/summer|mid\s*year|midyear/.test(t)) return 'Summer';
   if (/sem/.test(t)) return 'Sem';
   return t ? s : 'Other';
 }
@@ -55,7 +56,7 @@ const normalizeSem = (val) => {
   if (!v) return '';
   if (v.startsWith('1')) return '1st';
   if (v.startsWith('2')) return '2nd';
-  if (v.startsWith('s')) return 'Sem';
+  if (/summer|mid\s*year|midyear/.test(v)) return 'Summer';
   if (/first/.test(v)) return '1st';
   if (/second/.test(v)) return '2nd';
   if (/sem/.test(v)) return 'Sem';
@@ -153,23 +154,25 @@ export default function RoomScheduleAuto() {
   }, [acadData, prefSy]);
 
   const autoTerm = useMemo(() => {
+    if (prefSem === 'Summer') return 'Summer';
     return resolveAcademicCalendarTerm(resolvedCalendar, prefSem, new Date());
   }, [resolvedCalendar, prefSem]);
 
   const termMatches = React.useCallback((t) => {
     const norm = normalizeSem(t);
     if (!norm) return true;
+    if (prefSem === 'Summer') return true;
     if (norm === 'Sem') return false;
     if (autoTerm) return norm === autoTerm;
     return true;
-  }, [autoTerm]);
+  }, [autoTerm, prefSem]);
 
   const filteredSchedules = useMemo(() => {
     return (all || []).filter(c => {
       const syVal = String(c.school_year || c.schoolYear || c.schoolyear || c.sy || '').trim();
       if (prefSy && syVal && syVal !== prefSy) return false;
       const semVal = normalizeSem(c.semester || c.sem);
-      if (semVal === 'Sem') return false;
+      if (prefSem !== 'Summer' && semVal === 'Sem') return false;
       if (prefSem && semVal && semVal !== prefSem) return false;
       return true;
     });
@@ -209,6 +212,7 @@ export default function RoomScheduleAuto() {
     const order = [];
     if (m.has('1st')) order.push('1st');
     if (m.has('2nd')) order.push('2nd');
+    if (m.has('Summer')) order.push('Summer');
     if (m.has('Sem')) order.push('Sem');
     keys.forEach(k => { if (!order.includes(k)) order.push(k); });
     // If current term is known and not Sem, prefer that first but still keep Sem afterwards
@@ -223,7 +227,7 @@ export default function RoomScheduleAuto() {
 
   const bucketTime = (start) => {
     if (!Number.isFinite(start)) return null;
-    if (start < 8 * 60) return null; // before 8AM ignore
+    if (start < 7 * 60) return null; // before 7AM ignore
     if (start < 12 * 60) return 'AM';
     if (start < 17 * 60) return 'PM';
     return 'Evening';

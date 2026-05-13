@@ -4541,10 +4541,10 @@ const prefill = hit ? {
       if (val === 'TBA') return true;
       const s = range.start, e = range.end;
       if (!Number.isFinite(s) || !Number.isFinite(e)) return false;
-      return s >= start && e <= end;
+      return Math.max(s, start) < Math.min(e, end);
     }).map(({ opt }) => opt);
     return {
-      morning: filterRange(8 * 60, 12 * 60),
+      morning: filterRange(7 * 60, 12 * 60),
       afternoon: filterRange(13 * 60, 17 * 60),
       evening: filterRange(17 * 60, 21 * 60),
       all: base,

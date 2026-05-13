@@ -104,7 +104,7 @@ const normalizeSem = (val) => {
   if (!v) return '';
   if (v.startsWith('1')) return '1st';
   if (v.startsWith('2')) return '2nd';
-  if (v.startsWith('s')) return 'Sem';
+  if (/summer|mid\s*year|midyear/.test(v)) return 'Summer';
   if (/first/.test(v)) return '1st';
   if (/second/.test(v)) return '2nd';
   if (/sem/.test(v)) return 'Sem';
@@ -238,6 +238,7 @@ export default function RoomAttendance() {
   }, [acadData, prefSy]);
 
   const autoTerm = React.useMemo(() => {
+    if (prefSem === 'Summer') return 'Summer';
     return resolveAcademicCalendarTerm(resolvedCalendar, prefSem, new Date());
   }, [resolvedCalendar, prefSem]);
 
@@ -251,6 +252,7 @@ export default function RoomAttendance() {
     if (!norm) return true; // allow untagged
     const f = String(effectiveTermFilter || 'all').toLowerCase();
     if (f === 'all') return true;
+    if (f.startsWith('sum')) return true;
     if (f.startsWith('s')) return norm === 'Sem';
     if (norm === 'Sem') return false;
     if (f.startsWith('1')) return norm === '1st';
@@ -1066,6 +1068,7 @@ export default function RoomAttendance() {
                     <option value="auto">Auto{autoTerm ? ` (${autoTerm})` : ''}</option>
                     <option value="1st">1st</option>
                     <option value="2nd">2nd</option>
+                    <option value="summer">Summer</option>
                     <option value="all">All</option>
                     <option value="sem">Sem</option>
                   </select>

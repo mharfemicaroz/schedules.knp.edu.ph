@@ -138,7 +138,11 @@ export function parseTimeBlockToMinutes(block){
     const end = toMinutes(12, 0, 'PM');
     return { start, end };
   }
-  const start = toMinutes(h1, m1 || 0, suf);
+  let startMeridiem = suf;
+  if (suf === 'PM' && Number(h1) < 12 && Number(h2) < 12 && Number(h1) > Number(h2)) {
+    startMeridiem = 'AM';
+  }
+  const start = toMinutes(h1, m1 || 0, startMeridiem);
   const end = toMinutes(h2, m2 || 0, suf);
   return { start, end };
 }

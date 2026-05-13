@@ -235,7 +235,7 @@ function AssignmentRow({
     if (!baseSessionKey) return [];
     return allowedSessionKeys
       .map(key => {
-        if (key === 'morning') return { start: 8 * 60, end: 12 * 60 };
+        if (key === 'morning') return { start: 7 * 60, end: 12 * 60 };
         if (key === 'afternoon') return { start: 13 * 60, end: 17 * 60 };
         if (key === 'evening') return { start: 17 * 60, end: 21 * 60 };
         return null;
@@ -252,7 +252,7 @@ function AssignmentRow({
       const { start, end } = parseTimeBlockToMinutes(val);
       if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
       if (isPEorNSTP(row) && end - start <= 60) return false;
-      return sessionRanges.some(range => start >= range.start && end <= range.end);
+      return sessionRanges.some(range => Math.max(start, range.start) < Math.min(end, range.end));
     });
   }, [sessionRanges]);
 
