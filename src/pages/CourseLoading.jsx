@@ -1149,7 +1149,8 @@ export default function CourseLoading() {
   const registrarViewOnly = isRegistrar && !isAdmin;
   const [allowedDepts, setAllowedDepts] = React.useState(null);
   const [userDeptRows, setUserDeptRows] = React.useState(null);
-  const deptHeadCacheRef = React.useRef(new Map());
+  const deptAssignmentsCacheRef = React.useRef(new Map());
+  const userNameCacheRef = React.useRef(new Map());
   const [acadData, setAcadData] = React.useState(null);
   React.useEffect(() => {
     let alive = true;
@@ -1173,12 +1174,12 @@ export default function CourseLoading() {
     const code = normalizeProgramCode(it?.programcode || it?.program || '');
     return code && allowedDeptSet.has(code);
   }, [registrarViewOnly, isAdmin, allowedDepts, allowedDeptSet]);
-  const getDeptHeadForDept = React.useCallback(async (rawDept) => {
+  const getDeptAssignmentsForDept = React.useCallback(async (rawDept) => {
     const norm = normalizeProgramCode(rawDept);
     const normBase = programBase(rawDept);
-    if (!norm) return null;
-    if (deptHeadCacheRef.current.has(norm)) return deptHeadCacheRef.current.get(norm);
-    if (normBase && deptHeadCacheRef.current.has(normBase)) return deptHeadCacheRef.current.get(normBase);
+    if (!norm) return [];
+    if (deptAssignmentsCacheRef.current.has(norm)) return deptAssignmentsCacheRef.current.get(norm);
+    if (normBase && deptAssignmentsCacheRef.current.has(normBase)) return deptAssignmentsCacheRef.current.get(normBase);
     const queries = [];
     if (rawDept) queries.push(rawDept);
     if (norm && norm !== rawDept) queries.push(norm);
@@ -1188,7 +1189,10 @@ export default function CourseLoading() {
       try {
         const res = await api.listUserDepartments({ department: q });
         const arr = Array.isArray(res?.rows) ? res.rows : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
-        if (arr.length > 0) { rows = rows.concat(arr); break; }
+        if (arr.length > 0) {
+          rows = rows.concat(arr);
+          break;
+        }
       } catch {
         // ignore and try next query
       }
@@ -1213,31 +1217,122 @@ export default function CourseLoading() {
       if (codeNorm && normBase && codeNorm === normBase) return true;
       return false;
     });
-    if (!filtered || filtered.length === 0) {
-      deptHeadCacheRef.current.set(norm, null);
-      if (normBase) deptHeadCacheRef.current.set(normBase, null);
-      return null;
-    }
-    const best = pickBestAssignment(filtered);
-    if (!best) {
-      deptHeadCacheRef.current.set(norm, null);
-      if (normBase) deptHeadCacheRef.current.set(normBase, null);
-      return null;
-    }
-    let name = extractUserName(best);
-    if (!name && best.userId != null) {
-      try {
-        const u = await api.getUser(best.userId);
-        name = [u?.first_name, u?.last_name].filter(Boolean).join(' ').trim() || u?.username || name;
-      } catch {
-        // ignore user lookup failure
-      }
-    }
-    const head = { name: name || '', position: best.position || '', department: best.department || rawDept || '', userId: best.userId };
-    deptHeadCacheRef.current.set(norm, head);
-    if (normBase) deptHeadCacheRef.current.set(normBase, head);
-    return head;
+    const seen = new Set();
+    const deduped = filtered.filter((r) => {
+      const key = [
+        String(r?.userId ?? r?.user_id ?? ''),
+        String(r?.department || '').trim().toUpperCase(),
+        String(r?.position || '').trim().toLowerCase(),
+        r?.isPrimary ? '1' : '0',
+      ].join('|');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    deptAssignmentsCacheRef.current.set(norm, deduped);
+    if (normBase) deptAssignmentsCacheRef.current.set(normBase, deduped);
+    return deduped;
   }, [userDeptRows]);
+  const resolveAssignmentDisplayName = React.useCallback(async (row) => {
+    if (!row) return '';
+    const direct = extractUserName(row);
+    if (direct) return direct;
+    const userId = row?.userId ?? row?.user_id ?? null;
+    if (userId == null || userId === '') return '';
+    const key = String(userId);
+    if (userNameCacheRef.current.has(key)) return userNameCacheRef.current.get(key);
+    try {
+      const u = await api.getUser(userId);
+      const name = [u?.first_name, u?.last_name].filter(Boolean).join(' ').trim() || u?.username || u?.email || '';
+      userNameCacheRef.current.set(key, name);
+      return name;
+    } catch {
+      userNameCacheRef.current.set(key, '');
+      return '';
+    }
+  }, []);
+  const resolvePrintSignatories = React.useCallback(async (rawDept) => {
+    const basePreparedBy = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim()
+      || authUser?.username
+      || authUser?.email
+      || '';
+    const fallbackRole = registrarViewOnly
+      ? 'College Registrar'
+      : (() => {
+          try {
+            const list = Array.isArray(userDeptRows) ? userDeptRows : [];
+            const primary = list.find(r => r && r.isPrimary && String(r.position || '').trim());
+            const any = list.find(r => String(r?.position || '').trim());
+            return String(primary?.position || any?.position || 'Academic Head');
+          } catch {
+            return 'Academic Head';
+          }
+        })();
+    if (registrarViewOnly) {
+      return {
+        preparedBy: basePreparedBy || 'College Registrar',
+        preparedRole: 'College Registrar',
+        notedBy: '',
+        notedRole: '',
+      };
+    }
+    const assignments = await getDeptAssignmentsForDept(rawDept);
+    const coordinator = pickBestAssignment(assignments.filter((r) => rankAcademicPosition(r?.position) === 1));
+    const head = pickBestAssignment(assignments.filter((r) => rankAcademicPosition(r?.position) === 2));
+    const dean = pickBestAssignment(assignments.filter((r) => rankAcademicPosition(r?.position) === 3));
+    const preparedRow = coordinator || head || dean || pickBestAssignment(assignments) || null;
+    const notedRow = coordinator ? (head || dean || null) : null;
+    const preparedBy = preparedRow ? await resolveAssignmentDisplayName(preparedRow) : '';
+    const preparedRole = String(preparedRow?.position || fallbackRole || 'Academic Head');
+    const notedBy = notedRow ? await resolveAssignmentDisplayName(notedRow) : '';
+    const notedRole = String(notedRow?.position || '').trim();
+    const sameSigner = preparedBy && notedBy
+      && preparedBy.trim().toLowerCase() === notedBy.trim().toLowerCase()
+      && preparedRole.trim().toLowerCase() === notedRole.trim().toLowerCase();
+    return {
+      preparedBy: preparedBy || basePreparedBy || 'Academic Head',
+      preparedRole: preparedRole || 'Academic Head',
+      notedBy: sameSigner ? '' : notedBy,
+      notedRole: sameSigner ? '' : notedRole,
+    };
+  }, [authUser, registrarViewOnly, userDeptRows, getDeptAssignmentsForDept, resolveAssignmentDisplayName]);
+  const buildPrintFooterHtml = React.useCallback((signatories = {}) => {
+    const escape = (val) => String(val ?? '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\"/g,'&quot;').replace(/'/g,'&#039;');
+    const preparedBy = String(signatories?.preparedBy || '').trim();
+    const preparedRole = String(signatories?.preparedRole || 'Academic Head').trim() || 'Academic Head';
+    const notedBy = String(signatories?.notedBy || '').trim();
+    const notedRole = String(signatories?.notedRole || '').trim();
+    const preparedBlock = preparedBy
+      ? `
+      <div class='prt-block'>
+        <div class='prt-verify'>Prepared by:</div>
+        <div class='prt-sign'>${escape(preparedBy)}</div>
+        <div class='prt-role'>${escape(preparedRole)}</div>
+      </div>`
+      : '';
+    const notedBlock = notedBy
+      ? `
+      <div class='prt-block'>
+        <div class='prt-verify'>Noted by:</div>
+        <div class='prt-sign'>${escape(notedBy)}</div>
+        <div class='prt-role'>${escape(notedRole)}</div>
+      </div>`
+      : '';
+    return `<div class='prt-footer'>${preparedBlock}${notedBlock}
+      <div class='prt-block'>
+        <div class='prt-verify'>Verified by:</div>
+        <div class='prt-sign'>Dr. Mharfe M. Micaroz</div>
+        <div class='prt-role'>Vice President of Academic Affairs</div>
+      </div>
+      <div class='prt-block'>
+        <div class='prt-approve'>Approved by:</div>
+        <div class='prt-sign'>Dr. Mary Ann R. Araula</div>
+        <div class='prt-role'>Acting College President</div>
+      </div>
+    </div>`;
+  }, []);
 
   const allowedViews = React.useMemo(() => {
     if (registrarViewOnly) return ['blocks', 'summary'];
@@ -1483,7 +1578,7 @@ export default function CourseLoading() {
     return Number.isFinite(tr.start) ? tr.start : 99999;
   };
 
-  const onPrintBlock = () => {
+  const onPrintBlock = async () => {
     if (!selectedBlock) return;
     const title = `Block: ${selectedBlock.blockCode || ''}`;
     const subtitle = [`School Year: ${settingsLoad?.school_year || ''}`, `Semester: ${settingsLoad?.semester || ''}`].filter(Boolean).join('  |  ');
@@ -1555,18 +1650,17 @@ export default function CourseLoading() {
       buildTable(headers, bodyRows),
       termSummaryHtml
     ].join('');
-    const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
-    const preparedRole = (() => {
-      if (registrarViewOnly) return 'College Registrar';
-      try {
-        const list = Array.isArray(userDeptRows) ? userDeptRows : [];
-        const primary = list.find(r => r && r.isPrimary && String(r.position || '').trim());
-        const any = list.find(r => String(r?.position || '').trim());
-        return String(primary?.position || any?.position || 'Academic Head');
-      } catch { return 'Academic Head'; }
-    })();
+    const signatories = await resolvePrintSignatories(selectedBlock?.blockCode || selectedBlock?.section || '');
     // Faculty view: print in portrait for better per-faculty listing
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'landscape', compact: true, preparedBy: prep, preparedRole });
+    printContent({ title, subtitle, bodyHtml }, {
+      pageSize: 'A4',
+      orientation: 'landscape',
+      compact: true,
+      preparedBy: signatories.preparedBy,
+      preparedRole: signatories.preparedRole,
+      notedBy: signatories.notedBy,
+      notedRole: signatories.notedRole,
+    });
   };
 
   const onPrintAllBlocks = async () => {
@@ -1836,38 +1930,7 @@ export default function CourseLoading() {
       .filter(Boolean)
       .join('  |  ');
     const printedAt = new Date().toLocaleString();
-    const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
-    const preparedRole = (() => {
-      if (registrarViewOnly) return 'College Registrar';
-      try {
-        const list = Array.isArray(userDeptRows) ? userDeptRows : [];
-        const primary = list.find(r => r && r.isPrimary && String(r.position || '').trim());
-        const any = list.find(r => String(r?.position || '').trim());
-        return String(primary?.position || any?.position || 'Academic Head');
-      } catch { return 'Academic Head'; }
-    })();
-    const preparedBy = prep || 'Academic Head';
-    const preparedByHtml = `
-      <div class='prt-block'>
-        <div class='prt-verify'>Prepared by:</div>
-        <div class='prt-sign'>${esc(preparedBy)}</div>
-        <div class='prt-role'>${esc(preparedRole)}</div>
-      </div>`;
-    const verifiedByHtml = `
-      <div class='prt-block'>
-        <div class='prt-verify'>Verified by:</div>
-        <div class='prt-sign'>Dr. Mharfe M. Micaroz</div>
-        <div class='prt-role'>Vice President of Academic Affairs</div>
-      </div>`;
-    const approvedByHtml = `
-      <div class='prt-block'>
-        <div class='prt-approve'>Approved by:</div>
-        <div class='prt-sign'>Dr. Mary Ann R. Araula</div>
-        <div class='prt-role'>Acting College President</div>
-      </div>`;
-    const footerHtml = `<div class='prt-footer'>${preparedByHtml}${verifiedByHtml}${approvedByHtml}</div>`;
-
-    const blocksHtml = sortedBlocks.map((blk) => {
+    const blockEntries = sortedBlocks.map((blk) => {
       const blockCode = blk.code;
       const blockNorm = normBlock(blockCode);
       const meta = blk.ref || {};
@@ -1901,6 +1964,22 @@ export default function CourseLoading() {
         const v = Number(r.unit ?? r.units ?? 0);
         return sum + (Number.isFinite(v) ? v : 0);
       }, 0);
+      return { blk, blockCode, blockRoom, blockSession, sorted, totalUnits };
+    });
+    const printableEntries = blockEntries.filter((entry) => entry.sorted.length > 0);
+    if (printableEntries.length === 0) {
+      toast({ title: 'Nothing to print', description: 'No blocks with courses found for the selected load.', status: 'info' });
+      return;
+    }
+    const deptKeys = Array.from(new Set(printableEntries.map((entry) => {
+      const meta = parseBlockMeta(entry.blockCode);
+      return meta.programcode || entry.blockCode;
+    })));
+    const signatoryPairs = await Promise.all(
+      deptKeys.map(async (deptKey) => [deptKey, await resolvePrintSignatories(deptKey)])
+    );
+    const signatoryMap = new Map(signatoryPairs);
+    const blocksHtml = printableEntries.map(({ blockCode, blockRoom, blockSession, sorted, totalUnits }) => {
       const normShort = (t) => {
         const v = String(t || '').trim().toLowerCase();
         if (!v) return '';
@@ -1937,9 +2016,11 @@ export default function CourseLoading() {
           <tr><th>Total Units</th><td>${esc(String(totalUnits))}</td><th>Courses</th><td>${esc(String(sorted.length))}</td></tr>
         </tbody></table>`,
       ].join('');
-      const emptyNote = sorted.length === 0
-        ? `<div style="margin-top:6px;font-size:12px;color:#555;">No schedules found for this block.</div>`
-        : '';
+      const deptKey = (() => {
+        const meta = parseBlockMeta(blockCode);
+        return meta.programcode || blockCode;
+      })();
+      const footerHtml = buildPrintFooterHtml(signatoryMap.get(deptKey));
       const headerHtml = `
         <div class='prt-header'>
           <p class='prt-title'>${esc(`Block: ${blockCode}`)}</p>
@@ -1951,7 +2032,6 @@ export default function CourseLoading() {
           ${metaHtml}
           ${buildTable(headers, bodyRows)}
           ${termSummaryHtml}
-          ${emptyNote}
         </div>`;
       return `
         <div class='prt-page'>
@@ -1969,7 +2049,7 @@ export default function CourseLoading() {
     );
   };
 
-  const onPrintProgram = () => {
+  const onPrintProgram = async () => {
     if (!selectedProgram) return;
     const title = `Program: ${selectedProgram}`;
     const subtitle = [`School Year: ${settingsLoad?.school_year || ''}`, `Semester: ${settingsLoad?.semester || ''}`]
@@ -2070,16 +2150,16 @@ export default function CourseLoading() {
       </div>
     `;
     const bodyHtml = sectionHtml + noteHtml;
-    const prep = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim();
-    const preparedRole = (() => {
-      try {
-        const list = Array.isArray(userDeptRows) ? userDeptRows : [];
-        const primary = list.find(r => r && r.isPrimary && String(r.position || '').trim());
-        const any = list.find(r => String(r?.position || '').trim());
-        return String(primary?.position || any?.position || 'Academic Head');
-      } catch { return 'Academic Head'; }
-    })();
-    printContent({ title, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy: prep, preparedRole });
+    const signatories = await resolvePrintSignatories(selectedProgram);
+    printContent({ title, subtitle, bodyHtml }, {
+      pageSize: 'A4',
+      orientation: 'portrait',
+      compact: true,
+      preparedBy: signatories.preparedBy,
+      preparedRole: signatories.preparedRole,
+      notedBy: signatories.notedBy,
+      notedRole: signatories.notedRole,
+    });
   };
 
   const onPrintFaculty = async () => {
@@ -2259,48 +2339,18 @@ export default function CourseLoading() {
     const bodyHtml = [introHtml, tentativeNoteHtml, buildTable(headers, bodyRows), termSummaryHtmlF, overloadHtml].join('');
     // FacultyDetail-style layout triggers conforme signature block (based on title prefix)
     const rawDept = f.department || f.dept || f.programcode || f.program || '';
-    const deptNorm = normalizeProgramCode(rawDept);
-    const isSpecialDept = ['GENED', 'PARTTIME', 'PE'].includes(deptNorm);
-    const deptHead = await getDeptHeadForDept(rawDept);
-    const allAssignments = Array.isArray(userDeptRows) ? userDeptRows : [];
-    const bestForDept = (() => {
-      if (!deptNorm) return null;
-      const matches = allAssignments.filter((r) => {
-        const code = normalizeProgramCode(r?.department || '');
-        if (!code) return false;
-        return code === deptNorm || deptNorm.startsWith(code) || code.startsWith(deptNorm);
-      });
-      return matches.length > 0 ? pickBestAssignment(matches) : null;
-    })();
-    const bestOverall = pickBestAssignment(allAssignments) || null;
-    const basePreparedBy = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim()
-      || authUser?.username
-      || authUser?.email
-      || '';
-    let preparedBy = basePreparedBy;
-    let preparedRole = registrarViewOnly
-      ? 'College Registrar'
-      : (deptHead?.position || bestOverall?.position || 'Academic Head');
-    let hideVerified = false;
-    if (isSpecialDept) {
-      preparedBy = 'Dr. Mharfe M. Micaroz';
-      preparedRole = 'Vice President of Academic Affairs';
-      hideVerified = true;
-    } else if (deptHead && (deptHead.name || deptHead.position)) {
-      preparedBy = deptHead.name || preparedBy || 'Academic Head';
-      preparedRole = deptHead.position || preparedRole || 'Academic Head';
-    } else if (!registrarViewOnly) {
-      const pick = bestForDept || bestOverall;
-      if (pick) {
-        preparedBy = extractUserName(pick) || preparedBy || 'Academic Head';
-        preparedRole = String(pick.position || preparedRole || 'Academic Head');
-      }
-    }
-    if (!preparedBy) preparedBy = deptHead?.name || extractUserName(bestForDept || bestOverall || {}) || 'Academic Head';
-    if (!preparedRole) preparedRole = 'Academic Head';
+    const signatories = await resolvePrintSignatories(rawDept);
     printContent(
       { title, subtitle: '', bodyHtml },
-      { pageSize: 'A4', orientation: 'portrait', compact: true, preparedBy, preparedRole, hideVerified }
+      {
+        pageSize: 'A4',
+        orientation: 'portrait',
+        compact: true,
+        preparedBy: signatories.preparedBy,
+        preparedRole: signatories.preparedRole,
+        notedBy: signatories.notedBy,
+        notedRole: signatories.notedRole,
+      }
     );
   };
 

@@ -205,6 +205,19 @@ export function printContent(
         <div class='prt-role'>${escapeHtml(preparedRole)}</div>
       </div>`
     : "";
+  const notedBy = typeof opts.notedBy === "string" ? opts.notedBy : "";
+  const notedRole =
+    typeof opts.notedRole === "string" && opts.notedRole.trim().length > 0
+      ? opts.notedRole
+      : "";
+  const notedBlock = notedBy
+    ? `
+      <div class='prt-block'>
+        <div class='prt-verify'>Noted by:</div>
+        <div class='prt-sign'>${escapeHtml(notedBy)}</div>
+        <div class='prt-role'>${escapeHtml(notedRole)}</div>
+      </div>`
+    : "";
   const verifiedBlock = hideVerified
     ? ""
     : `
@@ -218,6 +231,7 @@ export function printContent(
     : `
     <div class='prt-footer'>
       ${preparedBlock}
+      ${notedBlock}
       ${verifiedBlock}
       <div class='prt-block'>
         <div class='prt-approve'>Approved by:</div>
