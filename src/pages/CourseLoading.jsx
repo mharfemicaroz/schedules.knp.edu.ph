@@ -1179,7 +1179,6 @@ export default function CourseLoading() {
     const normBase = programBase(rawDept);
     if (!norm) return [];
     if (deptAssignmentsCacheRef.current.has(norm)) return deptAssignmentsCacheRef.current.get(norm);
-    if (normBase && deptAssignmentsCacheRef.current.has(normBase)) return deptAssignmentsCacheRef.current.get(normBase);
     const queries = [];
     if (rawDept) queries.push(rawDept);
     if (norm && norm !== rawDept) queries.push(norm);
@@ -1206,17 +1205,23 @@ export default function CourseLoading() {
         // ignore full fetch failure
       }
     }
-    const filtered = (rows || []).filter((r) => {
+    const getMatchRank = (r) => {
       const codeRaw = r?.department || '';
       const codeNorm = normalizeProgramCode(codeRaw);
       const codeBase = programBase(codeRaw);
-      if (!codeNorm && !codeBase) return false;
-      if (codeNorm && codeNorm === norm) return true;
-      if (codeBase && norm && codeBase === norm) return true;
-      if (codeBase && normBase && codeBase === normBase) return true;
-      if (codeNorm && normBase && codeNorm === normBase) return true;
-      return false;
-    });
+      if (codeNorm && codeNorm === norm) return 4;
+      if (codeBase && norm && codeBase === norm) return 3;
+      if (codeNorm && normBase && codeNorm === normBase) return 2;
+      if (codeBase && normBase && codeBase === normBase) return 1;
+      return 0;
+    };
+    const ranked = (rows || [])
+      .map((r) => ({ row: r, rank: getMatchRank(r) }))
+      .filter((entry) => entry.rank > 0);
+    const bestRank = ranked.reduce((max, entry) => Math.max(max, entry.rank), 0);
+    const filtered = ranked
+      .filter((entry) => entry.rank === bestRank)
+      .map((entry) => entry.row);
     const seen = new Set();
     const deduped = filtered.filter((r) => {
       const key = [
@@ -1230,7 +1235,6 @@ export default function CourseLoading() {
       return true;
     });
     deptAssignmentsCacheRef.current.set(norm, deduped);
-    if (normBase) deptAssignmentsCacheRef.current.set(normBase, deduped);
     return deduped;
   }, [userDeptRows]);
   const resolveAssignmentDisplayName = React.useCallback(async (row) => {
