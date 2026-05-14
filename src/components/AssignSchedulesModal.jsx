@@ -16,6 +16,7 @@ import { loadBlocksThunk } from '../store/blockThunks';
 import { selectBlocks } from '../store/blockSlice';
 import { loadProspectusThunk } from '../store/prospectusThunks';
 import { selectAllProspectus } from '../store/prospectusSlice';
+import { parseBlockMeta } from '../utils/blockMeta';
 // no block filtering here per request
 
 export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyName, onCreate }) {
@@ -77,22 +78,6 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
     })();
     return () => { alive = false; };
   }, [isOpen, authUser?.id, isAdmin]);
-
-  // Helper to parse block program code similar to CourseLoading
-  const parseBlockMeta = React.useCallback((blockCode) => {
-    const s = String(blockCode || '').trim();
-    if (!s) return { programcode: '', yearlevel: '' };
-    let m = s.match(/^([A-Z0-9-]+)\s+(\d+)/i);
-    if (m) return { programcode: (m[1] || '').toUpperCase(), yearlevel: m[2] || '' };
-    const [head, rest] = s.split('-');
-    if (rest) {
-      const m2 = rest.match(/(\d+)/);
-      return { programcode: (head || '').toUpperCase(), yearlevel: m2 ? (m2[1] || '') : '' };
-    }
-    const m3 = s.match(/^(\D+?)(\d+)/);
-    if (m3) return { programcode: (m3[1] || '').replace(/[-\s]+$/, '').toUpperCase(), yearlevel: m3[2] || '' };
-    return { programcode: s.toUpperCase(), yearlevel: '' };
-  }, []);
 
   // Load source data when opening
   React.useEffect(() => {

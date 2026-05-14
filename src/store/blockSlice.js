@@ -9,6 +9,8 @@ const initialState = {
   pageSize: 20,
   filters: {
     blockCode: '',
+    program: '',
+    yearlevel: '',
     room: '',
     session: '',
     f2fSched: '',
