@@ -62,8 +62,8 @@ const toShortTerm = (s) => {
   if (!v) return '';
   if (v.startsWith('1')) return '1st';
   if (v.startsWith('2')) return '2nd';
+  if (v.includes('summer')) return 'Summer';
   if (v.startsWith('s')) return 'Sem';
-  if (v.includes('summer')) return 'Sem';
   if (v.includes('1st semester')) return '1st';
   if (v.includes('2nd semester')) return '2nd';
   return s;
@@ -144,6 +144,7 @@ export default function CoursesView() {
   const normalizeSem = (s) => {
     const v = String(s || '').trim().toLowerCase();
     if (!v) return '';
+    if (/summer|mid\s*year|midyear/.test(v)) return 'Summer';
     if (v.startsWith('1')) return '1st';
     if (v.startsWith('2')) return '2nd';
     if (v.startsWith('s')) return 'Sem';
@@ -533,6 +534,10 @@ export default function CoursesView() {
     if (start >= 17 * 60) return 'evening';
     return 'afternoon';
   }, []);
+  const isSummerLoad = React.useMemo(() => {
+    const v = String(settingsLoad?.semester || '').trim().toLowerCase();
+    return /summer|mid\s*year|midyear/.test(v);
+  }, [settingsLoad?.semester]);
 
   const checkRowConflict = async (i, candRow) => {
     const row = candRow || rows[i];
@@ -547,7 +552,9 @@ export default function CoursesView() {
     const blockSessionKey = normalizeSessionKey(row.session);
     const timeSessionKey = deriveSessionFromTime(timeStr);
     const sessionKey = timeSessionKey || blockSessionKey;
-    const allowedSessions = allowedSessionsForCourse(row, blockSessionKey || row.session, row._day || row.day);
+    const allowedSessions = isSummerLoad
+      ? ['morning', 'afternoon', 'evening']
+      : allowedSessionsForCourse(row, blockSessionKey || row.session, row._day || row.day);
     const inAllowedSession = (() => {
       if (!Array.isArray(allowedSessions) || allowedSessions.length === 0) return true;
       if (!sessionKey) return true;
@@ -1122,6 +1129,7 @@ export default function CoursesView() {
                   statsCourses={scopedCourses || []}
                   blockCode={r.blockCode}
                   blockSession={r.session || ''}
+                  currentSemester={settingsLoad?.semester || ''}
                   attendanceStats={attendanceStatsMap}
                   disabled={false}
                   isAdmin={isAdmin}

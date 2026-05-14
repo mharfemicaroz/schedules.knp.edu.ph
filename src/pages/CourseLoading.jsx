@@ -4551,6 +4551,22 @@ const prefill = hit ? {
     };
   }, []);
   const timeOptionsForSession = React.useCallback((sessionKey, currentValue, course, day) => {
+    const isSummer = /summer|mid\s*year|midyear/i.test(String(settingsLoad?.semester || ''));
+    if (isSummer) {
+      let opts = timeOptionsBySession.all.slice();
+      if (isPEorNSTP(course)) {
+        opts = opts.filter(opt => {
+          if (!opt) return true;
+          const val = String(opt).trim().toUpperCase();
+          if (val === 'TBA') return true;
+          const { start, end } = parseTimeBlockToMinutes(val);
+          if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+          return end - start > 60;
+        });
+      }
+      if (currentValue && !opts.includes(currentValue)) opts = [...opts, currentValue];
+      return opts;
+    }
     const key = normalizeSessionKey(sessionKey);
     const allowed = allowedSessionsForCourse(course || {}, key, day);
     const sessions = allowed && allowed.length ? allowed : (key ? [key] : []);
@@ -4575,7 +4591,7 @@ const prefill = hit ? {
       opts = [...opts, currentValue];
     }
     return opts;
-  }, [normalizeSessionKey, timeOptionsBySession]);
+  }, [normalizeSessionKey, settingsLoad?.semester, timeOptionsBySession]);
   const sessionMenuLabels = React.useMemo(() => ({
     morning: 'Morning (8-12NN)',
     afternoon: 'Afternoon (1-5PM)',
@@ -4583,9 +4599,10 @@ const prefill = hit ? {
   }), []);
   const selectedBlockSessionKey = React.useMemo(() => normalizeSessionKey(selectedBlock?.session), [normalizeSessionKey, selectedBlock]);
   const allowedAutoAssignSessions = React.useMemo(() => {
+    if (/summer|mid\s*year|midyear/i.test(String(settingsLoad?.semester || ''))) return ['morning', 'afternoon', 'evening'];
     if (selectedBlockSessionKey) return [selectedBlockSessionKey];
     return ['morning', 'afternoon', 'evening'];
-  }, [selectedBlockSessionKey]);
+  }, [selectedBlockSessionKey, settingsLoad?.semester]);
   const autoAssignTimeForSession = React.useCallback((sessionKey) => {
     const slots = sessionSlotsMap[sessionKey];
     if (!slots || slots.length === 0) return;
@@ -4593,7 +4610,7 @@ const prefill = hit ? {
       toast({ title: 'Select a block', description: 'Auto-assign time is available in Block view.', status: 'info' });
       return;
     }
-    if (selectedBlockSessionKey && sessionKey !== selectedBlockSessionKey) {
+    if (!/summer|mid\s*year|midyear/i.test(String(settingsLoad?.semester || '')) && selectedBlockSessionKey && sessionKey !== selectedBlockSessionKey) {
       toast({ title: 'Session locked', description: `This block is set to ${sessionLabels[selectedBlockSessionKey] || 'a single'} session.`, status: 'info' });
       return;
     }
@@ -5663,6 +5680,7 @@ const prefill = hit ? {
                                       statsCourses={scopedCourses}
                                       blockCode={r.blockCode || r.section || ''}
                                       blockSession={selectedBlock?.session || ''}
+                                      currentSemester={settingsLoad?.semester || ''}
                                       attendanceStats={attendanceStatsMap}
                                       disabled={!canLoad}
                                       onChange={(patch)=>handleRowChange(idx, patch)}
@@ -5890,6 +5908,7 @@ const prefill = hit ? {
                               statsCourses={scopedCourses}
                               blockCode={selectedBlock?.blockCode || ''}
                               blockSession={selectedBlock?.session || ''}
+                              currentSemester={settingsLoad?.semester || ''}
                               attendanceStats={attendanceStatsMap}
                               disabled={!canLoad}
                               onChange={(patch)=>handleRowChange(idx, patch)}
@@ -5974,6 +5993,7 @@ const prefill = hit ? {
                                           statsCourses={scopedCourses}
                                           blockCode={selectedBlock?.blockCode || ''}
                                           blockSession={selectedBlock?.session || ''}
+                                          currentSemester={settingsLoad?.semester || ''}
                                           attendanceStats={attendanceStatsMap}
                                           disabled={!canLoad}
                                           onChange={(patch)=>handleRowChange(idx, patch)}

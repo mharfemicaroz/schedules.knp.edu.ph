@@ -46,6 +46,7 @@ function AssignmentRow({
   onRequestHistory,
   isAdmin,
   blockSession,
+  currentSemester = '',
   variant = 'default',
   viewOnly = false,
   hideFacultyName = false,
@@ -225,13 +226,18 @@ function AssignmentRow({
     () => normalizeSessionKey(blockSession || row?.session),
     [blockSession, row?.session]
   );
+  const isSummerLoad = React.useMemo(() => {
+    const v = String(currentSemester || row?.semester || row?.sem || '').trim().toLowerCase();
+    return /summer|mid\s*year|midyear/.test(v);
+  }, [currentSemester, row?.semester, row?.sem]);
 
   const allowedSessionKeys = React.useMemo(
-    () => allowedSessionsForCourse(row, baseSessionKey, row?._day || row?.day),
-    [row, baseSessionKey]
+    () => isSummerLoad ? ['morning', 'afternoon', 'evening'] : allowedSessionsForCourse(row, baseSessionKey, row?._day || row?.day),
+    [row, baseSessionKey, isSummerLoad]
   );
 
   const sessionRanges = React.useMemo(() => {
+    if (isSummerLoad) return [];
     if (!baseSessionKey) return [];
     return allowedSessionKeys
       .map(key => {
@@ -241,9 +247,10 @@ function AssignmentRow({
         return null;
       })
       .filter(Boolean);
-  }, [allowedSessionKeys, baseSessionKey]);
+  }, [allowedSessionKeys, baseSessionKey, isSummerLoad]);
 
   const timeOptions = React.useMemo(() => {
+    if (isSummerLoad) return TIME_OPTS;
     if (!sessionRanges.length) return TIME_OPTS;
     return TIME_OPTS.filter(t => {
       if (!t) return true; // placeholder
@@ -254,7 +261,7 @@ function AssignmentRow({
       if (isPEorNSTP(row) && end - start <= 60) return false;
       return sessionRanges.some(range => Math.max(start, range.start) < Math.min(end, range.end));
     });
-  }, [sessionRanges]);
+  }, [sessionRanges, isSummerLoad]);
 
   const sessionLabel = React.useMemo(() => {
     if (!baseSessionKey || !allowedSessionKeys.length) return '';
