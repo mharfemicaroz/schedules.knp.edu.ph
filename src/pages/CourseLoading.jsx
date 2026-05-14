@@ -1964,7 +1964,7 @@ export default function CourseLoading() {
         const v = Number(r.unit ?? r.units ?? 0);
         return sum + (Number.isFinite(v) ? v : 0);
       }, 0);
-      return { blk, blockCode, blockRoom, blockSession, sorted, totalUnits };
+      return { blk, blockCode, blockRoom, blockSession, sorted, bodyRows, totalUnits };
     });
     const printableEntries = blockEntries.filter((entry) => entry.sorted.length > 0);
     if (printableEntries.length === 0) {
@@ -1979,7 +1979,7 @@ export default function CourseLoading() {
       deptKeys.map(async (deptKey) => [deptKey, await resolvePrintSignatories(deptKey)])
     );
     const signatoryMap = new Map(signatoryPairs);
-    const blocksHtml = printableEntries.map(({ blockCode, blockRoom, blockSession, sorted, totalUnits }) => {
+    const blocksHtml = printableEntries.map(({ blockCode, blockRoom, blockSession, sorted, bodyRows, totalUnits }) => {
       const normShort = (t) => {
         const v = String(t || '').trim().toLowerCase();
         if (!v) return '';
