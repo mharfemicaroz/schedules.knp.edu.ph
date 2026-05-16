@@ -1570,6 +1570,7 @@ export default function CourseLoading() {
     school_year: hasLoadOverride ? resolvedLoadSchoolYear : defaultLoadSchoolYear,
     semester: hasLoadOverride ? resolvedLoadSemester : defaultLoadSemester,
   }), [defaultLoadSchoolYear, defaultLoadSemester, hasLoadOverride, resolvedLoadSchoolYear, resolvedLoadSemester]);
+  const loadContextKeyRef = React.useRef('');
   const schoolYearOptions = React.useMemo(() => {
     const y = new Date().getFullYear();
     const set = new Set();
@@ -2878,7 +2879,7 @@ const prefill = hit ? {
     if (!selectedBlock && selectedProgram && yearOrder && yearOrder.length && loadedYears.length === 0) {
       loadProgramYear(yearOrder[0]);
     }
-  }, [yearOrder, selectedProgram, selectedBlock]);
+  }, [yearOrder, selectedProgram, selectedBlock, loadedYears, loadProgramYear]);
 
   // Infinite year loader sentinel
   React.useEffect(() => {
@@ -3198,10 +3199,41 @@ const prefill = hit ? {
         });
         return init;
       });
-    } catch {
+  } catch {
       setFacultySchedules({ items: [], loading: false });
     }
   };
+
+  React.useEffect(() => {
+    const key = `${settingsLoad.school_year || ''}__${settingsLoad.semester || ''}`;
+    if (loadContextKeyRef.current === '') {
+      loadContextKeyRef.current = key;
+      return;
+    }
+    if (loadContextKeyRef.current === key) return;
+    loadContextKeyRef.current = key;
+
+    if (selectedBlock) {
+      reloadCurrentBlock();
+      return;
+    }
+    if (viewMode === 'faculty' && selectedFaculty) {
+      fetchFacultySchedules(selectedFaculty);
+      return;
+    }
+    if (!selectedBlock && selectedProgram) {
+      setRows([]);
+      setFreshCache([]);
+      setLoadedYears([]);
+    }
+  }, [
+    settingsLoad.school_year,
+    settingsLoad.semester,
+    selectedBlock,
+    selectedFaculty,
+    selectedProgram,
+    viewMode,
+  ]);
 
   const updateFacEdit = (id, patch) => {
     const item = (facultySchedules.items || []).find((x) => String(x.id) === String(id));
