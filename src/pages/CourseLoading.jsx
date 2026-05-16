@@ -2539,18 +2539,36 @@ export default function CourseLoading() {
     if (!text) return true;
     return ['true', '1', 'yes', 'active'].includes(text);
   }, []);
-  const mappedBlockCodeSet = React.useMemo(() => {
-    const set = new Set();
+  const [mappedBlockCodesForLoad, setMappedBlockCodesForLoad] = React.useState(new Set());
+  const refreshMappedBlockCodesForLoad = React.useCallback(async () => {
+    const scopedFallback = new Set();
     (scopedCourses || []).forEach((item) => {
       const key = normalizeBlockLookupCode(item.blockCode || item.section || item.block || '');
-      if (key) set.add(key);
+      if (key) scopedFallback.add(key);
     });
-    return set;
-  }, [scopedCourses]);
+    try {
+      const qs = new URLSearchParams();
+      if (settingsLoad?.school_year) qs.set('schoolyear', settingsLoad.school_year);
+      if (settingsLoad?.semester) qs.set('semester', settingsLoad.semester);
+      const resp = await api.request(`/?${qs.toString()}`);
+      const items = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : (resp?.items || []));
+      const next = new Set();
+      (Array.isArray(items) ? items : []).forEach((item) => {
+        const key = normalizeBlockLookupCode(item?.blockCode || item?.section || item?.block || item?.block_code || '');
+        if (key) next.add(key);
+      });
+      setMappedBlockCodesForLoad(next.size ? next : scopedFallback);
+    } catch {
+      setMappedBlockCodesForLoad(scopedFallback);
+    }
+  }, [scopedCourses, settingsLoad?.school_year, settingsLoad?.semester]);
+  React.useEffect(() => {
+    void refreshMappedBlockCodesForLoad();
+  }, [refreshMappedBlockCodesForLoad]);
   const visibleBlocks = React.useMemo(() => {
     return (Array.isArray(blocks) ? blocks : []).reduce((acc, block) => {
       const code = normalizeBlockLookupCode(block?.blockCode || block?.section || block?.block_code || '');
-      const isMapped = !!code && mappedBlockCodeSet.has(code);
+      const isMapped = !!code && mappedBlockCodesForLoad.has(code);
       const isActive = blockIsActive(block);
       if (!isActive && !isMapped) return acc;
       acc.push({
@@ -2559,7 +2577,7 @@ export default function CourseLoading() {
       });
       return acc;
     }, []);
-  }, [blocks, mappedBlockCodeSet, blockIsActive]);
+  }, [blocks, mappedBlockCodesForLoad, blockIsActive]);
   const filteredVisibleBlocks = React.useMemo(() => {
     const list = Array.isArray(visibleBlocks) ? visibleBlocks : [];
     const prog = String(blockFilterProgram || '').trim().toUpperCase();
@@ -2692,7 +2710,8 @@ export default function CourseLoading() {
   const refreshBlockListings = React.useCallback(async () => {
     try { await dispatch(loadBlocksThunk({})); } catch {}
     try { await dispatch(loadAllSchedules()); } catch {}
-  }, [dispatch]);
+    try { await refreshMappedBlockCodesForLoad(); } catch {}
+  }, [dispatch, refreshMappedBlockCodesForLoad]);
 
   // Quick retry wrapper for reload to handle eventual consistency (up to 3 tries)
   const retryReloadCurrentBlock = async (maxTries = 3, delayMs = 400) => {
