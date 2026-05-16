@@ -170,22 +170,76 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     return out;
   }, [existing, settingsLoad?.school_year, settingsLoad?.semester]);
   const mappedSchedules = React.useMemo(() => scopedCourses || [], [scopedCourses]);
+  const mappedProspectusIndex = React.useMemo(() => {
+    const byId = new Set();
+    const byKey = new Set();
+    const addKey = (parts) => {
+      const key = parts.join('|');
+      if (key && key !== '||||') byKey.add(key);
+    };
+    (mappedSchedules || []).forEach((row) => {
+      const directId = row?.prospectusId ?? row?.prospectus_id ?? row?.prospectus?.id;
+      if (directId != null) byId.add(String(directId));
+      const blockMeta = parseBlockMeta(row?.blockCode || row?.block || row?.section || '');
+      const code = normCode(row?.courseName || row?.code);
+      const title = norm(row?.title || row?.courseTitle);
+      const prog = normalizeProgramCode(row?.programcode || row?.program || blockMeta.programcode || '');
+      const yearDigit = extractYearDigits(row?.yearlevel || row?.year || blockMeta.yearlevel || '');
+      const term = normalizeSem(row?.semester || row?.term || row?.sem || '');
+      addKey([prog, yearDigit, term, code, title]);
+      addKey([prog, yearDigit, '', code, title]);
+      addKey(['', '', term, code, title]);
+      addKey(['', '', '', code, title]);
+      if (code) {
+        addKey([prog, yearDigit, term, code, '']);
+        addKey([prog, yearDigit, '', code, '']);
+        addKey(['', '', term, code, '']);
+        addKey(['', '', '', code, '']);
+      }
+      if (title) {
+        addKey([prog, yearDigit, term, '', title]);
+        addKey([prog, yearDigit, '', '', title]);
+        addKey(['', '', term, '', title]);
+        addKey(['', '', '', '', title]);
+      }
+    });
+    return { byId, byKey };
+  }, [mappedSchedules]);
+  const hasMappedScheduleForProspectus = React.useCallback((row) => {
+    if (!row) return false;
+    const directId = row?.id ?? row?.prospectusId ?? row?.prospectus_id ?? row?.prospectus?.id;
+    if (directId != null && mappedProspectusIndex.byId.has(String(directId))) return true;
+    const code = normCode(row?.courseName || row?.course_name || row?.code);
+    const title = norm(row?.courseTitle || row?.course_title || row?.title);
+    const prog = normalizeProgramCode(row?.programcode || row?.program || '');
+    const yearDigit = extractYearDigits(row?.yearlevel || row?.year || '');
+    const term = normalizeSem(row?.semester || row?.term || row?.sem || '');
+    const keys = [
+      [prog, yearDigit, term, code, title].join('|'),
+      [prog, yearDigit, '', code, title].join('|'),
+      ['', '', term, code, title].join('|'),
+      ['', '', '', code, title].join('|'),
+      [prog, yearDigit, term, code, ''].join('|'),
+      [prog, yearDigit, '', code, ''].join('|'),
+      ['', '', term, code, ''].join('|'),
+      ['', '', '', code, ''].join('|'),
+      [prog, yearDigit, term, '', title].join('|'),
+      [prog, yearDigit, '', '', title].join('|'),
+      ['', '', term, '', title].join('|'),
+      ['', '', '', '', title].join('|'),
+    ];
+    return keys.some((key) => key && mappedProspectusIndex.byKey.has(key));
+  }, [mappedProspectusIndex]);
 
   const courseOptions = React.useMemo(() => {
     const wantSem = normalizeSem(settingsLoad?.semester || '');
-    const mappedCourseKeys = new Set();
-    (scopedCourses || []).forEach((s) => {
-      const key = `${normCode(s.courseName || s.code)}|${norm(s.title || s.courseTitle)}`;
-      if (key !== '|') mappedCourseKeys.add(key);
-    });
     let list = (allProspectus || []).filter(p => {
       const progStr = String(p.programcode || p.program || '');
       const okProg = !program || progStr.toUpperCase().includes(String(program).toUpperCase());
       const okYear = !year || String(p.yearlevel || '').includes(String(year));
       const okSem = !wantSem || normalizeSem(p.semester) === wantSem;
       if (!okProg || !okYear || !okSem) return false;
-      const key = `${normCode(p.courseName || p.course_name || p.code)}|${norm(p.courseTitle || p.course_title || p.title)}`;
-      const isMapped = mappedCourseKeys.has(key);
+      const isMapped = hasMappedScheduleForProspectus(p);
       if (!courseIsActive(p) && !isMapped) return false;
       if (!query) return true;
       const hay = norm(p.courseName || p.course_name || p.courseTitle || p.course_title || '');
@@ -204,10 +258,11 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       if (!map.has(k)) map.set(k, {
         ...p,
         _prospectusInactive: !courseIsActive(p),
+        _prospectusMappedWhileInactive: !courseIsActive(p) && hasMappedScheduleForProspectus(p),
       });
     });
     return Array.from(map.values()).sort((a,b) => String(a.courseName || '').localeCompare(String(b.courseName || '')));
-  }, [allProspectus, program, year, query, settingsLoad?.semester, allowedDepts, isAdmin, scopedCourses, courseIsActive]);
+  }, [allProspectus, program, year, query, settingsLoad?.semester, allowedDepts, isAdmin, courseIsActive, hasMappedScheduleForProspectus]);
 
   const blockMetaList = React.useMemo(() => {
     if (!Array.isArray(blocks)) return [];

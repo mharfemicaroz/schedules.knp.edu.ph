@@ -2714,7 +2714,7 @@ export default function CourseLoading() {
       } catch {}
       // Keep a local cache of fresh schedules so re-marking uses the same source
       setFreshCache(Array.isArray(fresh) ? fresh : []);
-      const exRowsBase = fresh.length ? fresh : (existing || []);
+      const exRowsBase = fresh.length ? fresh : (scopedCourses || []);
       const exRows = exRowsBase.filter(c => !excludeDeletedIdsRef.current.has(c.id));
       const findExistingFor = (pros) => {
         const pid = pros?.id != null ? String(pros.id) : null;
@@ -2779,7 +2779,7 @@ const prefill = hit ? {
     const findExistingForName = (name, title, pid) => {
       const pCode = norm(name);
       const pTitle = norm(title);
-      const source = (freshCache && freshCache.length) ? freshCache : (existing || []);
+      const source = (freshCache && freshCache.length) ? freshCache : (scopedCourses || []);
       const matches = source.filter(c => {
         if (excludeDeletedIdsRef.current && excludeDeletedIdsRef.current.has(c.id)) return false;
         const sectionVal = c.section != null ? c.section : (c.blockCode != null ? c.blockCode : '');
@@ -2822,7 +2822,7 @@ const prefill = hit ? {
       }, !!hit);
     });
     setRows(next);
-  }, [existing, selectedBlock, freshCache, shouldDisplayProspectusCourse, decorateProspectusActivity]);
+  }, [selectedBlock, freshCache, scopedCourses, shouldDisplayProspectusCourse, decorateProspectusActivity]);
 
   // Program-level view (no block selected): stage 1 fetch prospectus and determine year order
   React.useEffect(() => {
