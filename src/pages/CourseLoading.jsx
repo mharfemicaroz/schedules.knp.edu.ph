@@ -495,6 +495,7 @@ function isNSTPCourse(row) {
 // --- UI subcomponents (unchanged structure) ---
 function BlockList({
   items,
+  optionItems,
   selectedId,
   onSelect,
   loading,
@@ -518,17 +519,23 @@ function BlockList({
       return { ref: b, prog: String(m.programcode || '').toUpperCase(), yr: String(m.yearlevel || '').trim() };
     });
   }, [items]);
+  const optionMetaList = React.useMemo(() => {
+    return (optionItems || items || []).map(b => {
+      const m = parseBlockMeta(b.blockCode || '');
+      return { prog: String(m.programcode || '').toUpperCase(), yr: String(m.yearlevel || '').trim() };
+    });
+  }, [optionItems, items]);
 
   const programOptions = React.useMemo(() => {
-    const set = new Set(metaList.map(m => m.prog).filter(Boolean));
+    const set = new Set(optionMetaList.map(m => m.prog).filter(Boolean));
     return Array.from(set).sort();
-  }, [metaList]);
+  }, [optionMetaList]);
 
   const yearOptions = React.useMemo(() => {
-    const list = metaList.filter(m => !programFilter || m.prog === programFilter).map(m => m.yr).filter(Boolean);
+    const list = optionMetaList.filter(m => !programFilter || m.prog === programFilter).map(m => m.yr).filter(Boolean);
     const set = new Set(list);
     return Array.from(set).sort((a,b) => Number(a) - Number(b));
-  }, [metaList, programFilter]);
+  }, [optionMetaList, programFilter]);
 
   const filtered = React.useMemo(() => {
     const needle = searchFilter.trim().toLowerCase();
@@ -5783,6 +5790,7 @@ const prefill = hit ? {
               <Box h="calc(100dvh - 240px)" overflowY="auto" w="full">
                 <BlockList
                   items={filteredVisibleBlocks}
+                  optionItems={visibleBlocks}
                   selectedId={selectedBlock?.id}
                   onSelect={onSelectBlock}
                   programFilter={blockFilterProgram}
