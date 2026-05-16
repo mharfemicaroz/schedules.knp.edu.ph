@@ -64,18 +64,28 @@ export const selectAllProspectus = createSelector(selectProspectusState, (s) => 
 export const selectFilteredProspectus = createSelector([selectAllProspectus, selectProspectusFilters], (items, f) => {
   const q = String(f.q || '').toLowerCase().trim();
   const matches = (v, needle) => !needle || String(v || '').toLowerCase().includes(String(needle).toLowerCase());
+  const normalizeActive = (v) => {
+    if (typeof v === 'boolean') return v;
+    const s = String(v || '').trim().toLowerCase();
+    if (!s) return true;
+    if (['true', '1', 'yes', 'active'].includes(s)) return true;
+    if (['false', '0', 'no', 'inactive'].includes(s)) return false;
+    return true;
+  };
   return items.filter(x => {
     const name = x.courseName || x.course_name || x.courseTitle || x.course_title || '';
     const ctype = x.courseType || x.coursetype || '';
     const program = x.programcode || x.program || '';
     const sy = x.curriculumYear || x.curriculum_year || '';
+    const isActive = normalizeActive(x.isActive ?? x.is_active);
     return (
       (!q || [name, ctype, program, sy].some(v => matches(v, q))) &&
       matches(program, f.programcode) &&
       (!f.yearlevel || String(x.yearlevel || '').includes(String(f.yearlevel))) &&
       (!f.semester || String(x.semester || '').includes(String(f.semester))) &&
       matches(sy, f.curriculum_year) &&
-      matches(x.dept, f.dept)
+      matches(x.dept, f.dept) &&
+      (!f.active || String(f.active) === (isActive ? 'active' : 'inactive'))
     );
   });
 });

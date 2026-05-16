@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, HStack, VStack, Heading, Text, Button, IconButton, Input, Select, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Tag, TagLabel, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, SimpleGrid } from '@chakra-ui/react';
+import { Box, HStack, VStack, Heading, Text, Button, IconButton, Input, Select, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Tag, TagLabel, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, SimpleGrid, Badge, useToast } from '@chakra-ui/react';
 import { FiPlus, FiEdit, FiTrash, FiFilter, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadProspectusThunk, createProspectusThunk, updateProspectusThunk, deleteProspectusThunk } from '../store/prospectusThunks';
@@ -13,6 +13,7 @@ const PROGRAM_OPTIONS = [
 
 export default function AdminProspectus() {
   const dispatch = useDispatch();
+  const toast = useToast();
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
   const muted = useColorModeValue('gray.600','gray.300');
@@ -31,6 +32,7 @@ export default function AdminProspectus() {
   const [pageSize, setPageSize] = React.useState(10);
   const [sortKey, setSortKey] = React.useState('programcode');
   const [sortDir, setSortDir] = React.useState('asc');
+  const [togglingIds, setTogglingIds] = React.useState(new Set());
 
   const curriculumYearOptions = React.useMemo(() => {
     const y = new Date().getFullYear();
@@ -51,6 +53,48 @@ export default function AdminProspectus() {
 
   React.useEffect(() => { dispatch(loadProspectusThunk({})); }, [dispatch]);
   React.useEffect(() => { setPage(1); }, [filters, items.length]);
+
+  const rowIsActive = React.useCallback((row) => {
+    const raw = row?.isActive ?? row?.is_active;
+    if (typeof raw === 'boolean') return raw;
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return true;
+    return ['true', '1', 'yes', 'active'].includes(s);
+  }, []);
+
+  const markToggling = React.useCallback((id, busy) => {
+    setTogglingIds((prev) => {
+      const next = new Set(prev);
+      if (busy) next.add(String(id));
+      else next.delete(String(id));
+      return next;
+    });
+  }, []);
+
+  const handleToggleActive = React.useCallback(async (row) => {
+    if (!row?.id) return;
+    const nextActive = !rowIsActive(row);
+    markToggling(row.id, true);
+    try {
+      await dispatch(updateProspectusThunk({
+        id: row.id,
+        changes: { isActive: nextActive, is_active: nextActive },
+      })).unwrap();
+      toast({
+        title: nextActive ? 'Course activated' : 'Course deactivated',
+        description: `${row.course_name || row.courseName || 'Course'} is now ${nextActive ? 'active' : 'inactive'}.`,
+        status: 'success',
+      });
+    } catch (e) {
+      toast({
+        title: 'Status update failed',
+        description: e?.message || 'Could not update course status.',
+        status: 'error',
+      });
+    } finally {
+      markToggling(row.id, false);
+    }
+  }, [dispatch, markToggling, rowIsActive, toast]);
 
   const onAdd = () => { setEditing(null); formDisc.onOpen(); };
   const onEdit = (row) => { setEditing(row); formDisc.onOpen(); };
@@ -127,6 +171,10 @@ export default function AdminProspectus() {
           <Select placeholder="Curriculum Year" value={filters.curriculum_year || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ curriculum_year: e.target.value } })} maxW="180px">
             {curriculumYearOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
+          <Select placeholder="Status" value={filters.active || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ active: e.target.value } })} maxW="160px">
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </Select>
           <Button leftIcon={<FiFilter />} onClick={()=>dispatch(loadProspectusThunk(filters))} variant="outline" isLoading={loading}>Apply</Button>
           <Button variant="ghost" onClick={()=>dispatch({ type:'prospectus/clearProspectusFilters' })}>Clear</Button>
         </HStack>
@@ -140,10 +188,17 @@ export default function AdminProspectus() {
             const name = row.course_name || row.courseName || 'N/A';
             const title = row.course_title || row.courseTitle || 'N/A';
             const courseType = row.coursetype || row.courseType || '-';
+            const isActive = rowIsActive(row);
+            const isToggling = togglingIds.has(String(row.id));
             return (
               <Box key={row.id} borderWidth="1px" borderColor={border} rounded="xl" bg={panelBg} p={4}>
                 <VStack align="stretch" spacing={3}>
-                  <Text fontWeight="800" fontSize="md" noOfLines={2}>{name}</Text>
+                  <HStack justify="space-between" align="start" spacing={3}>
+                    <Text fontWeight="800" fontSize="md" noOfLines={2}>{name}</Text>
+                    <Badge colorScheme={isActive ? 'green' : 'gray'} variant={isActive ? 'subtle' : 'outline'}>
+                      {isActive ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </HStack>
                   <Text color={muted} noOfLines={2}>{title}</Text>
                   <SimpleGrid columns={2} spacing={3}>
                     <Box>
@@ -169,6 +224,15 @@ export default function AdminProspectus() {
                   </SimpleGrid>
                   {isAdmin && (
                     <HStack justify="flex-end" spacing={2} ml="auto">
+                      <Button
+                        size="sm"
+                        variant={isActive ? 'outline' : 'solid'}
+                        colorScheme={isActive ? 'orange' : 'green'}
+                        onClick={() => handleToggleActive(row)}
+                        isLoading={isToggling}
+                      >
+                        {isActive ? 'Deactivate' : 'Activate'}
+                      </Button>
                       <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="outline" colorScheme="yellow" onClick={()=>onEdit(row)} />
                       <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" variant="outline" colorScheme="red" onClick={()=>onDelete(row)} />
                     </HStack>
@@ -205,11 +269,14 @@ export default function AdminProspectus() {
               <Th onClick={()=>toggleSort('yearlevel')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Year</Text>{sortKey==='yearlevel' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
               <Th onClick={()=>toggleSort('semester')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Sem</Text>{sortKey==='semester' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
               <Th onClick={()=>toggleSort('curriculum_year')} cursor="pointer" userSelect="none"><HStack spacing={1}><Text>Curriculum Year</Text>{sortKey==='curriculum_year' && (sortDir==='asc'?<FiChevronUp/>:<FiChevronDown/> )}</HStack></Th>
+              <Th>Status</Th>
               {isAdmin && <Th>Actions</Th>}
             </Tr>
           </Thead>
           <Tbody>
             {paged.map(row => {
+              const isActive = rowIsActive(row);
+              const isToggling = togglingIds.has(String(row.id));
               return (
               <Tr key={row.id}>
                 <Td>{row.programcode || row.program || ''}</Td>
@@ -220,9 +287,23 @@ export default function AdminProspectus() {
                 <Td>{row.yearlevel ?? ''}</Td>
                 <Td>{row.semester ?? ''}</Td>
                 <Td>{row.curriculum_year || row.curriculumYear || ''}</Td>
+                <Td>
+                  <Badge colorScheme={isActive ? 'green' : 'gray'} variant={isActive ? 'subtle' : 'outline'}>
+                    {isActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                </Td>
                 {isAdmin && (
                   <Td textAlign="right">
-                    <HStack justify="end" spacing={1}>
+                    <HStack justify="end" spacing={2}>
+                      <Button
+                        size="xs"
+                        variant={isActive ? 'outline' : 'solid'}
+                        colorScheme={isActive ? 'orange' : 'green'}
+                        onClick={()=>handleToggleActive(row)}
+                        isLoading={isToggling}
+                      >
+                        {isActive ? 'Deactivate' : 'Activate'}
+                      </Button>
                       <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="ghost" colorScheme="yellow" onClick={()=>onEdit(row)} />
                       <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" variant="ghost" colorScheme="red" onClick={()=>onDelete(row)} />
                     </HStack>
