@@ -1,9 +1,9 @@
 import React from 'react';
-import { Box, HStack, VStack, Heading, Text, Button, IconButton, Input, Select, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Tag, TagLabel, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, SimpleGrid, Badge, useToast } from '@chakra-ui/react';
+import { Box, HStack, VStack, Heading, Text, Button, IconButton, Input, Select, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Tag, TagLabel, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, SimpleGrid, Badge, useToast, Switch } from '@chakra-ui/react';
 import { FiPlus, FiEdit, FiTrash, FiFilter, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadProspectusThunk, createProspectusThunk, updateProspectusThunk, deleteProspectusThunk } from '../store/prospectusThunks';
-import { selectFilteredProspectus, selectProspectusFilterOptions, selectProspectusFilters } from '../store/prospectusSlice';
+import { selectFilteredProspectus, selectProspectusFilterOptions, selectProspectusFilters, setProspectusFilters, clearProspectusFilters } from '../store/prospectusSlice';
 import ProspectusFormModal from '../components/ProspectusFormModal';
 import Pagination from '../components/Pagination';
 
@@ -146,6 +146,7 @@ export default function AdminProspectus() {
     const start = (page - 1) * pageSize;
     return sortedItems.slice(start, start + pageSize);
   }, [sortedItems, page, pageSize]);
+  const activeOnly = String(filters.active || '').toLowerCase() === 'active';
 
   return (
     <VStack align="stretch" spacing={6}>
@@ -158,25 +159,40 @@ export default function AdminProspectus() {
 
       <Box borderWidth="1px" borderColor={border} rounded="xl" p={4} bg={panelBg}>
         <HStack spacing={3} flexWrap="wrap">
-          <Input placeholder="Search course/program/year" value={filters.q || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ q: e.target.value } })} maxW="260px" />
-          <Select placeholder="Program" value={filters.programcode || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ programcode: e.target.value } })} maxW="220px">
+          <Input placeholder="Search course/program/year" value={filters.q || ''} onChange={(e)=>dispatch(setProspectusFilters({ q: e.target.value }))} maxW="260px" />
+          <Select placeholder="Program" value={filters.programcode || ''} onChange={(e)=>dispatch(setProspectusFilters({ programcode: e.target.value }))} maxW="220px">
             {[...new Set([...(opts.programs || []), ...PROGRAM_OPTIONS])].map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
-          <Select placeholder="Year Level" value={filters.yearlevel || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ yearlevel: e.target.value } })} maxW="160px">
+          <Select placeholder="Year Level" value={filters.yearlevel || ''} onChange={(e)=>dispatch(setProspectusFilters({ yearlevel: e.target.value }))} maxW="160px">
             {['1st Year','2nd Year','3rd Year','4th Year'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
-          <Select placeholder="Semester" value={filters.semester || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ semester: e.target.value } })} maxW="180px">
+          <Select placeholder="Semester" value={filters.semester || ''} onChange={(e)=>dispatch(setProspectusFilters({ semester: e.target.value }))} maxW="180px">
             {['1st Semester','2nd Semester','Summer'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
-          <Select placeholder="Curriculum Year" value={filters.curriculum_year || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ curriculum_year: e.target.value } })} maxW="180px">
+          <Select placeholder="Curriculum Year" value={filters.curriculum_year || ''} onChange={(e)=>dispatch(setProspectusFilters({ curriculum_year: e.target.value }))} maxW="180px">
             {curriculumYearOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
-          <Select placeholder="Status" value={filters.active || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ active: e.target.value } })} maxW="160px">
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </Select>
+          <HStack
+            spacing={3}
+            px={3}
+            py={2}
+            borderWidth="1px"
+            borderColor={border}
+            rounded="lg"
+            bg={activeOnly ? 'green.50' : 'transparent'}
+          >
+            <VStack align="start" spacing={0}>
+              <Text fontSize="sm" fontWeight="700">Active Only</Text>
+              <Text fontSize="xs" color={muted}>Hide inactive courses by default</Text>
+            </VStack>
+            <Switch
+              colorScheme="green"
+              isChecked={activeOnly}
+              onChange={(e) => dispatch(setProspectusFilters({ active: e.target.checked ? 'active' : '' }))}
+            />
+          </HStack>
           <Button leftIcon={<FiFilter />} onClick={()=>dispatch(loadProspectusThunk(filters))} variant="outline" isLoading={loading}>Apply</Button>
-          <Button variant="ghost" onClick={()=>dispatch({ type:'prospectus/clearProspectusFilters' })}>Clear</Button>
+          <Button variant="ghost" onClick={()=>dispatch(clearProspectusFilters())}>Clear</Button>
         </HStack>
       </Box>
 

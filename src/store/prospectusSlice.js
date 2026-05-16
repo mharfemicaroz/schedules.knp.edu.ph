@@ -12,7 +12,7 @@ const initialState = {
     semester: '',
     curriculum_year: '',
     dept: '',
-    active: '',
+    active: 'active',
   },
 };
 
