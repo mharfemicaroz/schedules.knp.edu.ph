@@ -493,15 +493,25 @@ function isNSTPCourse(row) {
 }
 
 // --- UI subcomponents (unchanged structure) ---
-function BlockList({ items, selectedId, onSelect, onVisibleItemsChange, onFilterStateChange, loading, onProgramChange, hideFilters = false }) {
+function BlockList({
+  items,
+  selectedId,
+  onSelect,
+  loading,
+  onProgramChange,
+  hideFilters = false,
+  programFilter = '',
+  yearFilter = '',
+  searchFilter = '',
+  onProgramFilterChange,
+  onYearFilterChange,
+  onSearchFilterChange,
+}) {
   const border = useColorModeValue('gray.200','gray.700');
   const bg = useColorModeValue('white','gray.800');
   const muted = useColorModeValue('gray.600','gray.300');
   const skStart = useColorModeValue('gray.100','gray.700');
   const skEnd = useColorModeValue('gray.200','gray.600');
-  const [q, setQ] = React.useState('');
-  const [prog, setProg] = React.useState('');
-  const [yr, setYr] = React.useState('');
 
   const metaList = React.useMemo(() => {
     return (items || []).map(b => {
@@ -516,17 +526,17 @@ function BlockList({ items, selectedId, onSelect, onVisibleItemsChange, onFilter
   }, [metaList]);
 
   const yearOptions = React.useMemo(() => {
-    const list = metaList.filter(m => !prog || m.prog === prog).map(m => m.yr).filter(Boolean);
+    const list = metaList.filter(m => !programFilter || m.prog === programFilter).map(m => m.yr).filter(Boolean);
     const set = new Set(list);
     return Array.from(set).sort((a,b) => Number(a) - Number(b));
-  }, [metaList, prog]);
+  }, [metaList, programFilter]);
 
   const filtered = React.useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    const arr = metaList.filter(m => (!prog || m.prog === prog) && (!yr || m.yr === yr)).map(m => m.ref);
+    const needle = searchFilter.trim().toLowerCase();
+    const arr = metaList.filter(m => (!programFilter || m.prog === programFilter) && (!yearFilter || m.yr === yearFilter)).map(m => m.ref);
     if (!needle) return arr;
     return arr.filter(b => String(b.blockCode || '').toLowerCase().includes(needle));
-  }, [metaList, prog, yr, q]);
+  }, [metaList, programFilter, yearFilter, searchFilter]);
   const sorted = React.useMemo(() => {
     const arr = (filtered || []).slice();
     const keyOf = (b) => {
@@ -537,21 +547,18 @@ function BlockList({ items, selectedId, onSelect, onVisibleItemsChange, onFilter
     };
     return arr.sort((a,b) => keyOf(a).localeCompare(keyOf(b)));
   }, [filtered]);
-  React.useEffect(() => {
-    try { onVisibleItemsChange && onVisibleItemsChange(sorted); } catch {}
-  }, [sorted, onVisibleItemsChange]);
   return (
     
     <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={bg} minH="calc(100vh - 210px)">
       {!hideFilters && (
         <HStack spacing={2} flexWrap="wrap">
-          <Select size="sm" placeholder="Program" value={prog} onChange={(e)=>{ const v=e.target.value; setProg(v); setYr(''); try { onProgramChange && onProgramChange(v); } catch {} try { onFilterStateChange && onFilterStateChange({ program: v, yearlevel: '' }); } catch {} }} maxW="180px">
+          <Select size="sm" placeholder="Program" value={programFilter} onChange={(e)=>{ const v=e.target.value; try { onProgramChange && onProgramChange(v); } catch {} try { onProgramFilterChange && onProgramFilterChange(v); } catch {} try { onYearFilterChange && onYearFilterChange(''); } catch {} }} maxW="180px">
             {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
           </Select>
-          <Select size="sm" placeholder="Year" value={yr} onChange={(e)=>{ const v = e.target.value; setYr(v); try { onFilterStateChange && onFilterStateChange({ program: prog, yearlevel: v }); } catch {} }} maxW="120px">
+          <Select size="sm" placeholder="Year" value={yearFilter} onChange={(e)=>{ const v = e.target.value; try { onYearFilterChange && onYearFilterChange(v); } catch {} }} maxW="120px">
             {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
           </Select>
-          <Input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Search blocks" size="sm" maxW="220px" />
+          <Input value={searchFilter} onChange={(e)=>{ try { onSearchFilterChange && onSearchFilterChange(e.target.value); } catch {} }} placeholder="Search blocks" size="sm" maxW="220px" />
           <IconButton aria-label="Search" icon={<FiSearch />} size="sm" variant="outline" />
         </HStack>
       )}
@@ -1373,7 +1380,9 @@ export default function CourseLoading() {
   }, [allowedViews, viewMode]);
   const [selectedBlock, setSelectedBlock] = React.useState(null);
   const [selectedProgram, setSelectedProgram] = React.useState('');
-  const [blockListVisibleCount, setBlockListVisibleCount] = React.useState(0);
+  const [blockFilterProgram, setBlockFilterProgram] = React.useState('');
+  const [blockFilterYear, setBlockFilterYear] = React.useState('');
+  const [blockFilterQuery, setBlockFilterQuery] = React.useState('');
   const [progBlocksLimit, setProgBlocksLimit] = React.useState(6);
   const progSentinelRef = React.useRef(null);
   const blockSkelWrapRef = React.useRef(null);
@@ -2511,6 +2520,29 @@ export default function CourseLoading() {
       return acc;
     }, []);
   }, [blocks, mappedBlockCodeSet, blockIsActive]);
+  const filteredVisibleBlocks = React.useMemo(() => {
+    const list = Array.isArray(visibleBlocks) ? visibleBlocks : [];
+    const prog = String(blockFilterProgram || '').trim().toUpperCase();
+    const yr = String(blockFilterYear || '').trim();
+    const q = String(blockFilterQuery || '').trim().toLowerCase();
+    const filtered = list.filter((block) => {
+      const meta = parseBlockMeta(block?.blockCode || block?.section || block?.block_code || '');
+      const blockProg = String(meta.programcode || '').toUpperCase();
+      const blockYear = String(meta.yearlevel || '').trim();
+      const code = String(block?.blockCode || block?.block_code || '').toLowerCase();
+      if (prog && blockProg !== prog) return false;
+      if (yr && blockYear !== yr) return false;
+      if (q && !code.includes(q)) return false;
+      return true;
+    });
+    const keyOf = (block) => {
+      const { programcode, yearlevel, section } = parseBlockMeta(block?.blockCode || block?.block_code || '');
+      const yearNum = parseInt(yearlevel || '0', 10) || 0;
+      const sec = String(section || '').padStart(3, '0');
+      return [programcode, yearNum.toString().padStart(2, '0'), sec, (block?.blockCode || block?.block_code || '')].join('|');
+    };
+    return filtered.slice().sort((a, b) => keyOf(a).localeCompare(keyOf(b)));
+  }, [visibleBlocks, blockFilterProgram, blockFilterYear, blockFilterQuery]);
   const facIndexesAllFull = React.useMemo(() => buildIndexes(existing || []), [existing]);
   const facStatsScoped = React.useMemo(() => buildFacultyStats(facOptions || [], scopedCourses || []), [facOptions, scopedCourses]);
   const facLoadCache = React.useRef(new Map());
@@ -3369,7 +3401,7 @@ const prefill = hit ? {
 
   React.useEffect(() => {
     if (!selectedBlock) return;
-    const stillVisible = (visibleBlocks || []).some((block) => (
+    const stillVisible = (filteredVisibleBlocks || []).some((block) => (
       String(block.id) === String(selectedBlock.id)
       || String(block.blockCode || '') === String(selectedBlock.blockCode || '')
     ));
@@ -3378,29 +3410,14 @@ const prefill = hit ? {
       setRows([]);
       setFreshCache([]);
     }
-  }, [selectedBlock, visibleBlocks]);
+  }, [selectedBlock, filteredVisibleBlocks]);
 
-  const handleVisibleBlocksChange = React.useCallback((list) => {
-    const next = Array.isArray(list) ? list : [];
-    setBlockListVisibleCount(next.length);
-    if (!selectedBlock) return;
-    const stillVisible = next.some((block) => (
-      String(block.id) === String(selectedBlock.id)
-      || String(block.blockCode || '') === String(selectedBlock.blockCode || '')
-    ));
-    if (!stillVisible) {
-      setSelectedBlock(null);
-      setRows([]);
-      setFreshCache([]);
-    }
-  }, [selectedBlock]);
-  const handleBlockFilterStateChange = React.useCallback(({ program, yearlevel }) => {
+  const handleBlockProgramFilterChange = React.useCallback((program) => {
     setSelectedBlock(null);
     setRows([]);
     setFreshCache([]);
-    if (!yearlevel) {
-      setLoadedYears([]);
-    }
+    setBlockFilterProgram(program || '');
+    setBlockFilterYear('');
     setSelectedProgram(program || '');
   }, []);
 
@@ -5748,16 +5765,20 @@ const prefill = hit ? {
                   >
                     Print All
                   </Button>
-                    <Badge colorScheme="gray">{blockListVisibleCount || 0}</Badge>
+                    <Badge colorScheme="gray">{(filteredVisibleBlocks || []).length}</Badge>
                 </HStack>
               </HStack>
               <Box h="calc(100dvh - 240px)" overflowY="auto" w="full">
                 <BlockList
-                  items={visibleBlocks}
+                  items={filteredVisibleBlocks}
                   selectedId={selectedBlock?.id}
                   onSelect={onSelectBlock}
-                  onVisibleItemsChange={handleVisibleBlocksChange}
-                  onFilterStateChange={handleBlockFilterStateChange}
+                  programFilter={blockFilterProgram}
+                  yearFilter={blockFilterYear}
+                  searchFilter={blockFilterQuery}
+                  onProgramFilterChange={handleBlockProgramFilterChange}
+                  onYearFilterChange={setBlockFilterYear}
+                  onSearchFilterChange={setBlockFilterQuery}
                   loading={blocksLoading}
                   onProgramChange={(v)=>{ setSelectedProgram(v || ''); setSelectedBlock(null); setRows([]); setFreshCache([]); }}
                   hideFilters={registrarViewOnly}
