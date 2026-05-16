@@ -498,7 +498,6 @@ function BlockList({
   selectedId,
   onSelect,
   loading,
-  onProgramChange,
   hideFilters = false,
   programFilter = '',
   yearFilter = '',
@@ -552,7 +551,7 @@ function BlockList({
     <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={bg} minH="calc(100vh - 210px)">
       {!hideFilters && (
         <HStack spacing={2} flexWrap="wrap">
-          <Select size="sm" placeholder="Program" value={programFilter} onChange={(e)=>{ const v=e.target.value; try { onProgramChange && onProgramChange(v); } catch {} try { onProgramFilterChange && onProgramFilterChange(v); } catch {} try { onYearFilterChange && onYearFilterChange(''); } catch {} }} maxW="180px">
+          <Select size="sm" placeholder="Program" value={programFilter} onChange={(e)=>{ const v=e.target.value; try { onProgramFilterChange && onProgramFilterChange(v); } catch {} try { onYearFilterChange && onYearFilterChange(''); } catch {} }} maxW="180px">
             {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
           </Select>
           <Select size="sm" placeholder="Year" value={yearFilter} onChange={(e)=>{ const v = e.target.value; try { onYearFilterChange && onYearFilterChange(v); } catch {} }} maxW="120px">
@@ -3414,11 +3413,18 @@ const prefill = hit ? {
 
   const handleBlockProgramFilterChange = React.useCallback((program) => {
     setSelectedBlock(null);
+    setSelectedProgram('');
     setRows([]);
     setFreshCache([]);
     setBlockFilterProgram(program || '');
     setBlockFilterYear('');
-    setSelectedProgram(program || '');
+  }, []);
+  const handleBlockYearFilterChange = React.useCallback((yearlevel) => {
+    setSelectedBlock(null);
+    setSelectedProgram('');
+    setRows([]);
+    setFreshCache([]);
+    setBlockFilterYear(yearlevel || '');
   }, []);
 
   const updateFacEdit = (id, patch) => {
@@ -5777,10 +5783,9 @@ const prefill = hit ? {
                   yearFilter={blockFilterYear}
                   searchFilter={blockFilterQuery}
                   onProgramFilterChange={handleBlockProgramFilterChange}
-                  onYearFilterChange={setBlockFilterYear}
+                  onYearFilterChange={handleBlockYearFilterChange}
                   onSearchFilterChange={setBlockFilterQuery}
                   loading={blocksLoading}
-                  onProgramChange={(v)=>{ setSelectedProgram(v || ''); setSelectedBlock(null); setRows([]); setFreshCache([]); }}
                   hideFilters={registrarViewOnly}
                 />
               </Box>
