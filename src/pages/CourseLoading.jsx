@@ -1667,23 +1667,15 @@ export default function CourseLoading() {
       addKey([prog, year, '', code, title].join('|'), entry);
       addKey(['', '', term, code, title].join('|'), entry);
       addKey(['', '', '', code, title].join('|'), entry);
-      if (code) {
-        addKey([prog, year, term, code, ''].join('|'), entry);
-        addKey([prog, year, '', code, ''].join('|'), entry);
-        addKey(['', '', term, code, ''].join('|'), entry);
-        addKey(['', '', '', code, ''].join('|'), entry);
-      }
-      if (title) {
-        addKey([prog, year, term, '', title].join('|'), entry);
-        addKey([prog, year, '', '', title].join('|'), entry);
-        addKey(['', '', term, '', title].join('|'), entry);
-        addKey(['', '', '', '', title].join('|'), entry);
-      }
     });
     return { byId, byKey };
   }, [prospectusStatusSource, normalizeLookupCode, normalizeLookupText]);
   const getProspectusActivityMeta = React.useCallback((row) => {
     if (!row) return { active: true, matched: null };
+    const directProspectusActive = row?.prospectus?.isActive;
+    if (typeof directProspectusActive === 'boolean') {
+      return { active: directProspectusActive, matched: row?.prospectus || null };
+    }
     const directId = row?.prospectusId ?? row?.prospectus_id ?? row?.prospectus?.id ?? row?.id;
     if (directId != null && prospectusStatusIndex.byId.has(String(directId))) {
       const hit = prospectusStatusIndex.byId.get(String(directId));
@@ -1699,14 +1691,6 @@ export default function CourseLoading() {
       [prog, year, '', code, title].join('|'),
       ['', '', term, code, title].join('|'),
       ['', '', '', code, title].join('|'),
-      [prog, year, term, code, ''].join('|'),
-      [prog, year, '', code, ''].join('|'),
-      ['', '', term, code, ''].join('|'),
-      ['', '', '', code, ''].join('|'),
-      [prog, year, term, '', title].join('|'),
-      [prog, year, '', '', title].join('|'),
-      ['', '', term, '', title].join('|'),
-      ['', '', '', '', title].join('|'),
     ];
     for (const key of keys) {
       const hit = prospectusStatusIndex.byKey.get(key);
@@ -2780,7 +2764,7 @@ export default function CourseLoading() {
           const cTitle = norm(c.title || c.courseTitle);
           const codeMatch = pCode && cCode && pCode === cCode;
           const titleMatch = pTitle && cTitle && pTitle === cTitle;
-          return codeMatch || titleMatch;
+          return !!(codeMatch && titleMatch);
         });
         return matches[0] || null;
       };
@@ -2841,7 +2825,7 @@ const prefill = hit ? {
         const cTitle = norm(c.title || c.courseTitle);
         const codeMatch = pCode && cCode && pCode === cCode;
         const titleMatch = pTitle && cTitle && pTitle === cTitle;
-        return codeMatch || titleMatch;
+        return !!(codeMatch && titleMatch);
       });
       return matches[0] || null;
     };
@@ -2943,8 +2927,7 @@ const prefill = hit ? {
       const titleOf = (s) => norm(s.title || s.courseTitle);
       const pidOf = (s) => (s?.prospectusId != null ? String(s.prospectusId) : null);
       const exByBlockPid = new Map();
-      const exByBlockCode = new Map();
-      const exByBlockTitle = new Map();
+      const exByBlockCourse = new Map();
       const blockSet = new Set();
       for (const s of exRows) {
         const sec = secOf(s);
@@ -2958,15 +2941,11 @@ const prefill = hit ? {
           const m = exByBlockPid.get(sec);
           if (!m.has(pid)) m.set(pid, s);
         }
-        if (cN) {
-          if (!exByBlockCode.has(sec)) exByBlockCode.set(sec, new Map());
-          const m = exByBlockCode.get(sec);
-          if (!m.has(cN)) m.set(cN, s);
-        }
-        if (tN) {
-          if (!exByBlockTitle.has(sec)) exByBlockTitle.set(sec, new Map());
-          const m = exByBlockTitle.get(sec);
-          if (!m.has(tN)) m.set(tN, s);
+        if (cN && tN) {
+          if (!exByBlockCourse.has(sec)) exByBlockCourse.set(sec, new Map());
+          const m = exByBlockCourse.get(sec);
+          const key = `${cN}|${tN}`;
+          if (!m.has(key)) m.set(key, s);
         }
       }
       const findExistingForBlock = (pros, blockCode) => {
@@ -2977,8 +2956,7 @@ const prefill = hit ? {
         const sec = norm(blockCode || '');
         let hit = null;
         if (pid && exByBlockPid.get(sec)?.has(pid)) hit = exByBlockPid.get(sec).get(pid);
-        if (!hit && pCode && exByBlockCode.get(sec)?.has(pCode)) hit = exByBlockCode.get(sec).get(pCode);
-        if (!hit && pTitle && exByBlockTitle.get(sec)?.has(pTitle)) hit = exByBlockTitle.get(sec).get(pTitle);
+        if (!hit && pCode && pTitle && exByBlockCourse.get(sec)?.has(`${pCode}|${pTitle}`)) hit = exByBlockCourse.get(sec).get(`${pCode}|${pTitle}`);
         if (hit && wantYear) {
           const y = yearOf(hit);
           if (y && y !== wantYear) hit = null;

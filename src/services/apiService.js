@@ -163,10 +163,12 @@ class ApiService {
   // Optional helper: server-provided course mapping across blocks
   async getCourseMapping(params = {}) {
     const search = new URLSearchParams();
-    const { programcode, yearlevel, course, schoolyear, semester } = params || {};
+    const { programcode, yearlevel, course, courseTitle, prospectusId, schoolyear, semester } = params || {};
     if (programcode) search.set('programcode', programcode);
     if (yearlevel) search.set('yearlevel', yearlevel);
     if (course) search.set('course', course);
+    if (courseTitle) search.set('courseTitle', courseTitle);
+    if (prospectusId != null) search.set('prospectusId', prospectusId);
     if (schoolyear) search.set('schoolyear', schoolyear);
     if (semester) search.set('semester', semester);
     const qs = search.toString();

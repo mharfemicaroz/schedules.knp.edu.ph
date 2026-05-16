@@ -24,6 +24,7 @@ import {
 const PROGRAM_OPTIONS = [
   'BSAB', 'BSBA-FM', 'BSBA-HRM', 'BSBA-MM', 'BSCRIM', 'BSED-ENGLISH', 'BSED-MATH', 'BSED-SS', 'BSED-VE', 'BSENTREP', 'BSTM', 'BTLED-HE',
 ];
+const COURSE_TYPE_OPTIONS = ['GENED', 'PROFED', 'MAJOR', 'IR', 'MANDATED', 'ELECTIVE'];
 
 function FormSection({ title, description, children }) {
   const border = useColorModeValue('gray.200', 'gray.700');
@@ -112,7 +113,10 @@ export default function ProspectusFormModal({ isOpen, onClose, onSubmit, initial
                 </FormControl>
                 <FormControl>
                   <FieldLabel>Course Type</FieldLabel>
-                  <Input value={form.coursetype || ''} onChange={set('coursetype')} placeholder="Major, Minor, Elective..." />
+                  <Select value={form.coursetype || ''} onChange={set('coursetype')}>
+                    <option value="">Select course type</option>
+                    {COURSE_TYPE_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </Select>
                 </FormControl>
               </SimpleGrid>
 

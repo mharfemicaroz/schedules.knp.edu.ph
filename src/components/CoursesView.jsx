@@ -190,18 +190,6 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       addKey([prog, yearDigit, '', code, title]);
       addKey(['', '', term, code, title]);
       addKey(['', '', '', code, title]);
-      if (code) {
-        addKey([prog, yearDigit, term, code, '']);
-        addKey([prog, yearDigit, '', code, '']);
-        addKey(['', '', term, code, '']);
-        addKey(['', '', '', code, '']);
-      }
-      if (title) {
-        addKey([prog, yearDigit, term, '', title]);
-        addKey([prog, yearDigit, '', '', title]);
-        addKey(['', '', term, '', title]);
-        addKey(['', '', '', '', title]);
-      }
     });
     return { byId, byKey };
   }, [mappedSchedules]);
@@ -219,14 +207,6 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       [prog, yearDigit, '', code, title].join('|'),
       ['', '', term, code, title].join('|'),
       ['', '', '', code, title].join('|'),
-      [prog, yearDigit, term, code, ''].join('|'),
-      [prog, yearDigit, '', code, ''].join('|'),
-      ['', '', term, code, ''].join('|'),
-      ['', '', '', code, ''].join('|'),
-      [prog, yearDigit, term, '', title].join('|'),
-      [prog, yearDigit, '', '', title].join('|'),
-      ['', '', term, '', title].join('|'),
-      ['', '', '', '', title].join('|'),
     ];
     return keys.some((key) => key && mappedProspectusIndex.byKey.has(key));
   }, [mappedProspectusIndex]);
@@ -479,6 +459,8 @@ export default function CoursesView({ settingsLoadOverride = null }) {
           programcode: program || (selectedCourse?.programcode || selectedCourse?.program),
           yearlevel: year || selectedCourse?.yearlevel,
           course: selectedCourse.courseName || selectedCourse.code,
+          courseTitle: selectedCourse.courseTitle || selectedCourse.course_title || selectedCourse.title,
+          prospectusId: selectedCourse.id ?? selectedCourse.prospectusId ?? selectedCourse.prospectus_id,
           schoolyear: settingsLoad?.school_year || undefined,
           semester: settingsLoad?.semester || undefined,
         });
@@ -502,7 +484,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
           const b = String(s.blockCode || s.block || '').trim();
           const cc = normCode(s.courseName || s.code || '');
           const tt = norm(s.title || s.courseTitle || '');
-          return b === String(blockCode) && (cc === codeKey || tt === titleKey);
+          return b === String(blockCode) && cc === codeKey && tt === titleKey;
         });
         return match || null;
       };
@@ -830,6 +812,8 @@ export default function CoursesView({ settingsLoadOverride = null }) {
         programcode: program || (selectedCourse?.programcode || selectedCourse?.program),
         yearlevel: year || selectedCourse?.yearlevel,
         course: selectedCourse?.courseName || selectedCourse?.code,
+        courseTitle: selectedCourse?.courseTitle || selectedCourse?.course_title || selectedCourse?.title,
+        prospectusId: selectedCourse?.id ?? selectedCourse?.prospectusId ?? selectedCourse?.prospectus_id,
         schoolyear: settingsLoad?.school_year || undefined,
         semester: settingsLoad?.semester || undefined,
       });
@@ -868,7 +852,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
           const b = String(s.blockCode || s.block || '').trim();
           const cc = normCode(s.courseName || s.code || '');
           const tt = norm(s.title || s.courseTitle || '');
-          return b === String(blockCode) && (cc === codeKey || tt === titleKey);
+          return b === String(blockCode) && cc === codeKey && tt === titleKey;
         });
         return match || null;
       };
@@ -1371,6 +1355,8 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                       programcode: program || (selectedCourse?.programcode || selectedCourse?.program),
                       yearlevel: year || selectedCourse?.yearlevel,
                       course: selectedCourse?.courseName || selectedCourse?.code,
+                      courseTitle: selectedCourse?.courseTitle || selectedCourse?.course_title || selectedCourse?.title,
+                      prospectusId: selectedCourse?.id ?? selectedCourse?.prospectusId ?? selectedCourse?.prospectus_id,
                       schoolyear: settingsLoad?.school_year || undefined,
                       semester: settingsLoad?.semester || undefined,
                     });
@@ -1409,7 +1395,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                         const b = String(s.blockCode || s.block || '').trim();
                         const cc = normCode(s.courseName || s.code || '');
                         const tt = norm(s.title || s.courseTitle || '');
-                        return b === String(blockCode) && (cc === codeKey || tt === titleKey);
+                        return b === String(blockCode) && cc === codeKey && tt === titleKey;
                       });
                       return match || null;
                     };
