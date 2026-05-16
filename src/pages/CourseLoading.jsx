@@ -1170,6 +1170,7 @@ export default function CourseLoading() {
   const blocksLoading = useSelector(s => s.blocks.loading);
   const settings = useSelector(selectSettings);
   const prospectus = useSelector(selectAllProspectus);
+  const [prospectusStatusItems, setProspectusStatusItems] = React.useState([]);
   const existing = useSelector(selectAllCourses);
   const rawSchedules = useSelector((s) => s.data?.raw);
   const dataFaculties = useSelector(s => s.data.faculties);
@@ -1504,6 +1505,30 @@ export default function CourseLoading() {
   // Shared indexes/stats for faculty-view scoring (mirrors block view engine)
 
   React.useEffect(() => { dispatch(loadBlocksThunk({})); }, [dispatch]);
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.getProspectus({});
+        const items = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : (res?.items || []);
+        if (alive) setProspectusStatusItems(Array.isArray(items) ? items : []);
+      } catch {
+        if (alive) setProspectusStatusItems([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const mergeProspectusStatusItems = React.useCallback((items) => {
+    if (!Array.isArray(items) || items.length === 0) return;
+    setProspectusStatusItems((prev) => {
+      const next = new Map((Array.isArray(prev) ? prev : []).map((item) => [String(item?.id ?? `${item?.programcode || ''}|${item?.yearlevel || ''}|${item?.semester || ''}|${item?.courseName || item?.course_name || item?.code || ''}|${item?.courseTitle || item?.course_title || item?.title || ''}`), item]));
+      items.forEach((item) => {
+        const key = String(item?.id ?? `${item?.programcode || ''}|${item?.yearlevel || ''}|${item?.semester || ''}|${item?.courseName || item?.course_name || item?.code || ''}|${item?.courseTitle || item?.course_title || item?.title || ''}`);
+        next.set(key, item);
+      });
+      return Array.from(next.values());
+    });
+  }, []);
   const blocks = React.useMemo(() => {
     try {
       if (isAdmin) return blocksAll;
@@ -1611,6 +1636,11 @@ export default function CourseLoading() {
   }, [defaultLoadSchoolYear, loadOverride.school_year]);
   const normalizeLookupText = React.useCallback((s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(), []);
   const normalizeLookupCode = React.useCallback((s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim(), []);
+  const prospectusStatusSource = React.useMemo(() => (
+    Array.isArray(prospectusStatusItems) && prospectusStatusItems.length > 0
+      ? prospectusStatusItems
+      : (Array.isArray(prospectus) ? prospectus : [])
+  ), [prospectusStatusItems, prospectus]);
   const prospectusStatusIndex = React.useMemo(() => {
     const byId = new Map();
     const byKey = new Map();
@@ -1618,7 +1648,7 @@ export default function CourseLoading() {
       if (!key) return;
       if (!byKey.has(key)) byKey.set(key, value);
     };
-    (Array.isArray(prospectus) ? prospectus : []).forEach((p) => {
+    (Array.isArray(prospectusStatusSource) ? prospectusStatusSource : []).forEach((p) => {
       const active = (() => {
         const raw = p?.isActive ?? p?.is_active;
         if (typeof raw === 'boolean') return raw;
@@ -1637,9 +1667,21 @@ export default function CourseLoading() {
       addKey([prog, year, '', code, title].join('|'), entry);
       addKey(['', '', term, code, title].join('|'), entry);
       addKey(['', '', '', code, title].join('|'), entry);
+      if (code) {
+        addKey([prog, year, term, code, ''].join('|'), entry);
+        addKey([prog, year, '', code, ''].join('|'), entry);
+        addKey(['', '', term, code, ''].join('|'), entry);
+        addKey(['', '', '', code, ''].join('|'), entry);
+      }
+      if (title) {
+        addKey([prog, year, term, '', title].join('|'), entry);
+        addKey([prog, year, '', '', title].join('|'), entry);
+        addKey(['', '', term, '', title].join('|'), entry);
+        addKey(['', '', '', '', title].join('|'), entry);
+      }
     });
     return { byId, byKey };
-  }, [prospectus, normalizeLookupCode, normalizeLookupText]);
+  }, [prospectusStatusSource, normalizeLookupCode, normalizeLookupText]);
   const getProspectusActivityMeta = React.useCallback((row) => {
     if (!row) return { active: true, matched: null };
     const directId = row?.prospectusId ?? row?.prospectus_id ?? row?.prospectus?.id ?? row?.id;
@@ -1657,6 +1699,14 @@ export default function CourseLoading() {
       [prog, year, '', code, title].join('|'),
       ['', '', term, code, title].join('|'),
       ['', '', '', code, title].join('|'),
+      [prog, year, term, code, ''].join('|'),
+      [prog, year, '', code, ''].join('|'),
+      ['', '', term, code, ''].join('|'),
+      ['', '', '', code, ''].join('|'),
+      [prog, year, term, '', title].join('|'),
+      [prog, year, '', '', title].join('|'),
+      ['', '', term, '', title].join('|'),
+      ['', '', '', '', title].join('|'),
     ];
     for (const key of keys) {
       const hit = prospectusStatusIndex.byKey.get(key);
@@ -2683,6 +2733,7 @@ export default function CourseLoading() {
     try {
       const action = await dispatch(loadProspectusThunk({ programcode: meta.programcode, yearlevel: meta.yearlevel, semester: settingsLoad?.semester || undefined }));
       let items = Array.isArray(action?.payload?.items) ? action.payload.items : (Array.isArray(prospectus) ? prospectus : []);
+      mergeProspectusStatusItems(items);
       const wantProgNorm = normalizeProgramCode(meta.programcode);
       const wantBaseNorm = normalizeProgramCode(meta.programcode.split('-')[0] || meta.programcode);
       const wantYear = extractYearDigits(meta.yearlevel);
@@ -2835,6 +2886,7 @@ const prefill = hit ? {
         const sem = settingsLoad?.semester || '';
         const prosp = await api.getProspectus({ programcode: prog, semester: sem || undefined });
         const items = Array.isArray(prosp) ? prosp : (Array.isArray(prosp?.data) ? prosp.data : []);
+        mergeProspectusStatusItems(items);
         const loadSem = normalizeSem(sem || '');
         const narrowed = loadSem ? items.filter(p => normalizeSem(p.semester) === loadSem) : items;
         const yrs = Array.from(new Set(narrowed.map(p => extractYearDigits(p.yearlevel)).filter(Boolean)))
@@ -2850,7 +2902,7 @@ const prefill = hit ? {
         setLoading(false);
       }
     })();
-  }, [selectedProgram, selectedBlock, settingsLoad?.semester]);
+  }, [selectedProgram, selectedBlock, settingsLoad?.semester, mergeProspectusStatusItems]);
 
   // Reset progressive block limit when program changes
   React.useEffect(() => {
@@ -2878,6 +2930,7 @@ const prefill = hit ? {
       // Prospectus for program (already used to compute years), but refetch to keep simple
       const prosp = await api.getProspectus({ programcode: prog, semester: sem || undefined });
       const items = Array.isArray(prosp) ? prosp : (Array.isArray(prosp?.data) ? prosp.data : []);
+      mergeProspectusStatusItems(items);
       const loadSem = normalizeSem(sem || '');
       const narrowedAll = loadSem ? items.filter(p => normalizeSem(p.semester) === loadSem) : items;
       const narrowed = narrowedAll.filter(p => extractYearDigits(p.yearlevel) === String(yearDigit));
@@ -3032,7 +3085,7 @@ const prefill = hit ? {
       setLoadedYears(prev => prev.concat(String(yearDigit)));
     } catch {}
     setLoadingYear(false);
-  }, [selectedProgram, settingsLoad?.school_year, settingsLoad?.semester, loadingYear, shouldDisplayProspectusCourse, decorateProspectusActivity, blocks, blockIsActive]);
+  }, [selectedProgram, settingsLoad?.school_year, settingsLoad?.semester, loadingYear, shouldDisplayProspectusCourse, decorateProspectusActivity, blocks, blockIsActive, mergeProspectusStatusItems]);
 
   // Auto-load first available year when order is known
   React.useEffect(() => {
