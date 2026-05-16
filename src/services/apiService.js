@@ -163,10 +163,12 @@ class ApiService {
   // Optional helper: server-provided course mapping across blocks
   async getCourseMapping(params = {}) {
     const search = new URLSearchParams();
-    const { programcode, yearlevel, course } = params || {};
+    const { programcode, yearlevel, course, schoolyear, semester } = params || {};
     if (programcode) search.set('programcode', programcode);
     if (yearlevel) search.set('yearlevel', yearlevel);
     if (course) search.set('course', course);
+    if (schoolyear) search.set('schoolyear', schoolyear);
+    if (semester) search.set('semester', semester);
     const qs = search.toString();
     const url = `${this.baseURL}${this.schedulesPath}/by-course${qs ? `?${qs}` : ''}`;
     const res = await this._fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });

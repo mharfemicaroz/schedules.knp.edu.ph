@@ -493,7 +493,7 @@ function isNSTPCourse(row) {
 }
 
 // --- UI subcomponents (unchanged structure) ---
-function BlockList({ items, selectedId, onSelect, onVisibleItemsChange, loading, onProgramChange, hideFilters = false }) {
+function BlockList({ items, selectedId, onSelect, onVisibleItemsChange, onFilterStateChange, loading, onProgramChange, hideFilters = false }) {
   const border = useColorModeValue('gray.200','gray.700');
   const bg = useColorModeValue('white','gray.800');
   const muted = useColorModeValue('gray.600','gray.300');
@@ -545,10 +545,10 @@ function BlockList({ items, selectedId, onSelect, onVisibleItemsChange, loading,
     <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={bg} minH="calc(100vh - 210px)">
       {!hideFilters && (
         <HStack spacing={2} flexWrap="wrap">
-          <Select size="sm" placeholder="Program" value={prog} onChange={(e)=>{ const v=e.target.value; setProg(v); setYr(''); try { onProgramChange && onProgramChange(v); } catch {} }} maxW="180px">
+          <Select size="sm" placeholder="Program" value={prog} onChange={(e)=>{ const v=e.target.value; setProg(v); setYr(''); try { onProgramChange && onProgramChange(v); } catch {} try { onFilterStateChange && onFilterStateChange({ program: v, yearlevel: '' }); } catch {} }} maxW="180px">
             {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
           </Select>
-          <Select size="sm" placeholder="Year" value={yr} onChange={(e)=>setYr(e.target.value)} maxW="120px">
+          <Select size="sm" placeholder="Year" value={yr} onChange={(e)=>{ const v = e.target.value; setYr(v); try { onFilterStateChange && onFilterStateChange({ program: prog, yearlevel: v }); } catch {} }} maxW="120px">
             {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
           </Select>
           <Input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Search blocks" size="sm" maxW="220px" />
@@ -3394,6 +3394,15 @@ const prefill = hit ? {
       setFreshCache([]);
     }
   }, [selectedBlock]);
+  const handleBlockFilterStateChange = React.useCallback(({ program, yearlevel }) => {
+    setSelectedBlock(null);
+    setRows([]);
+    setFreshCache([]);
+    if (!yearlevel) {
+      setLoadedYears([]);
+    }
+    setSelectedProgram(program || '');
+  }, []);
 
   const updateFacEdit = (id, patch) => {
     const item = (facultySchedules.items || []).find((x) => String(x.id) === String(id));
@@ -5748,6 +5757,7 @@ const prefill = hit ? {
                   selectedId={selectedBlock?.id}
                   onSelect={onSelectBlock}
                   onVisibleItemsChange={handleVisibleBlocksChange}
+                  onFilterStateChange={handleBlockFilterStateChange}
                   loading={blocksLoading}
                   onProgramChange={(v)=>{ setSelectedProgram(v || ''); setSelectedBlock(null); setRows([]); setFreshCache([]); }}
                   hideFilters={registrarViewOnly}

@@ -169,6 +169,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     if (semShort) out = out.filter(c => normalizeSem(c.semester || c.term || c.sem || '') === semShort);
     return out;
   }, [existing, settingsLoad?.school_year, settingsLoad?.semester]);
+  const mappedSchedules = React.useMemo(() => scopedCourses || [], [scopedCourses]);
 
   const courseOptions = React.useMemo(() => {
     const wantSem = normalizeSem(settingsLoad?.semester || '');
@@ -420,8 +421,8 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       let serverMap = null;
       try {
         serverMap = await api.getCourseMapping({
-          programcode: program,
-          yearlevel: year,
+          programcode: program || (selectedCourse?.programcode || selectedCourse?.program),
+          yearlevel: year || selectedCourse?.yearlevel,
           course: selectedCourse.courseName || selectedCourse.code,
           schoolyear: settingsLoad?.school_year || undefined,
           semester: settingsLoad?.semester || undefined,
@@ -442,7 +443,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
             facultyId: hit.facultyId || hit.faculty_id,
           };
         }
-        const match = (existing || []).find(s => {
+        const match = (mappedSchedules || []).find(s => {
           const b = String(s.blockCode || s.block || '').trim();
           const cc = normCode(s.courseName || s.code || '');
           const tt = norm(s.title || s.courseTitle || '');
@@ -490,7 +491,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       if (!ignore) setRows(initRows);
     })();
     return () => { ignore = true; };
-  }, [selectedCourse, program, year, blocks, existing, settingsLoad?.school_year, settingsLoad?.semester]);
+  }, [selectedCourse, program, year, blocks, mappedSchedules, settingsLoad?.school_year, settingsLoad?.semester]);
 
   const anySelected = rows.some(r => r._selected);
   const canSave = anySelected && rows.filter(r => r._selected).every(r => r._term && r._time && (r._faculty || r._facultyId) && !r._checking && !r._conflict);
@@ -808,7 +809,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
             lock: hit.lock,
           };
         }
-        const match = (existing || []).find(s => {
+        const match = (mappedSchedules || []).find(s => {
           const b = String(s.blockCode || s.block || '').trim();
           const cc = normCode(s.courseName || s.code || '');
           const tt = norm(s.title || s.courseTitle || '');
@@ -854,7 +855,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       setRows(freshRows);
     } catch {}
     finally { setMapLoading(false); }
-  }, [blocks, existing, program, selectedCourse, year, dispatch]);
+  }, [blocks, mappedSchedules, program, selectedCourse, year, dispatch, settingsLoad?.school_year, settingsLoad?.semester]);
   const openResolve = (i) => {
     const r = rows[i];
     if (!r || !Array.isArray(r._conflictDetails)) return;
@@ -1349,7 +1350,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                           lock: hit.lock,
                         };
                       }
-                      const match = (existing || []).find(s => {
+                      const match = (mappedSchedules || []).find(s => {
                         const b = String(s.blockCode || s.block || '').trim();
                         const cc = normCode(s.courseName || s.code || '');
                         const tt = norm(s.title || s.courseTitle || '');
