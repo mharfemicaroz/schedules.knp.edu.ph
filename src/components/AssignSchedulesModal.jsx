@@ -41,7 +41,7 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
   const blocksAll = useSelector(selectBlocks);
   const authUser = useSelector(s => s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
-  const isAdmin = (role === 'admin' || role === 'manager');
+  const isAdmin = (role === 'admin' || role === 'manager' || role === 'sa');
   const [allowedDepts, setAllowedDepts] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [existing, setExisting] = React.useState([]);

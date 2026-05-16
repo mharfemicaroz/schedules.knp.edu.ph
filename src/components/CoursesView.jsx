@@ -92,7 +92,7 @@ export default function CoursesView() {
   const settings = useSelector(selectSettings);
   const authUser = useSelector(s => s.auth && s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
-  const isAdmin = (role === 'admin' || role === 'manager');
+  const isAdmin = (role === 'admin' || role === 'manager' || role === 'sa');
   const settingsLoad = settings?.schedulesLoad || { school_year: '', semester: '' };
   const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
   const [allowedDepts, setAllowedDepts] = React.useState(null); // null=unknown, []=none

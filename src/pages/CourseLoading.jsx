@@ -37,6 +37,12 @@ import CourseSummaryView from '../components/CourseSummaryView';
 import CourseLoadingSupport from '../components/CourseLoadingSupport';
 import CourseLoadingFacultySummary from '../components/CourseLoadingFacultySummary';
 
+const COURSE_LOADING_SEMESTER_OPTIONS = [
+  { value: '1st', label: '1st Semester' },
+  { value: '2nd', label: '2nd Semester' },
+  { value: 'Summer', label: 'Summer' },
+];
+
 
 function pickSchedules(rows = [], limit = 40) {
   return rows.slice(0, limit).map((r) => ({
@@ -1108,6 +1114,7 @@ export default function CourseLoading() {
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.300');
+  const loadContextCardBg = useColorModeValue('linear(to-r, blue.50, white)', 'linear(to-r, whiteAlpha.100, transparent)');
   const dividerBorder = useColorModeValue('gray.100','gray.700');
   const savedBg = useColorModeValue('green.50','green.900');
   const draftBg = useColorModeValue('orange.50','orange.900');
@@ -1144,11 +1151,13 @@ export default function CourseLoading() {
   const accessToken = useSelector(s => s.auth.accessToken);
   const authUser = useSelector(s => s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
-  const isAdmin = (role === 'admin' || role === 'manager');
+  const isAdmin = (role === 'admin' || role === 'manager' || role === 'sa');
+  const canOverrideLoadContext = (role === 'admin' || role === 'sa');
   const isRegistrar = role === 'registrar';
   const registrarViewOnly = isRegistrar && !isAdmin;
   const [allowedDepts, setAllowedDepts] = React.useState(null);
   const [userDeptRows, setUserDeptRows] = React.useState(null);
+  const [loadOverride, setLoadOverride] = React.useState({ school_year: '', semester: '' });
   const deptAssignmentsCacheRef = React.useRef(new Map());
   const userNameCacheRef = React.useRef(new Map());
   const [acadData, setAcadData] = React.useState(null);
@@ -1547,7 +1556,30 @@ export default function CourseLoading() {
     })();
   }, [facultyAll]);
 
-  const settingsLoad = settings?.schedulesLoad || { school_year: '', semester: '' };
+  const defaultLoadSchoolYear = String(settings?.schedulesLoad?.school_year || '').trim();
+  const defaultLoadSemester = String(settings?.schedulesLoad?.semester || '').trim();
+  const resolvedLoadSchoolYear = String(loadOverride.school_year || defaultLoadSchoolYear).trim();
+  const resolvedLoadSemester = String(loadOverride.semester || defaultLoadSemester).trim();
+  const hasLoadOverride = canOverrideLoadContext
+    && (!!loadOverride.school_year || !!loadOverride.semester)
+    && (
+      resolvedLoadSchoolYear !== defaultLoadSchoolYear
+      || resolvedLoadSemester !== defaultLoadSemester
+    );
+  const settingsLoad = React.useMemo(() => ({
+    school_year: hasLoadOverride ? resolvedLoadSchoolYear : defaultLoadSchoolYear,
+    semester: hasLoadOverride ? resolvedLoadSemester : defaultLoadSemester,
+  }), [defaultLoadSchoolYear, defaultLoadSemester, hasLoadOverride, resolvedLoadSchoolYear, resolvedLoadSemester]);
+  const schoolYearOptions = React.useMemo(() => {
+    const y = new Date().getFullYear();
+    const set = new Set();
+    for (let yr = y - 3; yr <= y + 3; yr++) {
+      set.add(`${yr}-${yr + 1}`);
+    }
+    if (defaultLoadSchoolYear) set.add(defaultLoadSchoolYear);
+    if (loadOverride.school_year) set.add(String(loadOverride.school_year).trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [defaultLoadSchoolYear, loadOverride.school_year]);
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -5376,43 +5408,127 @@ const prefill = hit ? {
   // --- render (unchanged) ---
   return (
     <VStack align="stretch" spacing={4}>
-      <HStack justify="space-between" align="center" position="sticky" top={0} zIndex={5} bg={panelBg} p={1} borderBottomWidth="1px" borderColor={border} rounded="md">
-        <HStack>
-          <Heading size="md">Course Loading</Heading>
-          <HStack spacing={1} ml={3}>
-            {allowedViews.map((view) => {
-              const label = (
-                view === 'blocks'
-                  ? 'Blocks'
-                  : view === 'faculty'
-                  ? 'Faculty'
-                  : view === 'courses'
-                  ? 'Courses'
-                  : view === 'facultySummary'
-                  ? 'Faculty Summary'
-                  : 'Summary'
-              );
-              return (
-                <Button key={view} size="sm" variant={viewMode===view?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode(view)}>
-                  {label}
-                </Button>
-              );
-            })}
+      <VStack
+        align="stretch"
+        spacing={3}
+        position="sticky"
+        top={0}
+        zIndex={5}
+        bg={panelBg}
+        p={3}
+        borderBottomWidth="1px"
+        borderColor={border}
+        rounded="xl"
+        boxShadow="sm"
+      >
+        <HStack justify="space-between" align="center">
+          <HStack>
+            <Heading size="md">Course Loading</Heading>
+            <HStack spacing={1} ml={3} flexWrap="wrap">
+              {allowedViews.map((view) => {
+                const label = (
+                  view === 'blocks'
+                    ? 'Blocks'
+                    : view === 'faculty'
+                    ? 'Faculty'
+                    : view === 'courses'
+                    ? 'Courses'
+                    : view === 'facultySummary'
+                    ? 'Faculty Summary'
+                    : 'Summary'
+                );
+                return (
+                  <Button key={view} size="sm" variant={viewMode===view?'solid':'ghost'} colorScheme="blue" onClick={()=>switchViewMode(view)}>
+                    {label}
+                  </Button>
+                );
+              })}
+            </HStack>
+          </HStack>
+          <HStack spacing={3} flexWrap="wrap" justify="flex-end">
+            <Tooltip label={hasLoadOverride ? 'Admin preview context is active for this page only.' : 'Using the saved Schedules Load defaults.'}>
+              <Badge colorScheme={readyToLoad ? (hasLoadOverride ? 'purple' : 'green') : 'red'}>
+                SY {settingsLoad.school_year || '—'} / {settingsLoad.semester || '—'}
+              </Badge>
+            </Tooltip>
+            {hasLoadOverride && (
+              <Badge colorScheme="purple" variant="subtle">
+                Custom Admin View
+              </Badge>
+            )}
+            <Tooltip label={(viewMode === 'faculty' && !isAdmin)
+              ? 'You can edit schedules for your department; other departments are view-only.'
+              : (canLoad ? 'You can assign and save.' : 'View-only: insufficient permissions')}>
+              <Badge colorScheme={canLoad ? 'blue' : 'gray'}>{(viewMode === 'faculty' && !isAdmin) ? 'Dept-limited' : (canLoad ? 'Editable' : 'View-only')}</Badge>
+            </Tooltip>
           </HStack>
         </HStack>
-        <HStack spacing={3}>
-          <Tooltip label="Current Schedules Load Defaults">
-            <Badge colorScheme={readyToLoad ? 'green' : 'red'}>
-              SY {settingsLoad.school_year || '—'} / {settingsLoad.semester || '—'}
-            </Badge>
-          </Tooltip>
-          <Tooltip label={(viewMode === 'faculty' && !isAdmin)
-            ? 'You can edit schedules for your department; other departments are view-only.'
-            : (canLoad ? 'You can assign and save.' : 'View-only: insufficient permissions')}>
-            <Badge colorScheme={canLoad ? 'blue' : 'gray'}>{(viewMode === 'faculty' && !isAdmin) ? 'Dept-limited' : (canLoad ? 'Editable' : 'View-only')}</Badge>
-          </Tooltip>
-        </HStack>
-      </HStack>
+
+        {canOverrideLoadContext && (
+          <Box
+            borderWidth="1px"
+            borderColor={border}
+            rounded="xl"
+            px={4}
+            py={3}
+            bgGradient={loadContextCardBg}
+          >
+            <Stack direction={{ base: 'column', xl: 'row' }} spacing={4} justify="space-between" align={{ base: 'stretch', xl: 'center' }}>
+              <VStack align="start" spacing={1}>
+                <HStack spacing={2} flexWrap="wrap">
+                  <Badge colorScheme={hasLoadOverride ? 'purple' : 'green'}>
+                    {hasLoadOverride ? 'Custom Load Context' : 'Saved Load Defaults'}
+                  </Badge>
+                  <Badge variant="outline" colorScheme="blue">
+                    Default: {defaultLoadSchoolYear || '—'} / {defaultLoadSemester || '—'}
+                  </Badge>
+                </HStack>
+                <Text fontSize="sm" fontWeight="600">
+                  Preview and load schedules for a specific school year and semester without changing the saved system defaults.
+                </Text>
+                <Text fontSize="xs" color={subtle}>
+                  Changes here affect this page only. Save actions still write schedules under the active context shown above.
+                </Text>
+              </VStack>
+
+              <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'end' }}>
+                <VStack align="stretch" spacing={1} minW={{ base: 'full', md: '170px' }}>
+                  <Text fontSize="xs" color={subtle} fontWeight="600">School Year</Text>
+                  <Select
+                    size="sm"
+                    value={hasLoadOverride ? resolvedLoadSchoolYear : defaultLoadSchoolYear}
+                    onChange={(e) => setLoadOverride((prev) => ({ ...prev, school_year: e.target.value }))}
+                  >
+                    {schoolYearOptions.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </Select>
+                </VStack>
+                <VStack align="stretch" spacing={1} minW={{ base: 'full', md: '170px' }}>
+                  <Text fontSize="xs" color={subtle} fontWeight="600">Semester</Text>
+                  <Select
+                    size="sm"
+                    value={hasLoadOverride ? resolvedLoadSemester : defaultLoadSemester}
+                    onChange={(e) => setLoadOverride((prev) => ({ ...prev, semester: e.target.value }))}
+                  >
+                    {COURSE_LOADING_SEMESTER_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </Select>
+                </VStack>
+                <Button
+                  size="sm"
+                  variant={hasLoadOverride ? 'solid' : 'outline'}
+                  colorScheme={hasLoadOverride ? 'purple' : 'gray'}
+                  onClick={() => setLoadOverride({ school_year: '', semester: '' })}
+                >
+                  Use Saved Defaults
+                </Button>
+              </Stack>
+            </Stack>
+          </Box>
+        )}
+      </VStack>
 
       <SimpleGrid columns={{ base: 1, lg: 5 }} gap={4} alignItems="start">
         {(viewMode === 'blocks' || viewMode === 'faculty') && (
@@ -5747,7 +5863,7 @@ const prefill = hit ? {
                                       onRequestDelete={()=>requestDelete(idx)}
                                       onRequestResolve={()=>requestResolve(idx)}
                                       onRequestHistory={openHistoryForRow}
-                                      isAdmin={role==='admin' || role==='manager'}
+                                      isAdmin={isAdmin}
                                       viewOnly={registrarViewOnly}
                                       hideFacultyName={registrarViewOnly}
                                     />
@@ -5975,7 +6091,7 @@ const prefill = hit ? {
                               onRequestDelete={()=>requestDelete(idx)}
                               onRequestResolve={()=>requestResolve(idx)}
                               onRequestHistory={openHistoryForRow}
-                              isAdmin={role==='admin' || role==='manager'}
+                              isAdmin={isAdmin}
                               viewOnly={registrarViewOnly}
                               hideFacultyName={registrarViewOnly}
                             />
@@ -6060,7 +6176,7 @@ const prefill = hit ? {
                                           onRequestDelete={()=>requestDelete(idx)}
                                           onRequestResolve={()=>requestResolve(idx)}
                                           onRequestHistory={openHistoryForRow}
-                                          isAdmin={role==='admin' || role==='manager'}
+                                          isAdmin={isAdmin}
                                           variant="tile"
                                           viewOnly={registrarViewOnly}
                                           hideFacultyName={registrarViewOnly}

@@ -6,7 +6,7 @@ import { getUserDepartmentsByUserThunk } from '../store/userDeptThunks';
 export default function RequireCourseLoadingAccess({ children }) {
   const authUser = useSelector(s => s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
-  const isAdmin = role === 'admin' || role === 'manager';
+  const isAdmin = role === 'admin' || role === 'manager' || role === 'sa';
   const isRegistrar = role === 'registrar';
   const dispatch = useDispatch();
   const items = useSelector(s => s.userdept.items || []);

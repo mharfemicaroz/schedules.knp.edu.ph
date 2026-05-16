@@ -47,7 +47,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
   const sectionHeaderColor = useColorModeValue('gray.700','gray.300');
 
   const roleStr = String(authUser?.role || '').toLowerCase();
-  const isAdmin = !!authUser && (roleStr === 'admin' || roleStr === 'manager');
+  const isAdmin = !!authUser && (roleStr === 'admin' || roleStr === 'manager' || roleStr === 'sa');
   const isSa = !!authUser && roleStr === 'sa';
   const isRegistrar = !!authUser && roleStr === 'registrar';
   const isChecker = !!authUser && roleStr === 'checker';
