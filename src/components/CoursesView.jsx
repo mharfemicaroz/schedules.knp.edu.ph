@@ -76,7 +76,7 @@ const toFullSemester = (t) => {
   return t;
 };
 
-export default function CoursesView() {
+export default function CoursesView({ settingsLoadOverride = null }) {
   const toast = useToast();
   const dispatch = useDispatch();
   const bg = useColorModeValue('white','gray.800');
@@ -93,7 +93,7 @@ export default function CoursesView() {
   const authUser = useSelector(s => s.auth && s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
   const isAdmin = (role === 'admin' || role === 'manager' || role === 'sa');
-  const settingsLoad = settings?.schedulesLoad || { school_year: '', semester: '' };
+  const settingsLoad = settingsLoadOverride || settings?.schedulesLoad || { school_year: '', semester: '' };
   const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
   const [allowedDepts, setAllowedDepts] = React.useState(null); // null=unknown, []=none
   const [remoteVacantCounts, setRemoteVacantCounts] = React.useState(new Map());
@@ -330,6 +330,19 @@ export default function CoursesView() {
   }, [courseOptions, getVacancyMeta]);
 
   React.useEffect(() => {
+    if (!selectedCourse) return;
+    const selectedKey = `${normCode(selectedCourse.courseName || selectedCourse.course_name || selectedCourse.code)}|${norm(selectedCourse.courseTitle || selectedCourse.course_title || selectedCourse.title)}`;
+    const stillVisible = (courseOptions || []).some((course) => {
+      const courseKey = `${normCode(course.courseName || course.course_name || course.code)}|${norm(course.courseTitle || course.course_title || course.title)}`;
+      return courseKey === selectedKey;
+    });
+    if (!stillVisible) {
+      setSelectedCourse(null);
+      setRows([]);
+    }
+  }, [selectedCourse, courseOptions]);
+
+  React.useEffect(() => {
     let alive = true;
     (async () => {
       try {
@@ -406,7 +419,13 @@ export default function CoursesView() {
       // Try server-provided mapping if available
       let serverMap = null;
       try {
-        serverMap = await api.getCourseMapping({ programcode: program, yearlevel: year, course: selectedCourse.courseName || selectedCourse.code });
+        serverMap = await api.getCourseMapping({
+          programcode: program,
+          yearlevel: year,
+          course: selectedCourse.courseName || selectedCourse.code,
+          schoolyear: settingsLoad?.school_year || undefined,
+          semester: settingsLoad?.semester || undefined,
+        });
       } catch {}
 
       const findExisting = (blockCode) => {
@@ -471,7 +490,7 @@ export default function CoursesView() {
       if (!ignore) setRows(initRows);
     })();
     return () => { ignore = true; };
-  }, [selectedCourse, program, year, blocks, existing, settings?.semester]);
+  }, [selectedCourse, program, year, blocks, existing, settingsLoad?.school_year, settingsLoad?.semester]);
 
   const anySelected = rows.some(r => r._selected);
   const canSave = anySelected && rows.filter(r => r._selected).every(r => r._term && r._time && (r._faculty || r._facultyId) && !r._checking && !r._conflict);
@@ -751,7 +770,13 @@ export default function CoursesView() {
     setMapLoading(true);
     try { await dispatch(loadAllSchedules()); } catch {}
     try {
-      const serverMap = await api.getCourseMapping({ programcode: program || (selectedCourse?.programcode || selectedCourse?.program), yearlevel: year || selectedCourse?.yearlevel, course: selectedCourse?.courseName || selectedCourse?.code });
+      const serverMap = await api.getCourseMapping({
+        programcode: program || (selectedCourse?.programcode || selectedCourse?.program),
+        yearlevel: year || selectedCourse?.yearlevel,
+        course: selectedCourse?.courseName || selectedCourse?.code,
+        schoolyear: settingsLoad?.school_year || undefined,
+        semester: settingsLoad?.semester || undefined,
+      });
       const codeKey = normCode(selectedCourse.courseName || selectedCourse.course_name || selectedCourse.code);
       const titleKey = norm(selectedCourse.courseTitle || selectedCourse.course_title || selectedCourse.title);
       const courseProgRaw = normalizeProgramCode(selectedCourse.programcode || selectedCourse.program || program);
@@ -1286,7 +1311,13 @@ export default function CoursesView() {
                   await api.deleteSchedule(r._existingId);
                   try { await dispatch(loadAllSchedules()); } catch {}
                   try {
-                    const serverMap = await api.getCourseMapping({ programcode: program || (selectedCourse?.programcode || selectedCourse?.program), yearlevel: year || selectedCourse?.yearlevel, course: selectedCourse?.courseName || selectedCourse?.code });
+                    const serverMap = await api.getCourseMapping({
+                      programcode: program || (selectedCourse?.programcode || selectedCourse?.program),
+                      yearlevel: year || selectedCourse?.yearlevel,
+                      course: selectedCourse?.courseName || selectedCourse?.code,
+                      schoolyear: settingsLoad?.school_year || undefined,
+                      semester: settingsLoad?.semester || undefined,
+                    });
                     const codeKey = normCode(selectedCourse.courseName || selectedCourse.course_name || selectedCourse.code);
                     const titleKey = norm(selectedCourse.courseTitle || selectedCourse.course_title || selectedCourse.title);
                     const courseProgRaw = normalizeProgramCode(selectedCourse.programcode || selectedCourse.program || program);

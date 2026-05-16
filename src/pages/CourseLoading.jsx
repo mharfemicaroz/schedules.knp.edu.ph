@@ -5805,10 +5805,10 @@ const prefill = hit ? {
             </VStack>
           )}
           {viewMode === 'courses' && (
-            <CoursesView />
+            <CoursesView settingsLoadOverride={settingsLoad} />
           )}
           {viewMode === 'summary' && (
-            <CourseSummaryView viewOnly={registrarViewOnly} />
+            <CourseSummaryView viewOnly={registrarViewOnly} settingsLoadOverride={settingsLoad} />
           )}
           {viewMode === 'facultySummary' && (
             <CourseLoadingFacultySummary

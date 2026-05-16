@@ -240,7 +240,7 @@ function ProgramStatCard({ programcode, assigned, total }) {
   );
 }
 
-export default function CourseSummaryView({ viewOnly = false }) {
+export default function CourseSummaryView({ viewOnly = false, settingsLoadOverride = null }) {
   const settings = useSelector(selectSettings);
   const blocks = useSelector(selectBlocks);
   const faculties = useSelector((s) => s.data?.faculties || []);
@@ -252,8 +252,9 @@ export default function CourseSummaryView({ viewOnly = false }) {
   const dangerProgressBg = useColorModeValue('red.100', 'red.900');
   const blockBorderColor = useColorModeValue('gray.200', 'gray.700');
 
-  const [schoolYear, setSchoolYear] = React.useState(settings?.schedulesLoad?.school_year || '');
-  const [semester, setSemester] = React.useState(normalizeSemesterLabel(settings?.schedulesLoad?.semester || ''));
+  const activeSettingsLoad = settingsLoadOverride || settings?.schedulesLoad || { school_year: '', semester: '' };
+  const [schoolYear, setSchoolYear] = React.useState(activeSettingsLoad?.school_year || '');
+  const [semester, setSemester] = React.useState(normalizeSemesterLabel(activeSettingsLoad?.semester || ''));
   const [program, setProgram] = React.useState('');
   const [facultyThreshold, setFacultyThreshold] = React.useState(24);
   const [stats, setStats] = React.useState(null);
@@ -307,11 +308,11 @@ export default function CourseSummaryView({ viewOnly = false }) {
 
   // Sync defaults from settings when they load/change
   React.useEffect(() => {
-    const newSy = settings?.schedulesLoad?.school_year || '';
-    const newSem = normalizeSemesterLabel(settings?.schedulesLoad?.semester || '');
+    const newSy = activeSettingsLoad?.school_year || '';
+    const newSem = normalizeSemesterLabel(activeSettingsLoad?.semester || '');
     setSchoolYear(newSy);
     setSemester(newSem);
-  }, [settings?.schedulesLoad?.school_year, settings?.schedulesLoad?.semester]);
+  }, [activeSettingsLoad?.school_year, activeSettingsLoad?.semester]);
 
   React.useEffect(() => {
     const params = { sy: schoolYear, sem: semester, prog: program, threshold: facultyThreshold };
@@ -335,7 +336,7 @@ export default function CourseSummaryView({ viewOnly = false }) {
   const semesterOptions = React.useMemo(() => ['', '1st Semester', '2nd Semester', 'Summer'], []);
 
   const schoolYearOptions = React.useMemo(() => {
-    const baseMatch = String(settings?.schedulesLoad?.school_year || '').match(/(\d{4})/);
+    const baseMatch = String(activeSettingsLoad?.school_year || settings?.schedulesLoad?.school_year || '').match(/(\d{4})/);
     const baseYear = baseMatch ? parseInt(baseMatch[1], 10) : new Date().getFullYear();
     const list = [];
     for (let offset = -3; offset <= 3; offset++) {
@@ -344,7 +345,7 @@ export default function CourseSummaryView({ viewOnly = false }) {
     }
     const uniq = Array.from(new Set(list));
     return [''].concat(uniq);
-  }, [settings?.schedulesLoad?.school_year]);
+  }, [activeSettingsLoad?.school_year, settings?.schedulesLoad?.school_year]);
 
   const programOptions = React.useMemo(() => {
     const fromBlocks = Array.isArray(blocks)
