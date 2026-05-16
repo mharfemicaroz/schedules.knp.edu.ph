@@ -493,7 +493,7 @@ function isNSTPCourse(row) {
 }
 
 // --- UI subcomponents (unchanged structure) ---
-function BlockList({ items, selectedId, onSelect, loading, onProgramChange, hideFilters = false }) {
+function BlockList({ items, selectedId, onSelect, onVisibleItemsChange, loading, onProgramChange, hideFilters = false }) {
   const border = useColorModeValue('gray.200','gray.700');
   const bg = useColorModeValue('white','gray.800');
   const muted = useColorModeValue('gray.600','gray.300');
@@ -537,6 +537,9 @@ function BlockList({ items, selectedId, onSelect, loading, onProgramChange, hide
     };
     return arr.sort((a,b) => keyOf(a).localeCompare(keyOf(b)));
   }, [filtered]);
+  React.useEffect(() => {
+    try { onVisibleItemsChange && onVisibleItemsChange(sorted); } catch {}
+  }, [sorted, onVisibleItemsChange]);
   return (
     
     <VStack align="stretch" spacing={3} borderWidth="1px" borderColor={border} rounded="xl" p={3} bg={bg} minH="calc(100vh - 210px)">
@@ -1370,6 +1373,7 @@ export default function CourseLoading() {
   }, [allowedViews, viewMode]);
   const [selectedBlock, setSelectedBlock] = React.useState(null);
   const [selectedProgram, setSelectedProgram] = React.useState('');
+  const [blockListVisibleCount, setBlockListVisibleCount] = React.useState(0);
   const [progBlocksLimit, setProgBlocksLimit] = React.useState(6);
   const progSentinelRef = React.useRef(null);
   const blockSkelWrapRef = React.useRef(null);
@@ -3161,6 +3165,16 @@ const prefill = hit ? {
         return true;
       });
   }, [facultyAll, facDeptFilter, facEmpFilter, facQ, isAdmin, allowedDepts]);
+  React.useEffect(() => {
+    if (!selectedFaculty) return;
+    const stillVisible = (filteredFaculty || []).some((faculty) => String(faculty.id) === String(selectedFaculty.id));
+    if (!stillVisible) {
+      setSelectedFaculty(null);
+      setFacultySchedules({ items: [], loading: false });
+      setFacSelected(new Set());
+      setFacEdits({});
+    }
+  }, [filteredFaculty, selectedFaculty]);
 
   const sortedFaculty = React.useMemo(() => {
     const list = [...(filteredFaculty || [])];
@@ -3327,6 +3341,9 @@ const prefill = hit ? {
     if (loadContextKeyRef.current === key) return;
     loadContextKeyRef.current = key;
 
+    try { dispatch(loadBlocksThunk({})); } catch {}
+    try { dispatch(loadAllSchedules()); } catch {}
+
     if (selectedBlock) {
       reloadCurrentBlock();
       return;
@@ -3347,6 +3364,7 @@ const prefill = hit ? {
     selectedFaculty,
     selectedProgram,
     viewMode,
+    dispatch,
   ]);
 
   React.useEffect(() => {
@@ -3361,6 +3379,21 @@ const prefill = hit ? {
       setFreshCache([]);
     }
   }, [selectedBlock, visibleBlocks]);
+
+  const handleVisibleBlocksChange = React.useCallback((list) => {
+    const next = Array.isArray(list) ? list : [];
+    setBlockListVisibleCount(next.length);
+    if (!selectedBlock) return;
+    const stillVisible = next.some((block) => (
+      String(block.id) === String(selectedBlock.id)
+      || String(block.blockCode || '') === String(selectedBlock.blockCode || '')
+    ));
+    if (!stillVisible) {
+      setSelectedBlock(null);
+      setRows([]);
+      setFreshCache([]);
+    }
+  }, [selectedBlock]);
 
   const updateFacEdit = (id, patch) => {
     const item = (facultySchedules.items || []).find((x) => String(x.id) === String(id));
@@ -5706,7 +5739,7 @@ const prefill = hit ? {
                   >
                     Print All
                   </Button>
-                    <Badge colorScheme="gray">{(visibleBlocks || []).length}</Badge>
+                    <Badge colorScheme="gray">{blockListVisibleCount || 0}</Badge>
                 </HStack>
               </HStack>
               <Box h="calc(100dvh - 240px)" overflowY="auto" w="full">
@@ -5714,6 +5747,7 @@ const prefill = hit ? {
                   items={visibleBlocks}
                   selectedId={selectedBlock?.id}
                   onSelect={onSelectBlock}
+                  onVisibleItemsChange={handleVisibleBlocksChange}
                   loading={blocksLoading}
                   onProgramChange={(v)=>{ setSelectedProgram(v || ''); setSelectedBlock(null); setRows([]); setFreshCache([]); }}
                   hideFilters={registrarViewOnly}
