@@ -5,7 +5,7 @@ const PROGRAM_OPTIONS = [
   'BSAB', 'BSBA-FM', 'BSBA-HRM', 'BSBA-MM', 'BSCRIM', 'BSED-ENGLISH', 'BSED-MATH', 'BSED-SS', 'BSED-VE', 'BSENTREP', 'BSTM', 'BTLED-HE',
 ];
 
-export default function ProspectusFormModal({ isOpen, onClose, onSubmit, initial }) {
+export default function ProspectusFormModal({ isOpen, onClose, onSubmit, initial, curriculumYearOptions = [] }) {
   const mapInitial = React.useCallback((src) => {
     const it = src || {};
     return {
@@ -89,7 +89,12 @@ export default function ProspectusFormModal({ isOpen, onClose, onSubmit, initial
             </HStack>
             <FormControl>
               <FormLabel>Curriculum Year</FormLabel>
-              <Input value={form.curriculum_year || ''} onChange={set('curriculum_year')} placeholder="e.g., 2024-2025" />
+              <Select value={form.curriculum_year || ''} onChange={set('curriculum_year')}>
+                <option value="">Select curriculum year</option>
+                {(curriculumYearOptions || []).map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </Select>
             </FormControl>
           </VStack>
         </ModalBody>

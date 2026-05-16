@@ -32,6 +32,23 @@ export default function AdminProspectus() {
   const [sortKey, setSortKey] = React.useState('programcode');
   const [sortDir, setSortDir] = React.useState('asc');
 
+  const curriculumYearOptions = React.useMemo(() => {
+    const y = new Date().getFullYear();
+    const set = new Set();
+    for (let yr = y - 3; yr <= y + 3; yr++) {
+      set.add(`${yr}-${yr + 1}`);
+    }
+    (items || []).forEach((row) => {
+      const val = String(row?.curriculum_year || row?.curriculumYear || '').trim();
+      if (val) set.add(val);
+    });
+    const editingVal = String(editing?.curriculum_year || editing?.curriculumYear || '').trim();
+    if (editingVal) set.add(editingVal);
+    const filterVal = String(filters?.curriculum_year || '').trim();
+    if (filterVal) set.add(filterVal);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items, editing, filters?.curriculum_year]);
+
   React.useEffect(() => { dispatch(loadProspectusThunk({})); }, [dispatch]);
   React.useEffect(() => { setPage(1); }, [filters, items.length]);
 
@@ -107,7 +124,9 @@ export default function AdminProspectus() {
           <Select placeholder="Semester" value={filters.semester || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ semester: e.target.value } })} maxW="180px">
             {['1st Semester','2nd Semester','Summer'].map(opt => <option key={opt} value={opt}>{opt}</option>)}
           </Select>
-          <Input placeholder="Curriculum Year" value={filters.curriculum_year || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ curriculum_year: e.target.value } })} maxW="180px" />
+          <Select placeholder="Curriculum Year" value={filters.curriculum_year || ''} onChange={(e)=>dispatch({ type:'prospectus/setProspectusFilters', payload:{ curriculum_year: e.target.value } })} maxW="180px">
+            {curriculumYearOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+          </Select>
           <Button leftIcon={<FiFilter />} onClick={()=>dispatch(loadProspectusThunk(filters))} variant="outline" isLoading={loading}>Apply</Button>
           <Button variant="ghost" onClick={()=>dispatch({ type:'prospectus/clearProspectusFilters' })}>Clear</Button>
         </HStack>
@@ -238,6 +257,7 @@ export default function AdminProspectus() {
         isOpen={formDisc.isOpen}
         onClose={formDisc.onClose}
         initial={editing}
+        curriculumYearOptions={curriculumYearOptions}
         onSubmit={async (payload) => {
           if (editing) {
             await dispatch(updateProspectusThunk({ id: editing.id, changes: payload }));
