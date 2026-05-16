@@ -2648,6 +2648,10 @@ export default function CourseLoading() {
       await onSelectBlock(ref);
     } catch {}
   };
+  const refreshBlockListings = React.useCallback(async () => {
+    try { await dispatch(loadBlocksThunk({})); } catch {}
+    try { await dispatch(loadAllSchedules()); } catch {}
+  }, [dispatch]);
 
   // Quick retry wrapper for reload to handle eventual consistency (up to 3 tries)
   const retryReloadCurrentBlock = async (maxTries = 3, delayMs = 400) => {
@@ -3418,14 +3422,16 @@ const prefill = hit ? {
     setFreshCache([]);
     setBlockFilterProgram(program || '');
     setBlockFilterYear('');
-  }, []);
+    void refreshBlockListings();
+  }, [refreshBlockListings]);
   const handleBlockYearFilterChange = React.useCallback((yearlevel) => {
     setSelectedBlock(null);
     setSelectedProgram('');
     setRows([]);
     setFreshCache([]);
     setBlockFilterYear(yearlevel || '');
-  }, []);
+    void refreshBlockListings();
+  }, [refreshBlockListings]);
 
   const updateFacEdit = (id, patch) => {
     const item = (facultySchedules.items || []).find((x) => String(x.id) === String(id));
