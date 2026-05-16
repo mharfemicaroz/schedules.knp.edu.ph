@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Heading, HStack, VStack, Button, Input, FormControl, FormLabel, Select, Table, Thead, Tr, Th, Tbody, Td, IconButton, useDisclosure, useColorModeValue, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Text, Tag, Wrap, WrapItem, SimpleGrid, Badge, Divider, InputGroup, InputLeftElement } from '@chakra-ui/react';
+import { Box, Heading, HStack, VStack, Button, Input, FormControl, FormLabel, Select, Table, Thead, Tr, Th, Tbody, Td, IconButton, useDisclosure, useColorModeValue, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, Text, Tag, Wrap, WrapItem, SimpleGrid, Badge, Divider, InputGroup, InputLeftElement, useToast } from '@chakra-ui/react';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadBlocksThunk, createBlockThunk, updateBlockThunk, deleteBlockThunk } from '../store/blockThunks';
 import { selectBlocks, setBlockFilters, selectBlockPage, selectBlockPageSize, selectBlockFilters, setBlockPage, setBlockPageSize } from '../store/blockSlice';
@@ -10,6 +10,7 @@ import { getBlockSearchText, parseBlockMeta } from '../utils/blockMeta';
 
 export default function AdminBlockSettings() {
   const dispatch = useDispatch();
+  const toast = useToast();
   const allBlocks = useSelector(selectBlocks);
   const loading = useSelector(s => s.blocks.loading);
   const filters = useSelector(selectBlockFilters);
@@ -72,6 +73,29 @@ export default function AdminBlockSettings() {
       delDisc.onClose(); setSelected(null);
       dispatch(loadBlocksThunk({}));
     } catch {}
+  };
+
+  const toggleBlockStatus = async (block) => {
+    if (!block?.id) return;
+    const nextActive = !block._isActive;
+    try {
+      await dispatch(updateBlockThunk({
+        id: block.id,
+        changes: { isActive: nextActive, is_active: nextActive },
+      })).unwrap();
+      toast({
+        status: 'success',
+        title: nextActive ? 'Block activated' : 'Block deactivated',
+        description: `${block.blockCode || block.block_code || 'Block'} is now ${nextActive ? 'active' : 'inactive'}.`,
+      });
+      dispatch(loadBlocksThunk({}));
+    } catch (e) {
+      toast({
+        status: 'error',
+        title: 'Status update failed',
+        description: e?.message || 'Unable to update block status.',
+      });
+    }
   };
 
   const chips = (s) => String(s || '')
@@ -307,10 +331,20 @@ export default function AdminBlockSettings() {
                   </Box>
                   <Box>
                     <Text fontSize="xs" color={muted}>Status</Text>
-                    <Text>{b._isActive ? 'Active' : 'Inactive'}</Text>
+                    <Badge colorScheme={b._isActive ? 'green' : 'gray'} variant={b._isActive ? 'subtle' : 'outline'}>
+                      {b._isActive ? 'Active' : 'Inactive'}
+                    </Badge>
                   </Box>
                 </SimpleGrid>
                 <HStack justify="flex-end" spacing={2}>
+                  <Button
+                    size="sm"
+                    variant={b._isActive ? 'outline' : 'solid'}
+                    colorScheme={b._isActive ? 'orange' : 'green'}
+                    onClick={() => toggleBlockStatus(b)}
+                  >
+                    {b._isActive ? 'Deactivate' : 'Activate'}
+                  </Button>
                   <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="outline" colorScheme="yellow" onClick={() => { setSelected(b); editDisc.onOpen(); }} />
                   <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" variant="outline" colorScheme="red" onClick={() => { setSelected(b); delDisc.onOpen(); }} />
                 </HStack>
@@ -359,9 +393,21 @@ export default function AdminBlockSettings() {
                 <Td>{b.examDay || '-'}</Td>
                 <Td>{b.examSession || '-'}</Td>
                 <Td>{b.examRoom || '-'}</Td>
-                <Td>{b._isActive ? 'Active' : 'Inactive'}</Td>
+                <Td>
+                  <Badge colorScheme={b._isActive ? 'green' : 'gray'} variant={b._isActive ? 'subtle' : 'outline'}>
+                    {b._isActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                </Td>
                 <Td textAlign="right">
                   <HStack justify="end" spacing={1}>
+                    <Button
+                      size="xs"
+                      variant={b._isActive ? 'outline' : 'solid'}
+                      colorScheme={b._isActive ? 'orange' : 'green'}
+                      onClick={() => toggleBlockStatus(b)}
+                    >
+                      {b._isActive ? 'Deactivate' : 'Activate'}
+                    </Button>
                     <IconButton aria-label="Edit" icon={<FiEdit />} size="sm" variant="ghost" colorScheme="yellow" onClick={() => { setSelected(b); editDisc.onOpen(); }} />
                     <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" variant="ghost" colorScheme="red" onClick={() => { setSelected(b); delDisc.onOpen(); }} />
                   </HStack>

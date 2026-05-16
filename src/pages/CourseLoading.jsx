@@ -157,6 +157,9 @@ function parseBlockMeta(blockCode) {
   }
   return { programcode: s.toUpperCase(), yearlevel: '', section: '' };
 }
+function normalizeBlockLookupCode(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
 function normalizeProgramCode(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 function extractYearDigits(val) { const m = String(val ?? '').match(/(\d+)/); return m ? m[1] : ''; }
 function programBase(s) {
@@ -579,7 +582,13 @@ function BlockList({ items, selectedId, onSelect, loading, onProgramChange, hide
           >
             <HStack justify="space-between">
               <Text fontWeight="600">{b.blockCode}</Text>
-              {b.isActive ? <Badge colorScheme="green">Active</Badge> : <Badge>Inactive</Badge>}
+              {b.isActive ? (
+                <Badge colorScheme="green">Active</Badge>
+              ) : b._courseLoadingMappedWhileInactive ? (
+                <Badge colorScheme="orange">Inactive • Mapped</Badge>
+              ) : (
+                <Badge>Inactive</Badge>
+              )}
             </HStack>
             <Wrap mt={1} spacing={1}>
               {(String(b.room || '').split(',').map(x=>x.trim()).filter(Boolean)).slice(0,3).map((r, i)=>( 
@@ -2470,6 +2479,34 @@ export default function CourseLoading() {
     if (sem) out = out.filter(c => normalizeSem(c.semester || c.term || c.sem || '') === sem);
     return out.map((item) => decorateProspectusActivity(item, true));
   }, [existing, settingsLoad, decorateProspectusActivity]);
+  const blockIsActive = React.useCallback((block) => {
+    const raw = block?.isActive ?? block?.is_active;
+    if (typeof raw === 'boolean') return raw;
+    const text = String(raw || '').trim().toLowerCase();
+    if (!text) return true;
+    return ['true', '1', 'yes', 'active'].includes(text);
+  }, []);
+  const mappedBlockCodeSet = React.useMemo(() => {
+    const set = new Set();
+    (scopedCourses || []).forEach((item) => {
+      const key = normalizeBlockLookupCode(item.blockCode || item.section || item.block || '');
+      if (key) set.add(key);
+    });
+    return set;
+  }, [scopedCourses]);
+  const visibleBlocks = React.useMemo(() => {
+    return (Array.isArray(blocks) ? blocks : []).reduce((acc, block) => {
+      const code = normalizeBlockLookupCode(block?.blockCode || block?.section || block?.block_code || '');
+      const isMapped = !!code && mappedBlockCodeSet.has(code);
+      const isActive = blockIsActive(block);
+      if (!isActive && !isMapped) return acc;
+      acc.push({
+        ...block,
+        _courseLoadingMappedWhileInactive: !isActive && isMapped,
+      });
+      return acc;
+    }, []);
+  }, [blocks, mappedBlockCodeSet, blockIsActive]);
   const facIndexesAllFull = React.useMemo(() => buildIndexes(existing || []), [existing]);
   const facStatsScoped = React.useMemo(() => buildFacultyStats(facOptions || [], scopedCourses || []), [facOptions, scopedCourses]);
   const facLoadCache = React.useRef(new Map());
@@ -2570,8 +2607,8 @@ export default function CourseLoading() {
     if (!selectedBlock) return;
     try {
       // Find a fresh instance from the blocks list to mimic a real click
-      const byId = (blocks || []).find(b => String(b.id) === String(selectedBlock.id));
-      const byCode = (blocks || []).find(b => !byId && String(b.blockCode) === String(selectedBlock.blockCode));
+      const byId = (visibleBlocks || []).find(b => String(b.id) === String(selectedBlock.id));
+      const byCode = (visibleBlocks || []).find(b => !byId && String(b.blockCode) === String(selectedBlock.blockCode));
       const ref = byId || byCode || selectedBlock;
       await onSelectBlock(ref);
     } catch {}
@@ -2859,6 +2896,10 @@ const prefill = hit ? {
             const yr = extractYearDigits(meta.yearlevel || '');
             return codeNorm === progNorm && String(yr) === String(yearDigit);
           })
+          .filter((block) => {
+            const code = normalizeBlockLookupCode(block?.blockCode || '');
+            return blockIsActive(block) || blockSet.has(code);
+          })
           .map(b => String(b.blockCode || '').trim())
           .filter(Boolean);
         for (const sec of fromList) {
@@ -2945,7 +2986,7 @@ const prefill = hit ? {
       setLoadedYears(prev => prev.concat(String(yearDigit)));
     } catch {}
     setLoadingYear(false);
-  }, [selectedProgram, settingsLoad?.school_year, settingsLoad?.semester, loadingYear, shouldDisplayProspectusCourse, decorateProspectusActivity]);
+  }, [selectedProgram, settingsLoad?.school_year, settingsLoad?.semester, loadingYear, shouldDisplayProspectusCourse, decorateProspectusActivity, blocks, blockIsActive]);
 
   // Auto-load first available year when order is known
   React.useEffect(() => {
@@ -3307,6 +3348,19 @@ const prefill = hit ? {
     selectedProgram,
     viewMode,
   ]);
+
+  React.useEffect(() => {
+    if (!selectedBlock) return;
+    const stillVisible = (visibleBlocks || []).some((block) => (
+      String(block.id) === String(selectedBlock.id)
+      || String(block.blockCode || '') === String(selectedBlock.blockCode || '')
+    ));
+    if (!stillVisible) {
+      setSelectedBlock(null);
+      setRows([]);
+      setFreshCache([]);
+    }
+  }, [selectedBlock, visibleBlocks]);
 
   const updateFacEdit = (id, patch) => {
     const item = (facultySchedules.items || []).find((x) => String(x.id) === String(id));
@@ -5652,12 +5706,12 @@ const prefill = hit ? {
                   >
                     Print All
                   </Button>
-                  <Badge colorScheme="gray">{(blocks || []).length}</Badge>
+                    <Badge colorScheme="gray">{(visibleBlocks || []).length}</Badge>
                 </HStack>
               </HStack>
               <Box h="calc(100dvh - 240px)" overflowY="auto" w="full">
                 <BlockList
-                  items={blocks}
+                  items={visibleBlocks}
                   selectedId={selectedBlock?.id}
                   onSelect={onSelectBlock}
                   loading={blocksLoading}
