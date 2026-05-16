@@ -153,32 +153,13 @@ export default function CoursesView() {
 
   const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g,' ').trim();
   const normCode = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
-
-  const courseOptions = React.useMemo(() => {
-    const wantSem = normalizeSem(settingsLoad?.semester || '');
-    let list = (allProspectus || []).filter(p => {
-      const progStr = String(p.programcode || p.program || '');
-      const okProg = !program || progStr.toUpperCase().includes(String(program).toUpperCase());
-      const okYear = !year || String(p.yearlevel || '').includes(String(year));
-      const okSem = !wantSem || normalizeSem(p.semester) === wantSem;
-      if (!okProg || !okYear || !okSem) return false;
-      if (!query) return true;
-      const hay = norm(p.courseName || p.course_name || p.courseTitle || p.course_title || '');
-      return hay.includes(norm(query));
-    });
-    // Restrict to allowed departments for non-admin users
-    try {
-      if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
-        const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
-        list = list.filter(p => allow.has(String(p.programcode || p.program || '').toUpperCase()));
-      }
-    } catch {}
-    // Unique by code+title
-    const keyOf = (p) => `${normCode(p.courseName || p.course_name)}|${norm(p.courseTitle || p.course_title)}`;
-    const map = new Map();
-    list.forEach(p => { const k = keyOf(p); if (!map.has(k)) map.set(k, p); });
-    return Array.from(map.values()).sort((a,b) => String(a.courseName || '').localeCompare(String(b.courseName || '')));
-  }, [allProspectus, program, year, query, settingsLoad?.semester, allowedDepts, isAdmin]);
+  const courseIsActive = React.useCallback((row) => {
+    const raw = row?.isActive ?? row?.is_active;
+    if (typeof raw === 'boolean') return raw;
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return true;
+    return ['true', '1', 'yes', 'active'].includes(s);
+  }, []);
 
   const scopedCourses = React.useMemo(() => {
     const sy = String(settingsLoad?.school_year || '').trim();
@@ -188,6 +169,44 @@ export default function CoursesView() {
     if (semShort) out = out.filter(c => normalizeSem(c.semester || c.term || c.sem || '') === semShort);
     return out;
   }, [existing, settingsLoad?.school_year, settingsLoad?.semester]);
+
+  const courseOptions = React.useMemo(() => {
+    const wantSem = normalizeSem(settingsLoad?.semester || '');
+    const mappedCourseKeys = new Set();
+    (scopedCourses || []).forEach((s) => {
+      const key = `${normCode(s.courseName || s.code)}|${norm(s.title || s.courseTitle)}`;
+      if (key !== '|') mappedCourseKeys.add(key);
+    });
+    let list = (allProspectus || []).filter(p => {
+      const progStr = String(p.programcode || p.program || '');
+      const okProg = !program || progStr.toUpperCase().includes(String(program).toUpperCase());
+      const okYear = !year || String(p.yearlevel || '').includes(String(year));
+      const okSem = !wantSem || normalizeSem(p.semester) === wantSem;
+      if (!okProg || !okYear || !okSem) return false;
+      const key = `${normCode(p.courseName || p.course_name || p.code)}|${norm(p.courseTitle || p.course_title || p.title)}`;
+      const isMapped = mappedCourseKeys.has(key);
+      if (!courseIsActive(p) && !isMapped) return false;
+      if (!query) return true;
+      const hay = norm(p.courseName || p.course_name || p.courseTitle || p.course_title || '');
+      return hay.includes(norm(query));
+    });
+    try {
+      if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
+        const allow = new Set(allowedDepts.map(s => String(s).toUpperCase()));
+        list = list.filter(p => allow.has(String(p.programcode || p.program || '').toUpperCase()));
+      }
+    } catch {}
+    const keyOf = (p) => `${normCode(p.courseName || p.course_name)}|${norm(p.courseTitle || p.course_title)}`;
+    const map = new Map();
+    list.forEach(p => {
+      const k = keyOf(p);
+      if (!map.has(k)) map.set(k, {
+        ...p,
+        _prospectusInactive: !courseIsActive(p),
+      });
+    });
+    return Array.from(map.values()).sort((a,b) => String(a.courseName || '').localeCompare(String(b.courseName || '')));
+  }, [allProspectus, program, year, query, settingsLoad?.semester, allowedDepts, isAdmin, scopedCourses, courseIsActive]);
 
   const blockMetaList = React.useMemo(() => {
     if (!Array.isArray(blocks)) return [];
@@ -446,6 +465,7 @@ export default function CoursesView() {
           _baseDay: baseDay,
           _baseFaculty: baseFac,
           _baseFacultyId: baseFacId,
+          _prospectusInactive: !!selectedCourse?._prospectusInactive,
         };
       });
       if (!ignore) setRows(initRows);
@@ -1044,7 +1064,12 @@ export default function CoursesView() {
                   return (
                     <HStack justify="space-between" align="flex-start" spacing={3}>
                       <VStack align="start" spacing={0}>
-                        <Text fontWeight="600">{c.courseName || c.code}</Text>
+                        <HStack spacing={2} flexWrap="wrap">
+                          <Text fontWeight="600">{c.courseName || c.code}</Text>
+                          {c?._prospectusInactive && (
+                            <Badge colorScheme="orange" variant="subtle">Inactive</Badge>
+                          )}
+                        </HStack>
                         <Text fontSize="sm" color={subtle}>{c.courseTitle}</Text>
                       </VStack>
                       <VStack align="end" spacing={1} minW="fit-content">
@@ -1081,6 +1106,9 @@ export default function CoursesView() {
               <HStack>
                 <Heading size="sm">{selectedCourse.courseName}</Heading>
                 <Text color={subtle}>({selectedCourse.courseTitle})</Text>
+                {selectedCourse?._prospectusInactive && (
+                  <Badge colorScheme="orange" variant="subtle">Inactive in Prospectus</Badge>
+                )}
               </HStack>
               <HStack>
                 <Badge colorScheme="blue">{program || selectedCourse.programcode}</Badge>

@@ -287,9 +287,10 @@ function AssignmentRow({
     if (isLocked) list.push({ label: 'Locked', color: 'red' });
     if (row?._status === 'Conflict' || row?._conflict) list.push({ label: 'Conflict', color: 'red' });
     if (row?._status === 'Assigned' || row?._existingId) list.push({ label: 'Assigned', color: 'green' });
+    if (row?._prospectusInactive) list.push({ label: 'Inactive in Prospectus', color: 'orange' });
     if (isDirty) list.push({ label: 'Unsaved', color: 'yellow' });
     return list;
-  }, [isLocked, row?._status, row?._conflict, row?._existingId, isDirty]);
+  }, [isLocked, row?._status, row?._conflict, row?._existingId, row?._prospectusInactive, isDirty]);
 
   if (viewOnly) {
     const displayTerm = currTerm || '-';
@@ -330,6 +331,9 @@ function AssignmentRow({
                   {row.course_name || row.courseName}
                 </Text>
                 <Badge colorScheme="teal">{row.unit ?? 0} unit(s)</Badge>
+                {row?._prospectusInactive && (
+                  <Badge colorScheme="orange" variant="subtle">Inactive</Badge>
+                )}
               </HStack>
               <Text fontSize="sm" color={mutedText} noOfLines={1}>
                 {row.course_title || row.courseTitle}
@@ -383,12 +387,17 @@ function AssignmentRow({
       />
 
       <Box flex="1 1 auto" minW={0}>
-        <Text fontWeight="600" noOfLines={2}>
-          {row.course_name || row.courseName}{' '}
-          <Text as="span" fontWeight="400" color={mutedText}>
-            ({row.course_title || row.courseTitle})
+        <HStack spacing={2} flexWrap="wrap" align="center">
+          <Text fontWeight="600" noOfLines={2}>
+            {row.course_name || row.courseName}{' '}
+            <Text as="span" fontWeight="400" color={mutedText}>
+              ({row.course_title || row.courseTitle})
+            </Text>
           </Text>
-        </Text>
+          {row?._prospectusInactive && (
+            <Badge colorScheme="orange" variant="subtle">Inactive</Badge>
+          )}
+        </HStack>
 
         {variant === 'courses' ? (
           <HStack spacing={3} fontSize="sm" color={mutedText} mt={1} flexWrap="wrap">

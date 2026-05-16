@@ -1581,6 +1581,75 @@ export default function CourseLoading() {
     if (loadOverride.school_year) set.add(String(loadOverride.school_year).trim());
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [defaultLoadSchoolYear, loadOverride.school_year]);
+  const normalizeLookupText = React.useCallback((s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(), []);
+  const normalizeLookupCode = React.useCallback((s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim(), []);
+  const prospectusStatusIndex = React.useMemo(() => {
+    const byId = new Map();
+    const byKey = new Map();
+    const addKey = (key, value) => {
+      if (!key) return;
+      if (!byKey.has(key)) byKey.set(key, value);
+    };
+    (Array.isArray(prospectus) ? prospectus : []).forEach((p) => {
+      const active = (() => {
+        const raw = p?.isActive ?? p?.is_active;
+        if (typeof raw === 'boolean') return raw;
+        const s = String(raw || '').trim().toLowerCase();
+        if (!s) return true;
+        return ['true', '1', 'yes', 'active'].includes(s);
+      })();
+      const entry = { active, row: p };
+      if (p?.id != null) byId.set(String(p.id), entry);
+      const code = normalizeLookupCode(p.courseName || p.course_name || p.code);
+      const title = normalizeLookupText(p.courseTitle || p.course_title || p.title);
+      const prog = normalizeProgramCode(p.programcode || p.program || '');
+      const year = extractYearDigits(p.yearlevel || '');
+      const term = normalizeSem(p.semester || p.term || p.sem || '');
+      addKey([prog, year, term, code, title].join('|'), entry);
+      addKey([prog, year, '', code, title].join('|'), entry);
+      addKey(['', '', term, code, title].join('|'), entry);
+      addKey(['', '', '', code, title].join('|'), entry);
+    });
+    return { byId, byKey };
+  }, [prospectus, normalizeLookupCode, normalizeLookupText]);
+  const getProspectusActivityMeta = React.useCallback((row) => {
+    if (!row) return { active: true, matched: null };
+    const directId = row?.prospectusId ?? row?.prospectus_id ?? row?.prospectus?.id ?? row?.id;
+    if (directId != null && prospectusStatusIndex.byId.has(String(directId))) {
+      const hit = prospectusStatusIndex.byId.get(String(directId));
+      return { active: hit.active, matched: hit.row };
+    }
+    const code = normalizeLookupCode(row.course_name || row.courseName || row.code);
+    const title = normalizeLookupText(row.course_title || row.courseTitle || row.title);
+    const prog = normalizeProgramCode(row.programcode || row.program || '');
+    const year = extractYearDigits(row.yearlevel || row.year || '');
+    const term = normalizeSem(row.semester || row.term || row.sem || row._term || '');
+    const keys = [
+      [prog, year, term, code, title].join('|'),
+      [prog, year, '', code, title].join('|'),
+      ['', '', term, code, title].join('|'),
+      ['', '', '', code, title].join('|'),
+    ];
+    for (const key of keys) {
+      const hit = prospectusStatusIndex.byKey.get(key);
+      if (hit) return { active: hit.active, matched: hit.row };
+    }
+    return { active: true, matched: null };
+  }, [normalizeLookupCode, normalizeLookupText, prospectusStatusIndex]);
+  const decorateProspectusActivity = React.useCallback((row, mapped = false) => {
+    const meta = getProspectusActivityMeta(row);
+    const inactive = !meta.active;
+    return {
+      ...row,
+      _prospectusInactive: inactive,
+      _prospectusMappedWhileInactive: inactive && mapped,
+      _prospectusStatusLabel: inactive ? 'Inactive in Prospectus' : '',
+    };
+  }, [getProspectusActivityMeta]);
+  const shouldDisplayProspectusCourse = React.useCallback((row, mapped = false) => {
+    const meta = getProspectusActivityMeta(row);
+    return meta.active || mapped;
+  }, [getProspectusActivityMeta]);
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -2399,8 +2468,8 @@ export default function CourseLoading() {
     let out = list;
     if (sy) out = out.filter(c => String(c.schoolyear || c.schoolYear || c.school_year || '') === sy);
     if (sem) out = out.filter(c => normalizeSem(c.semester || c.term || c.sem || '') === sem);
-    return out;
-  }, [existing, settingsLoad]);
+    return out.map((item) => decorateProspectusActivity(item, true));
+  }, [existing, settingsLoad, decorateProspectusActivity]);
   const facIndexesAllFull = React.useMemo(() => buildIndexes(existing || []), [existing]);
   const facStatsScoped = React.useMemo(() => buildFacultyStats(facOptions || [], scopedCourses || []), [facOptions, scopedCourses]);
   const facLoadCache = React.useRef(new Map());
@@ -2582,8 +2651,9 @@ export default function CourseLoading() {
         return matches[0] || null;
       };
 
-      const mapped = items.map(p => {
+      const mapped = items.reduce((acc, p) => {
         const hit = findExistingFor(p);
+        if (!shouldDisplayProspectusCourse(p, !!hit)) return acc;
         const locked = (() => {
           const v = hit?.lock;
           if (typeof v === 'boolean') return v;
@@ -2597,7 +2667,7 @@ const prefill = hit ? {
              _day: hit.day || 'MON-FRI',                                                                                                                         
              room: hit.room || '',                                                                                                                               
           } : { _term: '', _time: '', _faculty: '', _day: 'MON-FRI' };
-        return {
+        acc.push(decorateProspectusActivity({
           ...p,
           ...prefill,
           _existingId: hit?.id || null,
@@ -2609,8 +2679,9 @@ const prefill = hit ? {
           _baseFaculty: prefill._faculty || '',
           _baseFacultyId: hit?.facultyId ?? hit?.faculty_id ?? null,
           _status: hit ? 'Assigned' : 'Unassigned',
-        };
-      });
+        }, !!hit));
+        return acc;
+      }, []);
       setRows(mapped);
     } finally {
       setLoading(false);
@@ -2650,7 +2721,7 @@ const prefill = hit ? {
       const prefillFac = r._faculty || (hit ? (hit.facultyName || hit.faculty || hit.instructor || '') : '');
       const prefillDay = r._day || (hit ? (hit.day || 'MON-FRI') : 'MON-FRI');
       const prefillRoom = r.room || (hit ? (hit.room || '') : '');
-      return {
+      return decorateProspectusActivity({
         ...r,
         _existingId: hit?.id || null,
         _locked: !!(hit && locked),
@@ -2665,10 +2736,10 @@ const prefill = hit ? {
         _baseDay: hit ? (hit.day || 'MON-FRI') : (r._baseDay || prefillDay || 'MON-FRI'),
         _baseFaculty: hit ? (hit.facultyName || hit.faculty || hit.instructor || '') : (r._baseFaculty || prefillFac || ''),
         _baseFacultyId: hit ? (hit.facultyId ?? hit.faculty_id ?? null) : (r._baseFacultyId ?? null),
-      };
+      }, !!hit);
     });
     setRows(next);
-  }, [existing, selectedBlock, freshCache]);
+  }, [existing, selectedBlock, freshCache, shouldDisplayProspectusCourse, decorateProspectusActivity]);
 
   // Program-level view (no block selected): stage 1 fetch prospectus and determine year order
   React.useEffect(() => {
@@ -2802,6 +2873,7 @@ const prefill = hit ? {
         for (const sec of blockSections) {
           for (const p of narrowed) {
             const hit = findExistingForBlock(p, sec);
+            if (!shouldDisplayProspectusCourse(p, !!hit)) continue;
             const locked = (() => {
               const v = hit?.lock; if (typeof v === 'boolean') return v; const s = String(v || '').trim().toLowerCase(); return s === 'yes' || s === 'true' || s === '1';
             })();
@@ -2820,7 +2892,7 @@ const prefill = hit ? {
             const baseDay = prefill._day || 'MON-FRI';
             const baseFac = prefill._faculty || '';
             const baseFacId = prefill._facultyId ?? null;
-            rowsByBlock.push({
+            rowsByBlock.push(decorateProspectusActivity({
               ...p,
               programcode: p.programcode || prog,
               section: sec,
@@ -2840,12 +2912,13 @@ const prefill = hit ? {
               _baseDay: baseDay,
               _baseFaculty: baseFac,
               _baseFacultyId: baseFacId,
-            });
+            }, !!hit));
           }
         }
       } else {
         for (const p of narrowed) {
-          rowsByBlock.push({
+          if (!shouldDisplayProspectusCourse(p, false)) continue;
+          rowsByBlock.push(decorateProspectusActivity({
             ...p,
             programcode: p.programcode || prog,
             section: '',
@@ -2865,14 +2938,14 @@ const prefill = hit ? {
             _baseDay: 'MON-FRI',
             _baseFaculty: '',
             _baseFacultyId: null,
-          });
+          }, false));
         }
       }
       setRows(prev => prev.concat(rowsByBlock));
       setLoadedYears(prev => prev.concat(String(yearDigit)));
     } catch {}
     setLoadingYear(false);
-  }, [selectedProgram, settingsLoad?.school_year, settingsLoad?.semester, loadingYear]);
+  }, [selectedProgram, settingsLoad?.school_year, settingsLoad?.semester, loadingYear, shouldDisplayProspectusCourse, decorateProspectusActivity]);
 
   // Auto-load first available year when order is known
   React.useEffect(() => {
@@ -3177,7 +3250,7 @@ const prefill = hit ? {
         });
       }
 
-      const sorted = sortFacultyScheduleItems(list);
+      const sorted = sortFacultyScheduleItems(list).map((item) => decorateProspectusActivity(item, true));
 
       setFacultySchedules({ items: sorted, loading: false });
       setFacSelected(new Set());
