@@ -57,6 +57,22 @@ const extractYearDigits = (val) => {
   const m = String(val ?? '').match(/(\d+)/);
   return m ? m[1] : '';
 };
+const choosePreferredProspectusRow = (current, candidate, { currentActive = true, candidateActive = true, currentMapped = false, candidateMapped = false } = {}) => {
+  if (!current) return candidate;
+  if (currentActive !== candidateActive) return candidateActive ? candidate : current;
+  if (currentMapped !== candidateMapped) return candidateMapped ? candidate : current;
+  const currentCode = String(current?.courseName || current?.course_name || current?.code || '').trim();
+  const candidateCode = String(candidate?.courseName || candidate?.course_name || candidate?.code || '').trim();
+  const currentHasDash = currentCode.includes('-');
+  const candidateHasDash = candidateCode.includes('-');
+  if (currentHasDash !== candidateHasDash) return candidateHasDash ? candidate : current;
+  const currentId = Number(current?.id);
+  const candidateId = Number(candidate?.id);
+  if (Number.isFinite(currentId) && Number.isFinite(candidateId) && currentId !== candidateId) {
+    return candidateId < currentId ? candidate : current;
+  }
+  return current;
+};
 const toShortTerm = (s) => {
   const v = String(s || '').trim().toLowerCase();
   if (!v) return '';
@@ -241,11 +257,23 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     const map = new Map();
     list.forEach(p => {
       const k = keyOf(p);
-      if (!map.has(k)) map.set(k, {
+      const mapped = hasMappedScheduleForProspectus(p);
+      const nextRow = {
         ...p,
         _prospectusInactive: !courseIsActive(p),
-        _prospectusMappedWhileInactive: !courseIsActive(p) && hasMappedScheduleForProspectus(p),
-      });
+        _prospectusMappedWhileInactive: !courseIsActive(p) && mapped,
+      };
+      if (!map.has(k)) {
+        map.set(k, nextRow);
+        return;
+      }
+      const current = map.get(k);
+      map.set(k, choosePreferredProspectusRow(current, nextRow, {
+        currentActive: !current?._prospectusInactive,
+        candidateActive: !nextRow?._prospectusInactive,
+        currentMapped: !!current?._prospectusMappedWhileInactive,
+        candidateMapped: !!nextRow?._prospectusMappedWhileInactive,
+      }));
     });
     return Array.from(map.values()).sort((a,b) => String(a.courseName || '').localeCompare(String(b.courseName || '')));
   }, [allProspectus, program, year, query, settingsLoad?.semester, allowedDepts, isAdmin, courseIsActive, hasMappedScheduleForProspectus]);

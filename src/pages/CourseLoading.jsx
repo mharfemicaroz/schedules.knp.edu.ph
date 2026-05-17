@@ -400,6 +400,23 @@ function formatUnits(val) {
   const n = Number(val);
   return Number.isFinite(n) ? n.toFixed(1) : '0.0';
 }
+function choosePreferredProspectusEntry(current, candidate) {
+  if (!current) return candidate;
+  const currentActive = !!current?.active;
+  const candidateActive = !!candidate?.active;
+  if (currentActive !== candidateActive) return candidateActive ? candidate : current;
+  const currentCode = String(current?.row?.courseName || current?.row?.course_name || current?.row?.code || '').trim();
+  const candidateCode = String(candidate?.row?.courseName || candidate?.row?.course_name || candidate?.row?.code || '').trim();
+  const currentHasDash = currentCode.includes('-');
+  const candidateHasDash = candidateCode.includes('-');
+  if (currentHasDash !== candidateHasDash) return candidateHasDash ? candidate : current;
+  const currentId = Number(current?.row?.id);
+  const candidateId = Number(candidate?.row?.id);
+  if (Number.isFinite(currentId) && Number.isFinite(candidateId) && currentId !== candidateId) {
+    return candidateId < currentId ? candidate : current;
+  }
+  return current;
+}
 function mapSemesterLabel(raw) {
   const txt = String(raw || '').trim();
   const v = txt.toLowerCase();
@@ -1652,7 +1669,11 @@ export default function CourseLoading() {
     const byKey = new Map();
     const addKey = (key, value) => {
       if (!key) return;
-      if (!byKey.has(key)) byKey.set(key, value);
+      if (!byKey.has(key)) {
+        byKey.set(key, value);
+        return;
+      }
+      byKey.set(key, choosePreferredProspectusEntry(byKey.get(key), value));
     };
     (Array.isArray(prospectusStatusSource) ? prospectusStatusSource : []).forEach((p) => {
       const active = (() => {
@@ -1679,14 +1700,6 @@ export default function CourseLoading() {
   const getProspectusActivityMeta = React.useCallback((row) => {
     if (!row) return { active: true, matched: null };
     const directProspectusActive = row?.prospectus?.isActive;
-    if (typeof directProspectusActive === 'boolean') {
-      return { active: directProspectusActive, matched: row?.prospectus || null };
-    }
-    const directId = row?.prospectusId ?? row?.prospectus_id ?? row?.prospectus?.id ?? row?.id;
-    if (directId != null && prospectusStatusIndex.byId.has(String(directId))) {
-      const hit = prospectusStatusIndex.byId.get(String(directId));
-      return { active: hit.active, matched: hit.row };
-    }
     const code = normalizeLookupCode(row.course_name || row.courseName || row.code);
     const title = normalizeLookupText(row.course_title || row.courseTitle || row.title);
     const prog = normalizeProgramCode(row.programcode || row.program || '');
@@ -1698,10 +1711,28 @@ export default function CourseLoading() {
       ['', '', term, code, title].join('|'),
       ['', '', '', code, title].join('|'),
     ];
-    for (const key of keys) {
-      const hit = prospectusStatusIndex.byKey.get(key);
-      if (hit) return { active: hit.active, matched: hit.row };
+    const keyedHit = (() => {
+      for (const key of keys) {
+        const hit = prospectusStatusIndex.byKey.get(key);
+        if (hit) return hit;
+      }
+      return null;
+    })();
+    if (typeof directProspectusActive === 'boolean') {
+      if (!directProspectusActive && keyedHit?.active) {
+        return { active: true, matched: keyedHit.row };
+      }
+      return { active: directProspectusActive, matched: row?.prospectus || keyedHit?.row || null };
     }
+    const directId = row?.prospectusId ?? row?.prospectus_id ?? row?.prospectus?.id ?? row?.id;
+    if (directId != null && prospectusStatusIndex.byId.has(String(directId))) {
+      const hit = prospectusStatusIndex.byId.get(String(directId));
+      if (!hit.active && keyedHit?.active) {
+        return { active: true, matched: keyedHit.row };
+      }
+      return { active: hit.active, matched: hit.row };
+    }
+    if (keyedHit) return { active: keyedHit.active, matched: keyedHit.row };
     return { active: true, matched: null };
   }, [normalizeLookupCode, normalizeLookupText, prospectusStatusIndex]);
   const decorateProspectusActivity = React.useCallback((row, mapped = false) => {
