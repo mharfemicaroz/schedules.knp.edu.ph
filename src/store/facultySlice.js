@@ -10,6 +10,7 @@ const initialState = {
     department: '',
     designation: '',
     employment: '',
+    active: '',
     rank: '',
     email: '',
     load_release_units: '',
@@ -66,10 +67,19 @@ export const selectFilteredFaculty = createSelector([selectAllFaculty, selectFac
   const q = String(f.q || '').toLowerCase().trim();
   const matches = (v, needle) => !needle || String(v || '').toLowerCase().includes(String(needle).toLowerCase());
   const val = (x, ...keys) => keys.map(k => x?.[k]).find(v => v != null && v !== '');
+  const isActive = (row) => {
+    const raw = row?.isActive ?? row?.is_active;
+    if (typeof raw === 'boolean') return raw;
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return true;
+    return ['true', '1', 'yes', 'active'].includes(s);
+  };
   return items.filter(x => {
     const name = val(x, 'name', 'faculty', 'instructorName', 'instructor', 'full_name');
     const dept = val(x, 'department', 'dept', 'department_name', 'departmentName');
     const email = val(x, 'email');
+    if (f.active === 'true' && !isActive(x)) return false;
+    if (f.active === 'false' && isActive(x)) return false;
     return (
       (!q || [name, email, dept].some(v => matches(v, q))) &&
       matches(dept, f.department) &&

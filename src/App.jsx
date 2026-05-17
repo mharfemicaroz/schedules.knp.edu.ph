@@ -17,7 +17,7 @@ import ViewsSession from './pages/ViewsSession';
 import BlockSchedule from './pages/BlockSchedule';
 import ConflictSchedules from './pages/ConflictSchedules';
 import UnassignedSchedules from './pages/UnassignedSchedules';
-import AdminFaculty from './pages/AdminFaculty';
+import AdminFaculty from './pages/AdminFacultyPage';
 import AdminUsers from './pages/AdminUsers';
 import AdminGuestLogs from './pages/AdminGuestLogs';
 import AdminBlockSettings from './pages/AdminBlockSettings';
