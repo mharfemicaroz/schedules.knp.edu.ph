@@ -159,7 +159,15 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
     const ql = norm(q).replace(/\s+/g, ' ');
     const eq = (a, b) => norm(a) === norm(b);
     const first = (obj, ...keys) => keys.map(k => obj?.[k]).find(v => v != null && String(v).trim() !== '');
+    const isActive = (row) => {
+      const raw = row?.isActive ?? row?.is_active;
+      if (typeof raw === 'boolean') return raw;
+      const s = String(raw || '').trim().toLowerCase();
+      if (!s) return true;
+      return ['true', '1', 'yes', 'active'].includes(s);
+    };
     return (faculties || [])
+      .filter(f => isActive(f))
       .filter(f => {
         const deptVal = first(f, 'department','dept','department_name','departmentName');
         return !department || eq(deptVal, department);

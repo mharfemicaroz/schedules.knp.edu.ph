@@ -162,6 +162,13 @@ function normalizeBlockLookupCode(value) {
 }
 function normalizeProgramCode(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 function extractYearDigits(val) { const m = String(val ?? '').match(/(\d+)/); return m ? m[1] : ''; }
+function isFacultyActive(row) {
+  const raw = row?.isActive ?? row?.is_active;
+  if (typeof raw === 'boolean') return raw;
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return true;
+  return ['true', '1', 'yes', 'active'].includes(s);
+}
 function programBase(s) {
   const txt = String(s || '').trim().toUpperCase();
   if (!txt) return '';
@@ -1597,7 +1604,9 @@ export default function CourseLoading() {
           }
           return out;
         };
-        const optsRaw = (data || []).map(f => ({
+        const optsRaw = (data || [])
+          .filter((f) => isFacultyActive(f))
+          .map(f => ({
           id: f.id,
           label: f.faculty || f.name || f.full_name || String(f.id),
           value: f.faculty || f.name || f.full_name || String(f.id),
@@ -1617,6 +1626,7 @@ export default function CourseLoading() {
           designation: f.designation,
           rank: f.rank,
           facultyProfile: f.facultyProfile,
+          isActive: f.isActive ?? f.is_active,
         }));
         const opts = optsRaw.map(enrich);
         setFacOptions(opts);
@@ -3274,6 +3284,7 @@ const prefill = hit ? {
       return false;
     };
     return (facultyAll || []).filter(f => {
+      if (!isFacultyActive(f)) return false;
       const name = norm(f.name || f.faculty || f.instructorName || f.instructor || f.full_name);
       const deptRaw = String(f.department || f.dept || f.department_name || f.departmentName || '').toUpperCase();
       const dept = deptRaw.toLowerCase();
