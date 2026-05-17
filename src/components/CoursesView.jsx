@@ -94,6 +94,12 @@ export default function CoursesView({ settingsLoadOverride = null }) {
   const role = String(authUser?.role || '').toLowerCase();
   const isAdmin = (role === 'admin' || role === 'manager' || role === 'sa');
   const settingsLoad = settingsLoadOverride || settings?.schedulesLoad || { school_year: '', semester: '' };
+  const reloadSchedulesForLoad = React.useCallback(async () => {
+    return dispatch(loadAllSchedules({
+      school_year: settingsLoad?.school_year || undefined,
+      semester: settingsLoad?.semester || undefined,
+    }));
+  }, [dispatch, settingsLoad?.school_year, settingsLoad?.semester]);
   const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
   const [allowedDepts, setAllowedDepts] = React.useState(null); // null=unknown, []=none
   const [remoteVacantCounts, setRemoteVacantCounts] = React.useState(new Map());
@@ -806,7 +812,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
   // Helper: reload schedules + remap current course rows
   const reloadMapping = React.useCallback(async () => {
     setMapLoading(true);
-    try { await dispatch(loadAllSchedules()); } catch {}
+    try { await reloadSchedulesForLoad(); } catch {}
     try {
       const serverMap = await api.getCourseMapping({
         programcode: program || (selectedCourse?.programcode || selectedCourse?.program),
@@ -894,7 +900,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       setRows(freshRows);
     } catch {}
     finally { setMapLoading(false); }
-  }, [blocks, mappedSchedules, program, selectedCourse, year, dispatch, settingsLoad?.school_year, settingsLoad?.semester]);
+  }, [blocks, mappedSchedules, program, selectedCourse, year, reloadSchedulesForLoad, settingsLoad?.school_year, settingsLoad?.semester]);
   const openResolve = (i) => {
     const r = rows[i];
     if (!r || !Array.isArray(r._conflictDetails)) return;
@@ -1349,7 +1355,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                 setDelBusy(true);
                 try {
                   await api.deleteSchedule(r._existingId);
-                  try { await dispatch(loadAllSchedules()); } catch {}
+                  try { await reloadSchedulesForLoad(); } catch {}
                   try {
                     const serverMap = await api.getCourseMapping({
                       programcode: program || (selectedCourse?.programcode || selectedCourse?.program),

@@ -1623,6 +1623,12 @@ export default function CourseLoading() {
     school_year: hasLoadOverride ? resolvedLoadSchoolYear : defaultLoadSchoolYear,
     semester: hasLoadOverride ? resolvedLoadSemester : defaultLoadSemester,
   }), [defaultLoadSchoolYear, defaultLoadSemester, hasLoadOverride, resolvedLoadSchoolYear, resolvedLoadSemester]);
+  const reloadSchedulesForLoad = React.useCallback(async () => {
+    return dispatch(loadAllSchedules({
+      school_year: settingsLoad?.school_year || undefined,
+      semester: settingsLoad?.semester || undefined,
+    }));
+  }, [dispatch, settingsLoad?.school_year, settingsLoad?.semester]);
   const loadContextKeyRef = React.useRef('');
   const schoolYearOptions = React.useMemo(() => {
     const y = new Date().getFullYear();
@@ -2709,9 +2715,9 @@ export default function CourseLoading() {
   };
   const refreshBlockListings = React.useCallback(async () => {
     try { await dispatch(loadBlocksThunk({})); } catch {}
-    try { await dispatch(loadAllSchedules()); } catch {}
+    try { await reloadSchedulesForLoad(); } catch {}
     try { await refreshMappedBlockCodesForLoad(); } catch {}
-  }, [dispatch, refreshMappedBlockCodesForLoad]);
+  }, [reloadSchedulesForLoad, dispatch, refreshMappedBlockCodesForLoad]);
 
   // Quick retry wrapper for reload to handle eventual consistency (up to 3 tries)
   const retryReloadCurrentBlock = async (maxTries = 3, delayMs = 400) => {
@@ -3426,7 +3432,7 @@ const prefill = hit ? {
 
   React.useEffect(() => {
     const key = `${settingsLoad.school_year || ''}__${settingsLoad.semester || ''}`;
-    if (loadContextKeyRef.current === '') {
+    if (!settingsLoad.school_year || !settingsLoad.semester) {
       loadContextKeyRef.current = key;
       return;
     }
@@ -3434,7 +3440,7 @@ const prefill = hit ? {
     loadContextKeyRef.current = key;
 
     try { dispatch(loadBlocksThunk({})); } catch {}
-    try { dispatch(loadAllSchedules()); } catch {}
+    try { reloadSchedulesForLoad(); } catch {}
 
     if (selectedBlock) {
       reloadCurrentBlock();
@@ -3655,7 +3661,7 @@ const prefill = hit ? {
           if (hit) return;
           await api.createSchedule(payload);
           await fetchFacultySchedules(selectedFaculty);
-          dispatch(loadAllSchedules());
+          reloadSchedulesForLoad();
           toast({ title: 'Saved', description: `${payload.courseName} created.`, status: 'success' });
         } catch (e2) {
           toast({ title: 'Save failed', description: e2?.message || 'Could not create schedule.', status: 'error' });
@@ -3705,7 +3711,7 @@ const prefill = hit ? {
         await dispatch(updateScheduleThunk({ id, changes }));
         // Refresh schedule list to reflect persisted data
         await fetchFacultySchedules(selectedFaculty);
-        dispatch(loadAllSchedules());
+        reloadSchedulesForLoad();
       } catch {}
     } finally {
       markFacSaving(id, false);
@@ -3752,7 +3758,7 @@ const prefill = hit ? {
       await fetchFacultySchedules(selectedFaculty);
       // Refresh block mapping if a block is selected
       try { if (selectedBlock) await onSelectBlock(selectedBlock); } catch {}
-      dispatch(loadAllSchedules());
+      reloadSchedulesForLoad();
       toast({ title: nextLocked ? 'Locked' : 'Unlocked', status: 'success' });
     } catch (e) {
       toast({ title: 'Action failed', description: e?.message || `Could not ${nextLocked ? 'lock' : 'unlock'} schedule.`, status: 'error' });
@@ -3811,7 +3817,7 @@ const prefill = hit ? {
       await fetchFacultySchedules(selectedFaculty);
       // Also refresh block view mapping if a block is selected
       try { if (selectedBlock) await onSelectBlock(selectedBlock); } catch {}
-      try { dispatch(loadAllSchedules()); } catch {}
+      try { reloadSchedulesForLoad(); } catch {}
       toast({ title: 'Deleted', description: `${item.code || item.courseName} removed.`, status: 'success' });
     } catch (e) {
       toast({ title: 'Delete failed', description: e?.message || 'Could not delete schedule.', status: 'error' });
@@ -3916,7 +3922,7 @@ const prefill = hit ? {
       }
       await dispatch(updateScheduleThunk({ id: it.id, changes: { faculty_id: fac?.id || null } }));
       await fetchFacultySchedules(selectedFaculty);
-      dispatch(loadAllSchedules());
+      reloadSchedulesForLoad();
       toast({ title: 'Assigned', description: `Assigned ${fac?.name || fac?.faculty || 'faculty'} to ${it.code || it.courseName}.`, status: 'success' });
     } catch (e) {
       toast({ title: 'Assign failed', description: e?.message || 'Could not assign faculty.', status: 'error' });
@@ -3956,7 +3962,7 @@ const prefill = hit ? {
       if (count > 0) {
         await fetchFacultySchedules(selectedFaculty);
         try { if (selectedBlock) await onSelectBlock(selectedBlock); } catch {}
-        dispatch(loadAllSchedules());
+        reloadSchedulesForLoad();
       }
       toast({ title: nextLocked ? 'Locked' : 'Unlocked', description: `${count} schedule(s) ${nextLocked ? 'locked' : 'unlocked'}.`, status: 'success' });
     } catch (e) {
@@ -4119,7 +4125,7 @@ const prefill = hit ? {
       if (created || updated) {
         await fetchFacultySchedules(selectedFaculty);
         try { if (selectedBlock) await onSelectBlock(selectedBlock); } catch {}
-        dispatch(loadAllSchedules());
+        reloadSchedulesForLoad();
       }
       const msg = [`${updated} updated`, `${created} created`].filter(s => !s.startsWith('0 ')).join(', ') || 'No changes';
       const conflictNote = conflicts ? ` (${conflicts} blocked by conflicts)` : '';
@@ -4232,7 +4238,7 @@ const prefill = hit ? {
       // Immediately refresh block prospectus + schedules to remap UI accurately
       try { await onSelectBlock(selectedBlock); } catch {}
       // Also refresh global cache for other views
-      try { dispatch(loadAllSchedules()); } catch {}
+      try { reloadSchedulesForLoad(); } catch {}
       toast({ title: 'Deleted', description: `${row.course_name || row.courseName || row.code} removed from assignments.`, status: 'success' });
     } catch (e) {
       toast({ title: 'Delete failed', description: e?.message || 'Could not delete schedule.', status: 'error' });
@@ -4275,7 +4281,7 @@ const prefill = hit ? {
       }
       if (count > 0) {
         try { if (selectedBlock) await onSelectBlock(selectedBlock); } catch {}
-        dispatch(loadAllSchedules());
+        reloadSchedulesForLoad();
       }
       setRows(prev => prev.map((r,i) => idxs.includes(i) ? { ...r, _locked: nextLocked } : r));
       toast({ title: nextLocked ? 'Locked' : 'Unlocked', description: `${count} schedule(s) ${nextLocked ? 'locked' : 'unlocked'}.`, status: 'success' });
@@ -5217,7 +5223,7 @@ const prefill = hit ? {
         return r;
       }));
       try { await onSelectBlock(selectedBlock); } catch {}
-      try { dispatch(loadAllSchedules()); } catch {}
+      try { reloadSchedulesForLoad(); } catch {}
       toast({ title: 'Swapped', description: 'Faculty swapped successfully.', status: 'success' });
     } catch (e) {
       toast({ title: 'Swap failed', description: e?.message || 'Could not swap faculty.', status: 'error' });
@@ -5321,7 +5327,7 @@ const prefill = hit ? {
       };
       await api.resolveSchedule(c.id, body);
       try { await fetchFacultySchedules(selectedFaculty); } catch {}
-      try { dispatch(loadAllSchedules()); } catch {}
+      try { reloadSchedulesForLoad(); } catch {}
       toast({ title: 'Resolved', description: 'Replaced conflicting schedule with your edit.', status: 'success' });
     } catch (e) {
       toast({ title: 'Resolve failed', description: e?.message || 'Could not resolve the conflict.', status: 'error' });
@@ -5358,7 +5364,7 @@ const prefill = hit ? {
       } catch {}
 
       try { await onSelectBlock(selectedBlock); } catch {}
-      try { dispatch(loadAllSchedules()); } catch {}
+      try { reloadSchedulesForLoad(); } catch {}
 
       toast({ title: 'Swapped', description: 'Faculty swapped successfully.', status: 'success' });
       setSwapA(null); setSwapB(null);
@@ -5434,7 +5440,7 @@ const prefill = hit ? {
       await api.resolveSchedule(idForResolve, item);
       // Refresh block cache and global list
       try { await onSelectBlock(selectedBlock); } catch {}
-      try { dispatch(loadAllSchedules()); } catch {}
+      try { reloadSchedulesForLoad(); } catch {}
       toast({ title: 'Resolved', description: 'Replaced conflicting schedule with your new assignment.', status: 'success' });
     } catch (e) {
       toast({ title: 'Resolve failed', description: e?.message || 'Could not resolve the conflict.', status: 'error' });
@@ -5679,7 +5685,7 @@ const prefill = hit ? {
         setFreshCache(Array.isArray(fresh) ? fresh : []);
       } catch {}
       // Also refresh global cache for other views
-      try { dispatch(loadAllSchedules()); } catch {}
+      try { reloadSchedulesForLoad(); } catch {}
       const parts = [];
       if (updatedCount) parts.push(`${updatedCount} updated`);
       if (createdCount) parts.push(`${createdCount} created`);
