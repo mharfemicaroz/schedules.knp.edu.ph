@@ -137,6 +137,7 @@ export default function RoomAttendance() {
   const toast = useToast();
 
   const [attendanceInitial, setAttendanceInitial] = React.useState(null);
+  const [scheduleRows, setScheduleRows] = React.useState([]);
 
   const roleStr = String(authUser?.role || '').toLowerCase();
   const canAttend = !!authUser && (roleStr === 'admin' || roleStr === 'manager' || roleStr === 'checker' || roleStr === 'sa');
@@ -225,13 +226,66 @@ export default function RoomAttendance() {
   const [slotIndex, setSlotIndex] = React.useState(defaultSlotIndex);
 
   const prefSy = React.useMemo(() => {
-    return String(settings?.schedulesView?.school_year || '').trim();
+    return String(settings?.attendance?.school_year || settings?.schedulesView?.school_year || '').trim();
   }, [settings]);
 
   const prefSem = React.useMemo(() => {
-    const raw = settings?.schedulesView?.semester || '';
+    const raw = settings?.attendance?.semester || settings?.schedulesView?.semester || '';
     return normalizeSem(raw);
   }, [settings]);
+
+  React.useEffect(() => {
+    let active = true;
+
+    const mapScheduleRecord = (raw) => {
+      const prospectus = raw?.prospectus || {};
+      const parsedTime = parseTimeBlockToMinutes(String(raw?.time || raw?.scheduleKey || raw?.schedule || ''));
+      return {
+        ...raw,
+        id: raw?.id,
+        facultyId: raw?.facultyId || raw?.faculty_id || null,
+        faculty: raw?.faculty || raw?.facultyName || raw?.facultyProfile?.faculty || raw?.instructor || '',
+        instructor: raw?.instructor || raw?.faculty || raw?.facultyProfile?.faculty || '',
+        school_year: raw?.sy || raw?.schoolyear || raw?.schoolYear || raw?.school_year || '',
+        semester: prospectus?.semester || raw?.semester || raw?.sem || raw?.term || '',
+        term: raw?.term || raw?.sem || raw?.semester || '',
+        section: raw?.section || raw?.block || raw?.blockCode || raw?.block_code || '',
+        blockCode: raw?.blockCode || raw?.block_code || raw?.block || raw?.section || '',
+        room: raw?.room || '',
+        session: raw?.session || '',
+        time: raw?.time || raw?.schedule || '',
+        timeStartMinutes: raw?.timeStartMinutes ?? parsedTime.start,
+        timeEndMinutes: raw?.timeEndMinutes ?? parsedTime.end,
+        code: raw?.code || raw?.courseCode || prospectus?.courseCode || '',
+        courseName: raw?.courseName || raw?.course_name || prospectus?.courseName || '',
+        courseTitle: raw?.courseTitle || raw?.course_title || prospectus?.courseTitle || '',
+        programcode: raw?.programcode || raw?.program || prospectus?.programcode || '',
+        f2fSched: raw?.f2fSched || raw?.f2fsched || raw?.day || '',
+        day: raw?.day || '',
+      };
+    };
+
+    (async () => {
+      try {
+        const response = await apiService.getAllSchedules({});
+        const list = response?.data || response;
+        if (!active) return;
+        setScheduleRows(Array.isArray(list) ? list.map(mapScheduleRecord) : []);
+      } catch {
+        if (!active) return;
+        setScheduleRows([]);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const scheduleSource = React.useMemo(() => {
+    if (Array.isArray(scheduleRows) && scheduleRows.length) return scheduleRows;
+    return Array.isArray(all) ? all : [];
+  }, [scheduleRows, all]);
 
   const resolvedCalendar = React.useMemo(() => {
     return getAcademicCalendarForSchoolYear(acadData, prefSy);
@@ -260,15 +314,26 @@ export default function RoomAttendance() {
     return true;
   }
 
+  const [bySched, setBySched] = React.useState({});
+  const attendanceScheduleIds = React.useMemo(() => {
+    return new Set(
+      Object.keys(bySched || {})
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    );
+  }, [bySched]);
+
   const filteredSchedules = React.useMemo(() => {
-    return (all || []).filter((c) => {
+    return (scheduleSource || []).filter((c) => {
+      const sid = Number(c.id);
+      if (attendanceScheduleIds.has(sid)) return true;
       const syVal = String(c.school_year || c.schoolYear || c.sy || '').trim();
       if (prefSy && syVal && syVal !== prefSy) return false;
       const semVal = normalizeSem(c.semester || c.sem);
       if (prefSem && semVal && semVal !== prefSem) return false;
       return true;
     });
-  }, [all, prefSy, prefSem]);
+  }, [scheduleSource, attendanceScheduleIds, prefSy, prefSem]);
 
   const tokens = React.useCallback((s) => String(s || '').split(',').map((t) => t.trim()).filter(Boolean), []);
 
@@ -350,8 +415,6 @@ export default function RoomAttendance() {
     return null;
   }, []);
 
-  const [bySched, setBySched] = React.useState({});
-
   const loadAttendance = React.useCallback(async () => {
     const iso = selectedIso;
 
@@ -359,8 +422,16 @@ export default function RoomAttendance() {
       const arr = Array.isArray(list) ? list : list?.data || list?.rows || list?.results || [];
       const m = {};
       arr.forEach((r) => {
-        const scheduleId = Number(r.scheduleId || r.schedule_id || r.schedId || r.sched_id);
-        const status = String(r.status || '').toLowerCase();
+        const scheduleId = Number(
+          r.scheduleId ||
+          r.schedule_id ||
+          r.schedId ||
+          r.sched_id ||
+          r.schedule?.id ||
+          r.schedule?.scheduleId ||
+          r.schedule?.schedule_id
+        );
+        const status = String(r.status || r.attendance || r.attendance_status || '').toLowerCase();
         if (scheduleId) m[scheduleId] = status;
       });
       return m;
