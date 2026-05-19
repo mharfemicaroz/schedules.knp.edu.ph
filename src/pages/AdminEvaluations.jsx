@@ -316,7 +316,42 @@ export default function AdminEvaluations() {
     return Array.from(list).sort();
   }, [settings]);
 
-  const openSummary = async (mode, id, title, ctx = {}) => {
+  const appendActiveSummaryFilters = React.useCallback((search, mode) => {
+    const add = (key, value) => {
+      if (value === undefined || value === null) return;
+      const trimmed = String(value).trim();
+      if (!trimmed) return;
+      search.set(key, trimmed);
+    };
+
+    add('sy', filters?.sy);
+    add('schoolyear', filters?.sy);
+    add('sem', filters?.sem);
+    add('semester', filters?.sem);
+    add('term', filters?.term);
+
+    if (mode === 'student') {
+      add('programcode', filters?.programcode);
+      return search;
+    }
+
+    if (mode === 'schedule') {
+      add('programcode', filters?.programcode);
+      add('coursecode', filters?.coursecode);
+      add('faculty', filters?.faculty);
+      return search;
+    }
+
+    if (mode === 'faculty') {
+      add('faculty', filters?.faculty);
+      add('dept', filters?.dept);
+      add('employment', filters?.employment);
+    }
+
+    return search;
+  }, [filters]);
+
+  const openSummary = React.useCallback(async (mode, id, title, ctx = {}) => {
     setSummaryMode(mode);
     setSummaryId(id);
     setSummaryTitle(title || 'Summary');
@@ -337,11 +372,12 @@ export default function AdminEvaluations() {
             };
           }
         } catch {}
-        try {
-          const sy = settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || '';
-          const sem = settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || '';
-          ctx = { ...ctx, sy, sem };
-        } catch {}
+        ctx = {
+          ...ctx,
+          sy: ctx?.sy || String(filters?.sy || '').trim(),
+          sem: ctx?.sem || String(filters?.sem || '').trim(),
+          term: ctx?.term || String(filters?.term || '').trim(),
+        };
         setSummaryCtx(ctx);
       }
       if (mode === 'schedule') {
@@ -385,6 +421,7 @@ export default function AdminEvaluations() {
       } else {
         search.set('id', String(id));
       }
+      appendActiveSummaryFilters(search, mode);
       const data = await apiService.requestAbs(`/evaluations/summary?${search.toString()}`, { method: 'GET' });
       setSummary(data || null);
     } catch {
@@ -392,7 +429,7 @@ export default function AdminEvaluations() {
     } finally {
       setSummaryLoading(false);
     }
-  };
+  }, [appendActiveSummaryFilters, filters, summaryDisc]);
 
   const onPrint = () => {
     if (summaryMode === 'student') {
