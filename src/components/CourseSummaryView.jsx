@@ -290,6 +290,7 @@ export default function CourseSummaryView({ viewOnly = false, settingsLoadOverri
         if (sem) params.semester = sem;
         if (prog) params.programcode = prog;
         if (threshold != null) params.thresholdUnits = threshold;
+        params.active = 'true';
         const res = await apiService.getProspectusStats(params);
         if (updateFacultyOnly) {
           setStats((prev) => ({ ...(prev || {}), facultySummary: res?.facultySummary }));
