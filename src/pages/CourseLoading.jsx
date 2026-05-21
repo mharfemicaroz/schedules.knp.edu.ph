@@ -3587,6 +3587,14 @@ const prefill = hit ? {
         courseTitle: base.courseTitle || base.course_title || '',
         session: base.session || '',
       };
+      if (shouldSkipConflictCheck(payload)) {
+        setFacEdits(prev => {
+          const curr = prev[id];
+          if (verToken != null && curr && curr._ver !== verToken) return prev;
+          return { ...prev, [id]: { ...curr, _checking: false, _conflict: false, _details: [] } };
+        });
+        return;
+      }
       const res = await api.checkScheduleConflict(id, payload);
       let conflict = !!res?.conflict;
       let details = Array.isArray(res?.details) ? res.details.slice() : [];
@@ -3633,6 +3641,9 @@ const prefill = hit ? {
   };
 
   const runServerConflictCheck = async (idForCheck, payload, { label } = {}) => {
+    if (shouldSkipConflictCheck(payload)) {
+      return false;
+    }
     try {
       const res = await api.checkScheduleConflict(idForCheck || 0, payload);
       if (res?.conflict) {
@@ -4443,7 +4454,7 @@ const prefill = hit ? {
     const hasDay = candDaysParsed.length > 0 && !candDaysParsed.includes('ANY');
     const termN = normalizeTermForCompare(term).toLowerCase();
     const termKnown = !!termN;
-    if (!hasTime || !hasDay || !termKnown) {
+    if (isPlaceholderValue(facultyName) || !hasTime || !hasDay || !termKnown) {
       return { conflict: false, details: [] };
     }
     if (isPELike() && (isTBA(timeStr) || isTBA(term) || isTBA(day))) {
@@ -4554,6 +4565,13 @@ const prefill = hit ? {
         courseName: row.course_name || row.courseName || row.code || '',
         courseTitle: row.course_title || row.courseTitle || row.title || ''
       };
+      if (shouldSkipConflictCheck(payload)) {
+        const stillLatest = rowCheckSeqRef.current.get(idx) === mySeq;
+        if (stillLatest) {
+          setRows(prev => prev.map((r,i) => i===idx ? { ...r, _status: r._existingId ? 'Assigned' : 'Unassigned', _conflict: false, _conflictNote: '', _conflictDetails: [], _checking: false } : r));
+        }
+        return;
+      }
       const idForCheck = row._existingId || 0;
       const res = await api.request(`/${encodeURIComponent(idForCheck)}/check`, { method: 'POST', body: JSON.stringify(payload) });
       let conflict = !!(res?.conflict);
@@ -4926,6 +4944,20 @@ const prefill = hit ? {
     // Treat common placeholder values as empty
     return up === 'TBA' || up === '-' || up === 'NA' || up === 'N/A' || up === 'NONE' || up === 'NULL' || up === '0' || up === 'TBD';
   }, []);
+  const isPlaceholderValue = React.useCallback((v) => {
+    const s = String(v ?? '').trim();
+    if (!s) return false;
+    const up = s.toUpperCase();
+    return up === 'TBA' || up === '-' || up === 'NA' || up === 'N/A' || up === 'NONE' || up === 'NULL' || up === 'TBD';
+  }, []);
+  const shouldSkipConflictCheck = React.useCallback((payload = {}) => {
+    return (
+      isPlaceholderValue(payload.faculty) ||
+      isPlaceholderValue(payload.term) ||
+      isBlankTime(payload.time) ||
+      isBlankTime(payload.day)
+    );
+  }, [isBlankTime, isPlaceholderValue]);
   const hasMissingTermInBlock = React.useMemo(() => {
     if (!selectedBlock) return false;
     const key = normalizeBlockCode(selectedBlock.blockCode || selectedBlock.section || '');
@@ -5529,6 +5561,7 @@ const prefill = hit ? {
     // Faculty-time-day conflicts within the same load term/SY
     pending.forEach((r) => {
       if (!r._faculty || !r._term || !r._time) return;
+      if (shouldSkipConflictCheck({ faculty: r._faculty, term: r._term, time: r._time, day: r._day })) return;
       const termN = String(normalizeTermForCompare(r._term)).toLowerCase();
       dayKeys(r._day).forEach((d) => {
         const k = [String(r._faculty).toLowerCase(), termN, d, timeKey(r._time)].join('|');
@@ -5537,6 +5570,7 @@ const prefill = hit ? {
       });
     });
     source.forEach((c) => {
+      if (shouldSkipConflictCheck({ faculty: c.faculty || c.instructor || '', term: c.term || c.semester || '', time: c.time, day: c.day })) return;
       const fac = String(c.faculty || c.instructor || '').toLowerCase();
       const term = String(normalizeTermForCompare(c.term || c.semester || '')).toLowerCase();
       dayKeys(c.day).forEach((d) => {
@@ -5576,6 +5610,7 @@ const prefill = hit ? {
     return (r) => {
       // Faculty/day/time conflict
       if (r._faculty && r._term && r._time) {
+        if (shouldSkipConflictCheck({ faculty: r._faculty, term: r._term, time: r._time, day: r._day })) return false;
         const termN = String(normalizeTermForCompare(r._term)).toLowerCase();
         for (const d of dayKeys(r._day)) {
           const k = [String(r._faculty).toLowerCase(), termN, d, timeKey(r._time)].join('|');

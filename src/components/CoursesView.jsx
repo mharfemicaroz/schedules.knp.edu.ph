@@ -91,6 +91,10 @@ const toFullSemester = (t) => {
   if (v.startsWith('s')) return 'Summer';
   return t;
 };
+const isPlaceholderAssignment = (v) => {
+  const s = String(v ?? '').trim().toUpperCase();
+  return s === 'TBA' || s === 'TBD' || s === 'N/A' || s === 'NA' || s === 'NONE' || s === 'NULL' || s === '-';
+};
 
 export default function CoursesView({ settingsLoadOverride = null }) {
   const toast = useToast();
@@ -684,6 +688,15 @@ export default function CoursesView({ settingsLoadOverride = null }) {
         blockCode: row.blockCode,
         courseName: row.courseName,
       };
+      if (
+        isPlaceholderAssignment(payload.faculty) ||
+        isPlaceholderAssignment(payload.term) ||
+        isPlaceholderAssignment(payload.time) ||
+        isPlaceholderAssignment(payload.day)
+      ) {
+        setRows(prev => prev.map((r,idx) => idx===i ? { ...r, _checking: false, _conflict: false, _conflictDetails: [], _status: r._existingId ? 'Assigned' : 'Unassigned' } : r));
+        return;
+      }
       const idForCheck = row._existingId || 0;
       const res = await api.checkScheduleConflict(idForCheck, payload);
       const conflict = !!res?.conflict || !inAllowedSession;
