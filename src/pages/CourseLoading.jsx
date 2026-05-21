@@ -3244,8 +3244,19 @@ const prefill = hit ? {
     const idx = assignIndex;
     if (idx == null || !rows[idx]) { setAssignOpen(false); setAssignIndex(null); return; }
     const name = fac?.name || fac?.faculty || fac?.full_name || '';
-    setRows(prev => prev.map((r,i) => i===idx ? { ...r, _faculty: name, _facultyId: fac?.id || null } : r));
-    setTimeout(() => { try { checkRowConflictFresh(idx, { ...rows[idx], _faculty: name }); } catch {} }, 0);
+    const isTba = String(name || '').trim().toUpperCase() === 'TBA';
+    const nextRow = {
+      ...rows[idx],
+      _faculty: name,
+      _facultyId: fac?.id || null,
+      ...(isTba ? {
+        _term: String(rows[idx]?._term || canonicalTerm(settingsLoad?.semester || '') || '').trim(),
+        _time: String(rows[idx]?._time || '').trim() || 'TBA',
+        _day: String(rows[idx]?._day || rows[idx]?.day || '').trim() || 'MON-FRI',
+      } : {}),
+    };
+    setRows(prev => prev.map((r,i) => i===idx ? nextRow : r));
+    setTimeout(() => { try { checkRowConflictFresh(idx, nextRow); } catch {} }, 0);
     setAssignOpen(false); setAssignIndex(null);
   };
 
@@ -3959,9 +3970,10 @@ const prefill = hit ? {
     const it = facultySchedules.items[idx];
     if (idx == null || !it) { setFacAssignOpen(false); setFacAssignIndex(null); return; }
     try {
+      const targetName = fac?.name || fac?.faculty || '';
+      const isTba = String(targetName || '').trim().toUpperCase() === 'TBA';
       // Enforce load limit for non-admin: adding this course to target faculty
-      if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0)) {
-        const targetName = fac?.name || fac?.faculty || '';
+      if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) && !isTba) {
         const meta = findFacultyById(fac?.id) || findFacultyByName(targetName);
         const max = maxUnitsFor(meta);
         const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); qs.set("instructor", targetName); if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
@@ -3973,10 +3985,19 @@ const prefill = hit ? {
           return;
         }
       }
-      await dispatch(updateScheduleThunk({ id: it.id, changes: { faculty_id: fac?.id || null } }));
-      await fetchFacultySchedules(selectedFaculty);
+      await dispatch(updateScheduleThunk({
+        id: it.id,
+        changes: {
+          faculty_id: fac?.id || null,
+          instructor: targetName || null,
+          term: String(it.term || canonicalTerm(settingsLoad?.semester || '') || '').trim(),
+          time: String(it.schedule || it.time || '').trim() || (isTba ? 'TBA' : ''),
+          day: String(it.day || '').trim() || 'MON-FRI',
+        },
+      }));
+      await fetchFacultySchedules(isTba ? selectedFaculty : selectedFaculty);
       reloadSchedulesForLoad();
-      toast({ title: 'Assigned', description: `Assigned ${fac?.name || fac?.faculty || 'faculty'} to ${it.code || it.courseName}.`, status: 'success' });
+      toast({ title: 'Assigned', description: `Assigned ${targetName || 'faculty'} to ${it.code || it.courseName}.`, status: 'success' });
     } catch (e) {
       toast({ title: 'Assign failed', description: e?.message || 'Could not assign faculty.', status: 'error' });
     } finally {

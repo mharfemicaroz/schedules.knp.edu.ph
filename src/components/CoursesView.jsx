@@ -789,7 +789,17 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     if (assignIndex == null) return;
     const facultyId = fac?.facultyId ?? fac?.id ?? fac?.value ?? null;
     const facultyName = fac?.facultyName ?? fac?.name ?? fac?.faculty ?? fac?.full_name ?? fac?.label ?? '';
-    handleChange(assignIndex, { _facultyId: facultyId, _faculty: facultyName });
+    const row = rows[assignIndex];
+    const isTba = String(facultyName || '').trim().toUpperCase() === 'TBA';
+    handleChange(assignIndex, {
+      _facultyId: facultyId,
+      _faculty: facultyName,
+      ...(isTba ? {
+        _term: String(row?._term || toShortTerm(settingsLoad?.semester || '') || '').trim(),
+        _time: String(row?._time || '').trim() || 'TBA',
+        _day: String(row?._day || row?.day || '').trim() || 'MON-FRI',
+      } : {}),
+    });
     setAssignOpen(false);
     setAssignIndex(null);
   };
