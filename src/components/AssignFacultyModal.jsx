@@ -10,6 +10,15 @@ import { buildConflicts, buildCrossFacultyOverlaps, parseF2FDays, parseTimeBlock
 
 import { buildIndexes, buildFacultyStats, buildFacultyScoreMap, normalizeSem } from '../utils/facultyScoring';
 
+const TBA_FACULTY = {
+  id: null,
+  name: 'TBA',
+  faculty: 'TBA',
+  department: 'Placeholder',
+  dept: 'Placeholder',
+  employment: 'TBA',
+  _isTBA: true,
+};
 
 
 function useIndexes(courses) {
@@ -753,6 +762,7 @@ const scoreOf = useMemo(
       // Exclude the current faculty (by id or normalized name)
       const currId = (schedule?.facultyId != null) ? String(schedule.facultyId) : '';
       const currName = String(schedule?.faculty || schedule?.facultyName || schedule?.instructor || '').toLowerCase().replace(/[^a-z0-9]/g,'');
+      if (currName !== 'tba') out.push(TBA_FACULTY);
       for (const f of filtered) {
         const fid = (f?.id != null) ? String(f.id) : '';
         const fname = String(f?.name || f?.faculty || f?.full_name || '').toLowerCase().replace(/[^a-z0-9]/g,'');
@@ -770,6 +780,7 @@ const scoreOf = useMemo(
   const sortedEligibles = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
     const get = (f) => {
+      if (f?._isTBA) return sortKey === 'score' ? 0 : '';
       if (sortKey === 'score') return (scoreOf.get(String(f.id))?.score) || 0;
       if (sortKey === 'name') return String(f.name || f.faculty || f.full_name || '').toLowerCase();
       if (sortKey === 'department') return String(f.department || f.dept || '').toLowerCase();
@@ -782,6 +793,10 @@ const scoreOf = useMemo(
       return '';
     };
     const arr = eligibles.slice().sort((a,b) => {
+      if (a?._isTBA || b?._isTBA) {
+        if (a?._isTBA && b?._isTBA) return 0;
+        return a?._isTBA ? -1 : 1;
+      }
       const va = get(a), vb = get(b);
       if (typeof va === 'number' && typeof vb === 'number') {
         if (sortKey === 'score') {
@@ -890,35 +905,43 @@ const scoreOf = useMemo(
                       const s = stats.get(String(f.id)) || { load: 0, release: 0, overload: 0, courses: 0 };
                       const entry = scoreOf.get(String(f.id)) || { score: 0, parts: {} };
                       const score = entry.score;
+                      const isTBA = !!f?._isTBA;
                       const overloadBadge = s.overload > 0 ? (
                         <Badge colorScheme="red" ml={2}>Overload +{s.overload}</Badge>
                       ) : null;
                       return (
-                        <Tr key={f.id}>
+                        <Tr key={isTBA ? 'tba-option' : f.id}>
                           <Td>
                             <VStack align="start" spacing={0}>
                               <HStack>
                                 <Text fontWeight="700">{f.name || f.faculty || f.full_name || '-'}</Text>
+                                {isTBA && <Badge colorScheme="purple">Placeholder</Badge>}
                                 {overloadBadge}
                               </HStack>
-                              <Text fontSize="xs" color="gray.500">{f.email || ''}</Text>
+                              <Text fontSize="xs" color="gray.500">{isTBA ? 'Assign without creating a faculty record' : (f.email || '')}</Text>
                             </VStack>
                           </Td>
                           <Td>{f.department || f.dept || '-'}</Td>
                           <Td>{f.employment || '-'}</Td>
-                          <Td isNumeric>{s.load}</Td>
-                          <Td isNumeric>{s.release}</Td>
-                          <Td isNumeric color={s.overload > 0 ? 'red.500' : undefined}>{s.overload}</Td>
-                          <Td isNumeric>{s.courses}</Td>
+                          <Td isNumeric>{isTBA ? '-' : s.load}</Td>
+                          <Td isNumeric>{isTBA ? '-' : s.release}</Td>
+                          <Td isNumeric color={!isTBA && s.overload > 0 ? 'red.500' : undefined}>{isTBA ? '-' : s.overload}</Td>
+                          <Td isNumeric>{isTBA ? '-' : s.courses}</Td>
                           <Td isNumeric>
-                            <Tooltip hasArrow placement="top" label={`Click to view score breakdown`}>
-                              <Button size="xs" variant="ghost" colorScheme="purple" onClick={()=>{ setScoreDetail({ fac: f, entry }); scoreDisc.onOpen(); }}>
-                                {score.toFixed(2)}
-                              </Button>
-                            </Tooltip>
+                            {isTBA ? (
+                              <Text fontSize="xs" color="gray.500">TBA</Text>
+                            ) : (
+                              <Tooltip hasArrow placement="top" label={`Click to view score breakdown`}>
+                                <Button size="xs" variant="ghost" colorScheme="purple" onClick={()=>{ setScoreDetail({ fac: f, entry }); scoreDisc.onOpen(); }}>
+                                  {score.toFixed(2)}
+                                </Button>
+                              </Tooltip>
+                            )}
                           </Td>
                           <Td textAlign="right">
-                            <Button size="sm" colorScheme="blue" onClick={()=> { setPendingFac(f); confirm.onOpen(); }}>Assign</Button>
+                            <Button size="sm" colorScheme={isTBA ? 'purple' : 'blue'} onClick={()=> { setPendingFac(f); confirm.onOpen(); }}>
+                              {isTBA ? 'Assign TBA' : 'Assign'}
+                            </Button>
                           </Td>
                         </Tr>
                       );
