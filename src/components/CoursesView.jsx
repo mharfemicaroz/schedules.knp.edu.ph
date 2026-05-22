@@ -463,106 +463,78 @@ export default function CoursesView({ settingsLoadOverride = null }) {
   const [rows, setRows] = React.useState([]);
 
   React.useEffect(() => {
-    let ignore = false;
-    (async () => {
-      if (!selectedCourse) { setRows([]); return; }
-      const codeKey = normCode(selectedCourse.courseName || selectedCourse.course_name || selectedCourse.code);
-      const titleKey = norm(selectedCourse.courseTitle || selectedCourse.course_title || selectedCourse.title);
-      const courseProgRaw = normalizeProgramCode(selectedCourse.programcode || selectedCourse.program || program);
-      const courseProgBase = normalizeProgramCode((courseProgRaw.split('-')[0] || courseProgRaw));
-      const courseYear = extractYearDigits(selectedCourse.yearlevel || year);
-      const blocksFor = (visibleBlocks || [])
-        .filter(b => {
-          const meta = parseBlockMeta(b.blockCode);
-          const metaProg = normalizeProgramCode(meta.programcode || '');
-          const metaProgBase = normalizeProgramCode((meta.programcode || '').split('-')[0] || '');
-          const progMatch = (
-            (!!courseProgRaw && (metaProg === courseProgRaw || metaProgBase === courseProgRaw || metaProg === courseProgBase || metaProgBase === courseProgBase)) ||
-            (!courseProgRaw && (!!program ? metaProg.includes(normalizeProgramCode(program)) : true))
-          );
-          const metaYear = extractYearDigits(meta.yearlevel || '');
-          const yearMatch = courseYear ? (metaYear === courseYear) : (!!year ? String(meta.yearlevel || '').includes(String(year)) : true);
-          return progMatch && yearMatch;
-        })
-        .sort((a,b) => String(a.blockCode).localeCompare(String(b.blockCode)));
+    if (!selectedCourse) { setRows([]); return; }
 
-      // Try server-provided mapping if available
-      let serverMap = null;
-      try {
-        serverMap = await api.getCourseMapping({
-          programcode: program || (selectedCourse?.programcode || selectedCourse?.program),
-          yearlevel: year || selectedCourse?.yearlevel,
-          course: selectedCourse.courseName || selectedCourse.code,
-          courseTitle: selectedCourse.courseTitle || selectedCourse.course_title || selectedCourse.title,
-          prospectusId: selectedCourse.id ?? selectedCourse.prospectusId ?? selectedCourse.prospectus_id,
-          schoolyear: settingsLoad?.school_year || undefined,
-          semester: settingsLoad?.semester || undefined,
-        });
-      } catch {}
+    const codeKey = normCode(selectedCourse.courseName || selectedCourse.course_name || selectedCourse.code);
+    const titleKey = norm(selectedCourse.courseTitle || selectedCourse.course_title || selectedCourse.title);
+    const courseProgRaw = normalizeProgramCode(selectedCourse.programcode || selectedCourse.program || program);
+    const courseProgBase = normalizeProgramCode((courseProgRaw.split('-')[0] || courseProgRaw));
+    const courseYear = extractYearDigits(selectedCourse.yearlevel || year);
 
-      const findExisting = (blockCode) => {
-        // Prefer server map if provided
-        if (serverMap && Array.isArray(serverMap.items)) {
-          const hit = serverMap.items.find(x => String(x.blockCode) === String(blockCode));
-          if (hit) return {
-            id: hit.id,
-            semester: hit.term || hit.semester,
-            day: hit.day,
-            schedule: hit.time || hit.schedule,
-            time: hit.time || hit.schedule,
-            faculty: hit.faculty || hit.instructor,
-            facultyId: hit.facultyId || hit.faculty_id,
-          };
-        }
-        const match = (mappedSchedules || []).find(s => {
-          const b = String(s.blockCode || s.block || '').trim();
-          const cc = normCode(s.courseName || s.code || '');
-          const tt = norm(s.title || s.courseTitle || '');
-          return b === String(blockCode) && cc === codeKey && tt === titleKey;
-        });
-        return match || null;
-      };
+    const blocksFor = (visibleBlocks || [])
+      .filter(b => {
+        const meta = parseBlockMeta(b.blockCode);
+        const metaProg = normalizeProgramCode(meta.programcode || '');
+        const metaProgBase = normalizeProgramCode((meta.programcode || '').split('-')[0] || '');
+        const progMatch = (
+          (!!courseProgRaw && (metaProg === courseProgRaw || metaProgBase === courseProgRaw || metaProg === courseProgBase || metaProgBase === courseProgBase)) ||
+          (!courseProgRaw && (!!program ? metaProg.includes(normalizeProgramCode(program)) : true))
+        );
+        const metaYear = extractYearDigits(meta.yearlevel || '');
+        const yearMatch = courseYear ? (metaYear === courseYear) : (!!year ? String(meta.yearlevel || '').includes(String(year)) : true);
+        return progMatch && yearMatch;
+      })
+      .sort((a,b) => String(a.blockCode).localeCompare(String(b.blockCode)));
 
-      const initRows = blocksFor.map(b => {
-        const e = findExisting(b.blockCode);
-        const assigned = !!(e && e.id);
-        const locked = String(e?.lock || '').toLowerCase();
-        const baseTerm = toShortTerm(e?.term) || toShortTerm(e?.sem) || toShortTerm(e?.semester) || '';
-        const baseTime = e?.schedule || e?.time || '';
-        const baseDay = e?.day || 'MON-FRI';
-        const baseFac = e?.faculty || e?.instructor || e?.facultyName || '';
-        const baseFacId = e?.facultyId || e?.faculty_id || null;
-        return {
-          id: e?.id || `new:${b.id}:${codeKey}`,
-          _existingId: e?.id || null,
-          _status: assigned ? 'Assigned' : 'Unassigned',
-          _locked: locked === 'yes' || locked === 'true' || locked === '1',
-          blockId: b.id,
-          blockCode: b.blockCode,
-          courseName: selectedCourse.courseName || selectedCourse.code,
-          courseTitle: selectedCourse.courseTitle || selectedCourse.title || '',
-          unit: selectedCourse.unit,
-          programcode: selectedCourse.programcode || selectedCourse.program || program,
-          yearlevel: selectedCourse.yearlevel || year,
-          session: b.session || null,
-          _selected: false,
-          _term: baseTerm,
-          _day: baseDay,
-          _time: baseTime,
-          _faculty: baseFac,
-          _facultyId: baseFacId,
-          _baseTerm: baseTerm,
-          _baseTime: baseTime,
-          _baseDay: baseDay,
-          _baseFaculty: baseFac,
-          _baseFacultyId: baseFacId,
-          _prospectusInactive: !!selectedCourse?._prospectusInactive,
-        };
+    const findExisting = (blockCode) => {
+      const match = (mappedSchedules || []).find(s => {
+        const b = String(s.blockCode || s.block || '').trim();
+        const cc = normCode(s.courseName || s.code || '');
+        const tt = norm(s.title || s.courseTitle || '');
+        return b === String(blockCode) && cc === codeKey && tt === titleKey;
       });
-      if (!ignore) setRows(initRows);
-    })();
-    return () => { ignore = true; };
-  }, [selectedCourse, program, year, visibleBlocks, mappedSchedules, settingsLoad?.school_year, settingsLoad?.semester]);
+      return match || null;
+    };
+
+    const initRows = blocksFor.map(b => {
+      const e = findExisting(b.blockCode);
+      const assigned = !!(e && e.id);
+      const locked = String(e?.lock || '').toLowerCase();
+      const baseTerm = toShortTerm(e?.term) || toShortTerm(e?.sem) || toShortTerm(e?.semester) || '';
+      const baseTime = e?.schedule || e?.time || '';
+      const baseDay = e?.day || 'MON-FRI';
+      const baseFac = e?.faculty || e?.instructor || e?.facultyName || '';
+      const baseFacId = e?.facultyId || e?.faculty_id || null;
+      return {
+        id: e?.id || `new:${b.id}:${codeKey}`,
+        _existingId: e?.id || null,
+        _status: assigned ? 'Assigned' : 'Unassigned',
+        _locked: locked === 'yes' || locked === 'true' || locked === '1',
+        blockId: b.id,
+        blockCode: b.blockCode,
+        courseName: selectedCourse.courseName || selectedCourse.code,
+        courseTitle: selectedCourse.courseTitle || selectedCourse.title || '',
+        unit: selectedCourse.unit,
+        programcode: selectedCourse.programcode || selectedCourse.program || program,
+        yearlevel: selectedCourse.yearlevel || year,
+        session: b.session || null,
+        _selected: false,
+        _term: baseTerm,
+        _day: baseDay,
+        _time: baseTime,
+        _faculty: baseFac,
+        _facultyId: baseFacId,
+        _baseTerm: baseTerm,
+        _baseTime: baseTime,
+        _baseDay: baseDay,
+        _baseFaculty: baseFac,
+        _baseFacultyId: baseFacId,
+        _prospectusInactive: !!selectedCourse?._prospectusInactive,
+      };
+    });
+
+    setRows(initRows);
+  }, [selectedCourse, program, year, visibleBlocks, mappedSchedules]);
 
   const anySelected = rows.some(r => r._selected);
   const canSave = anySelected && rows.filter(r => r._selected).every(r => r._term && r._time && (r._faculty || r._facultyId) && !r._checking && !r._conflict);
@@ -859,98 +831,17 @@ export default function CoursesView({ settingsLoadOverride = null }) {
   const [swapB, setSwapB] = React.useState(null);
   const [swapBusy, setSwapBusy] = React.useState(false);
 
-  // Helper: reload schedules + remap current course rows
+  // Helper: refresh schedule store only. Row remapping is handled by the selected-course effect above.
   const reloadMapping = React.useCallback(async () => {
     setMapLoading(true);
-    try { await reloadSchedulesForLoad(); } catch {}
     try {
-      const serverMap = await api.getCourseMapping({
-        programcode: program || (selectedCourse?.programcode || selectedCourse?.program),
-        yearlevel: year || selectedCourse?.yearlevel,
-        course: selectedCourse?.courseName || selectedCourse?.code,
-        courseTitle: selectedCourse?.courseTitle || selectedCourse?.course_title || selectedCourse?.title,
-        prospectusId: selectedCourse?.id ?? selectedCourse?.prospectusId ?? selectedCourse?.prospectus_id,
-        schoolyear: settingsLoad?.school_year || undefined,
-        semester: settingsLoad?.semester || undefined,
-      });
-      const codeKey = normCode(selectedCourse.courseName || selectedCourse.course_name || selectedCourse.code);
-      const titleKey = norm(selectedCourse.courseTitle || selectedCourse.course_title || selectedCourse.title);
-      const courseProgRaw = normalizeProgramCode(selectedCourse.programcode || selectedCourse.program || program);
-      const courseProgBase = normalizeProgramCode((courseProgRaw.split('-')[0] || courseProgRaw));
-      const courseYear = extractYearDigits(selectedCourse.yearlevel || year);
-      const blocksFor = (visibleBlocks || [])
-        .filter(b => {
-          const meta = parseBlockMeta(b.blockCode);
-          const metaProg = normalizeProgramCode(meta.programcode || '');
-          const metaProgBase = normalizeProgramCode((meta.programcode || '').split('-')[0] || '');
-          const progMatch = ((metaProg === courseProgRaw) || (metaProgBase === courseProgRaw) || (metaProg === courseProgBase) || (metaProgBase === courseProgBase));
-          const metaYear = extractYearDigits(meta.yearlevel || '');
-          const yearMatch = courseYear ? (metaYear === courseYear) : true;
-          return progMatch && yearMatch;
-        })
-        .sort((a,b) => String(a.blockCode).localeCompare(String(b.blockCode)));
-      const findExistingFresh = (blockCode) => {
-        if (serverMap && Array.isArray(serverMap.items)) {
-          const hit = serverMap.items.find(x => String(x.blockCode) === String(blockCode));
-          if (hit) return {
-            id: hit.id,
-            term: hit.term,
-            semester: hit.semester || hit.sem,
-            day: hit.day,
-            schedule: hit.time || hit.schedule,
-            time: hit.time || hit.schedule,
-            faculty: hit.faculty || hit.instructor,
-            facultyId: hit.facultyId || hit.faculty_id,
-            lock: hit.lock,
-          };
-        }
-        const match = (mappedSchedules || []).find(s => {
-          const b = String(s.blockCode || s.block || '').trim();
-          const cc = normCode(s.courseName || s.code || '');
-          const tt = norm(s.title || s.courseTitle || '');
-          return b === String(blockCode) && cc === codeKey && tt === titleKey;
-        });
-        return match || null;
-      };
-      const freshRows = blocksFor.map(b => {
-        const e = findExistingFresh(b.blockCode);
-        const assigned = !!(e && e.id);
-        const locked = String(e?.lock || '').toLowerCase();
-        const baseTerm = toShortTerm(e?.term) || toShortTerm(e?.sem) || toShortTerm(e?.semester) || '';
-        const baseTime = e?.schedule || e?.time || '';
-        const baseDay = e?.day || 'MON-FRI';
-        const baseFac = e?.faculty || e?.instructor || e?.facultyName || '';
-        const baseFacId = e?.facultyId || e?.faculty_id || null;
-        return {
-          id: e?.id || `new:${b.id}:${codeKey}`,
-          _existingId: e?.id || null,
-          _status: assigned ? 'Assigned' : 'Unassigned',
-          _locked: locked === 'yes' || locked === 'true' || locked === '1',
-          blockId: b.id,
-          blockCode: b.blockCode,
-          courseName: selectedCourse.courseName || selectedCourse.code,
-          courseTitle: selectedCourse.courseTitle || selectedCourse.title || '',
-          unit: selectedCourse.unit,
-          programcode: selectedCourse.programcode || selectedCourse.program || program,
-          yearlevel: selectedCourse.yearlevel || year,
-          session: b.session || null,
-          _selected: false,
-          _term: baseTerm,
-          _day: baseDay,
-          _time: baseTime,
-          _faculty: baseFac,
-          _facultyId: baseFacId,
-          _baseTerm: baseTerm,
-          _baseTime: baseTime,
-          _baseDay: baseDay,
-          _baseFaculty: baseFac,
-          _baseFacultyId: baseFacId,
-        };
-      });
-      setRows(freshRows);
+      await reloadSchedulesForLoad();
     } catch {}
-    finally { setMapLoading(false); }
-  }, [visibleBlocks, mappedSchedules, program, selectedCourse, year, reloadSchedulesForLoad, settingsLoad?.school_year, settingsLoad?.semester]);
+    finally {
+      setMapLoading(false);
+    }
+  }, [reloadSchedulesForLoad]);
+
   const openResolve = (i) => {
     const r = rows[i];
     if (!r || !Array.isArray(r._conflictDetails)) return;
@@ -998,13 +889,6 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       setResolveBusy(false);
     }
   };
-
-  // Keep rows in sync when switching course/program/year or blocks list changes
-  React.useEffect(() => {
-    if (!selectedCourse) { setRows([]); return; }
-    reloadMapping();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCourse, program, year, visibleBlocks]);
 
   const saveSelected = async () => {
     const chosen = rows.filter(r => r._selected && r._term && r._time && (r._faculty || r._facultyId) );
@@ -1405,83 +1289,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                 setDelBusy(true);
                 try {
                   await api.deleteSchedule(r._existingId);
-                  try { await reloadSchedulesForLoad(); } catch {}
-                  try {
-                    const serverMap = await api.getCourseMapping({
-                      programcode: program || (selectedCourse?.programcode || selectedCourse?.program),
-                      yearlevel: year || selectedCourse?.yearlevel,
-                      course: selectedCourse?.courseName || selectedCourse?.code,
-                      courseTitle: selectedCourse?.courseTitle || selectedCourse?.course_title || selectedCourse?.title,
-                      prospectusId: selectedCourse?.id ?? selectedCourse?.prospectusId ?? selectedCourse?.prospectus_id,
-                      schoolyear: settingsLoad?.school_year || undefined,
-                      semester: settingsLoad?.semester || undefined,
-                    });
-                    const codeKey = normCode(selectedCourse.courseName || selectedCourse.course_name || selectedCourse.code);
-                    const titleKey = norm(selectedCourse.courseTitle || selectedCourse.course_title || selectedCourse.title);
-                    const courseProgRaw = normalizeProgramCode(selectedCourse.programcode || selectedCourse.program || program);
-                    const courseProgBase = normalizeProgramCode((courseProgRaw.split('-')[0] || courseProgRaw));
-                    const courseYear = extractYearDigits(selectedCourse.yearlevel || year);
-                    const blocksFor = (visibleBlocks || [])
-                      .filter(b => {
-                        const meta = parseBlockMeta(b.blockCode);
-                        const metaProg = normalizeProgramCode(meta.programcode || '');
-                        const metaProgBase = normalizeProgramCode((meta.programcode || '').split('-')[0] || '');
-                        const progMatch = ((metaProg === courseProgRaw) || (metaProgBase === courseProgRaw) || (metaProg === courseProgBase) || (metaProgBase === courseProgBase));
-                        const metaYear = extractYearDigits(meta.yearlevel || '');
-                        const yearMatch = courseYear ? (metaYear === courseYear) : true;
-                        return progMatch && yearMatch;
-                      })
-                      .sort((a,b) => String(a.blockCode).localeCompare(String(b.blockCode)));
-                    const findExistingFresh = (blockCode) => {
-                      if (serverMap && Array.isArray(serverMap.items)) {
-                        const hit = serverMap.items.find(x => String(x.blockCode) === String(blockCode));
-                        if (hit) return {
-                          id: hit.id,
-                          term: hit.term,
-                          semester: hit.semester || hit.sem,
-                          day: hit.day,
-                          schedule: hit.time || hit.schedule,
-                          time: hit.time || hit.schedule,
-                          faculty: hit.faculty || hit.instructor,
-                          facultyId: hit.facultyId || hit.faculty_id,
-                          lock: hit.lock,
-                        };
-                      }
-                      const match = (mappedSchedules || []).find(s => {
-                        const b = String(s.blockCode || s.block || '').trim();
-                        const cc = normCode(s.courseName || s.code || '');
-                        const tt = norm(s.title || s.courseTitle || '');
-                        return b === String(blockCode) && cc === codeKey && tt === titleKey;
-                      });
-                      return match || null;
-                    };
-                    const freshRows = blocksFor.map(b => {
-                      const e = findExistingFresh(b.blockCode);
-                      const assigned = !!(e && e.id);
-                      const locked = String(e?.lock || '').toLowerCase();
-                      return {
-                        id: e?.id || `new:${b.id}:${codeKey}`,
-                        _existingId: e?.id || null,
-                        _status: assigned ? 'Assigned' : 'Unassigned',
-                        _locked: locked === 'yes' || locked === 'true' || locked === '1',
-                        blockId: b.id,
-                        blockCode: b.blockCode,
-                        courseName: selectedCourse.courseName || selectedCourse.code,
-                        courseTitle: selectedCourse.courseTitle || selectedCourse.title || '',
-                        unit: selectedCourse.unit,
-                        programcode: selectedCourse.programcode || selectedCourse.program || program,
-                        yearlevel: selectedCourse.yearlevel || year,
-                        session: b.session || null,
-                        _selected: false,
-                        _term: toShortTerm(e?.term) || toShortTerm(e?.sem) || toShortTerm(e?.semester) || '',
-                        _day: e?.day || 'MON-FRI',
-                        _time: e?.schedule || e?.time || '',
-                        _faculty: e?.faculty || e?.instructor || e?.facultyName || '',
-                        _facultyId: e?.facultyId || e?.faculty_id || null,
-                      };
-                    });
-                    setRows(freshRows);
-                  } catch {}
+                  await reloadMapping();
                   toast({ status: 'success', title: 'Deleted', description: 'Schedule removed.' });
                 } catch (e) {
                   toast({ status: 'error', title: 'Delete failed', description: e?.message });
