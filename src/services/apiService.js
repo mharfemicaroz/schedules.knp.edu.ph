@@ -576,6 +576,23 @@ class ApiService {
     return await res.json();
   }
 
+  async getScheduleHistoryFeed(params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && v !== '') search.set(k, v);
+    });
+    const qs = search.toString();
+    const url = `${this.baseURL}${this.schedulesPath}/history/feed${qs ? `?${qs}` : ''}`;
+    const res = await this._fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+      },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   // GET /api/schedules/program/:programcode - Get schedules by program code
   async getSchedulesByProgramCode(programcode) {
     return this.request(`/program/${programcode}`);

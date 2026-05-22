@@ -20,6 +20,7 @@ import UnassignedSchedules from './pages/UnassignedSchedules';
 import AdminFaculty from './pages/AdminFacultyPage';
 import AdminUsers from './pages/AdminUsers';
 import AdminGuestLogs from './pages/AdminGuestLogs';
+import AdminScheduleHistory from './pages/AdminScheduleHistory';
 import AdminBlockSettings from './pages/AdminBlockSettings';
 import AdminAcademicCalendar from './pages/AdminAcademicCalendar';
 import AdminGradesSubmission from './pages/AdminGradesSubmission';
@@ -106,6 +107,7 @@ function App() {
               <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
               <Route path="/admin/user-departments" element={<RequireAdmin><AdminUserDepartments /></RequireAdmin>} />
               <Route path="/admin/guest-logs" element={<RequireAdmin><AdminGuestLogs /></RequireAdmin>} />
+              <Route path="/admin/schedule-history" element={<RequireAdmin extraRoles={['sa']}><AdminScheduleHistory /></RequireAdmin>} />
               <Route path="/reports/faculty-summary" element={<RequireAuth><ReportsFacultySummary /></RequireAuth>} />
               {/* Share/public routes (chrome-less) */}
               <Route path="/share/faculty/:id" element={<FacultyDetail />} />

@@ -253,6 +253,7 @@ export default function Sidebar({ mobile = false, onNavigate }) {
                 <NavItem to="/admin/ai-labs" icon={FiCpu} onClick={onNavigate}>AI Labs</NavItem>
                 <NavItem to="/admin/users" icon={FiUser} onClick={onNavigate}>User Management</NavItem>
                 <NavItem to="/admin/guest-logs" icon={FiActivity} onClick={onNavigate}>Guest Logs</NavItem>
+                <NavItem to="/admin/schedule-history" icon={FiClock} onClick={onNavigate}>Schedule History</NavItem>
                 {/* <NavItem to="/admin/conflicts" icon={FiAlertTriangle} onClick={onNavigate} badgeCount={conflictCount} chipLabel={viewChip}>Conflict Schedules</NavItem>
                 <NavItem to="/admin/unassigned" icon={FiUserX} onClick={onNavigate} badgeCount={unassignedCount} chipLabel={viewChip}>Unassigned Schedules</NavItem> */}
               </>

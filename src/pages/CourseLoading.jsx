@@ -1123,6 +1123,10 @@ export default function CourseLoading() {
   };
   const getExistingFacultyName = (r) => String(r.instructor || r.faculty || '').trim();
   const getExistingFacultyId = (r) => (r.facultyId != null ? r.facultyId : (r.faculty_id != null ? r.faculty_id : null));
+  const isPlaceholderFacultyName = (name) => {
+    const up = String(name || '').trim().toUpperCase();
+    return up === 'TBA' || up === '-' || up === 'NA' || up === 'N/A' || up === 'NONE' || up === 'NULL' || up === '0' || up === 'TBD';
+  };
   const parseUnits = (r) => { const u = Number(r.unit); return Number.isFinite(u) ? u : 0; };
   const ensureFacultyLoadLimitsForRows = async (rowsToApply) => {
     const nonAdminMapped = (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0);
@@ -1132,6 +1136,7 @@ export default function CourseLoading() {
       const targetId = getIntendedFacultyId(r);
       const targetName = getIntendedFacultyName(r);
       if (!(targetId || targetName)) continue;
+      if (isPlaceholderFacultyName(targetName)) continue;
       const existingName = getExistingFacultyName(r);
       const existingId = getExistingFacultyId(r);
       const creating = !r._existingId;
@@ -3628,7 +3633,7 @@ const prefill = hit ? {
       if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
         try {
           const targetName = e.faculty || '';
-          if (targetName) {
+          if (targetName && !isPlaceholderFacultyName(targetName)) {
             const meta = findFacultyById(e.facultyId) || findFacultyByName(targetName);
             const max = maxUnitsFor(meta);
             const lr = (meta?.id!=null) ? await api.getInstructorLoadById(meta.id, { schoolyear: settingsLoad?.school_year, semester: settingsLoad?.semester }) : await api.getInstructorLoad(targetName); const current = Number(lr?.loadUnits || 0);
@@ -3763,13 +3768,15 @@ const prefill = hit ? {
         if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) && changes.faculty_id != null) {
           const targetFac = findFacultyById(changes.faculty_id);
           const targetName = targetFac?.name || targetFac?.faculty || '';
-          const max = maxUnitsFor(targetFac);
-          const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); qs.set("instructor", targetName); if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
-          const same = normalizeName(targetName) === normalizeName(base.faculty || base.instructor || '');
-          const addU = same ? 0 : Number(base.unit || 0);
-          if (current + addU > max) {
-            toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(targetFac)==='part-time'?'Part-time max 12':'Full-time max 36'} units. Current ${current}, adding ${addU} ? ${current+addU}. Only admin can exceed.`, status: 'warning' });
-            return;
+          if (!isPlaceholderFacultyName(targetName)) {
+            const max = maxUnitsFor(targetFac);
+            const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); qs.set("instructor", targetName); if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
+            const same = normalizeName(targetName) === normalizeName(base.faculty || base.instructor || '');
+            const addU = same ? 0 : Number(base.unit || 0);
+            if (current + addU > max) {
+              toast({ title: 'Load limit exceeded', description: `${targetName}: ${employmentOf(targetFac)==='part-time'?'Part-time max 12':'Full-time max 36'} units. Current ${current}, adding ${addU} ? ${current+addU}. Only admin can exceed.`, status: 'warning' });
+              return;
+            }
           }
         }
         await dispatch(updateScheduleThunk({ id, changes }));
@@ -4058,12 +4065,14 @@ const prefill = hit ? {
     const addUnits = rows.reduce((sum, it) => {
       const isDraft = !!it?._draft || String(it?.id || '').startsWith('tmp:');
       if (!isDraft) return sum;
+      if (isPlaceholderFacultyName(it?._faculty || it?.faculty || it?.instructor || '')) return sum;
       const u = Number(it?.unit ?? 0);
       return sum + (Number.isFinite(u) ? u : 0);
     }, 0);
     if (addUnits <= 0) return true;
     const meta = selectedFaculty;
     const name = meta?.name || meta?.faculty || '';
+    if (isPlaceholderFacultyName(name)) return true;
     const max = maxUnitsFor(meta);
     const sy = settingsLoad?.school_year || '';
     const sem = settingsLoad?.semester || '';
@@ -4621,7 +4630,7 @@ const prefill = hit ? {
       if (!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) {
         try {
           const targetName = payload.faculty || '';
-          if (targetName) {
+          if (targetName && !isPlaceholderFacultyName(targetName)) {
             const meta = findFacultyById(payload.facultyId) || findFacultyByName(targetName);
             const max = maxUnitsFor(meta);
             const lr = (meta?.id!=null) ? await api.getInstructorLoadById(meta.id, { schoolyear: settingsLoad?.school_year, semester: settingsLoad?.semester }) : await api.getInstructorLoad(targetName); const current = Number(lr?.loadUnits || 0);
