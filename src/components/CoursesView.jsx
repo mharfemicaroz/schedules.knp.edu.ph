@@ -242,7 +242,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     const byKey = new Set();
     const addKey = (parts) => {
       const key = parts.join('|');
-      if (key && key !== '||||') byKey.add(key);
+      if (key && key !== '|||') byKey.add(key);
     };
     (mappedSchedules || []).forEach((row) => {
       const directId = row?.prospectusId ?? row?.prospectus_id ?? row?.prospectus?.id;
@@ -251,12 +251,10 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       const code = normCode(row?.courseName || row?.code);
       const title = norm(row?.title || row?.courseTitle);
       const prog = normalizeProgramCode(row?.programcode || row?.program || blockMeta.programcode || '');
+      const baseProg = normalizeProgramCode((prog.split('-')[0] || prog));
       const yearDigit = extractYearDigits(row?.yearlevel || row?.year || blockMeta.yearlevel || '');
-      const term = normalizeSem(row?.semester || row?.term || row?.sem || '');
-      addKey([prog, yearDigit, term, code, title]);
-      addKey([prog, yearDigit, '', code, title]);
-      addKey(['', '', term, code, title]);
-      addKey(['', '', '', code, title]);
+      addKey([prog, yearDigit, code, title]);
+      if (baseProg && baseProg !== prog) addKey([baseProg, yearDigit, code, title]);
     });
     return { byId, byKey };
   }, [mappedSchedules]);
@@ -267,13 +265,11 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     const code = normCode(row?.courseName || row?.course_name || row?.code);
     const title = norm(row?.courseTitle || row?.course_title || row?.title);
     const prog = normalizeProgramCode(row?.programcode || row?.program || '');
+    const baseProg = normalizeProgramCode((prog.split('-')[0] || prog));
     const yearDigit = extractYearDigits(row?.yearlevel || row?.year || '');
-    const term = normalizeSem(row?.semester || row?.term || row?.sem || '');
     const keys = [
-      [prog, yearDigit, term, code, title].join('|'),
-      [prog, yearDigit, '', code, title].join('|'),
-      ['', '', term, code, title].join('|'),
-      ['', '', '', code, title].join('|'),
+      [prog, yearDigit, code, title].join('|'),
+      [baseProg, yearDigit, code, title].join('|'),
     ];
     return keys.some((key) => key && mappedProspectusIndex.byKey.has(key));
   }, [mappedProspectusIndex]);
