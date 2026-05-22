@@ -35,9 +35,10 @@ function oppositePrimaryTerm(term) {
 }
 
 function formatPrimaryTerm(term) {
-  if (term === '1st') return '1st Term';
-  if (term === '2nd') return '2nd Term';
-  return term || '-';
+  const normalized = normalizePrimaryTerm(term);
+  if (normalized === '1st') return '1st Term';
+  if (normalized === '2nd') return '2nd Term';
+  return normalized || String(term || '-');
 }
 
 
