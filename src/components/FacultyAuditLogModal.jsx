@@ -310,6 +310,9 @@ export default function FacultyAuditLogModal({
                   const meta = actionMeta(item.action);
                   const parsed = parseDetails(item.details || '');
                   const schedule = item.schedule || null;
+                  const detailFaculty =
+                    parsed.tags.find((tag) => tag.label === 'Faculty')?.value ||
+                    '';
                   const title = [
                     schedule?.courseName || parsed.tags.find((t) => t.label === 'Course')?.value || '',
                     schedule?.courseTitle || '',
@@ -343,7 +346,11 @@ export default function FacultyAuditLogModal({
                         <VStack align="end" spacing={1} minW="180px">
                           {schedule?.semester ? <Text fontSize="sm" color={muted}>{schedule.semester}</Text> : null}
                           {schedule?.schoolyear ? <Text fontSize="sm" color={muted}>{schedule.schoolyear}</Text> : null}
-                          {schedule?.instructor ? <Text fontSize="sm" color={muted} textAlign="right">{schedule.instructor}</Text> : null}
+                          {(detailFaculty || schedule?.instructor) ? (
+                            <Text fontSize="sm" color={muted} textAlign="right">
+                              {detailFaculty || schedule?.instructor}
+                            </Text>
+                          ) : null}
                         </VStack>
                       </HStack>
 
