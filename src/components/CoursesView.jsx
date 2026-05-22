@@ -86,7 +86,10 @@ const toShortTerm = (s) => {
 };
 const unwrapAssignedFacultyArg = (arg) => {
   if (!arg || typeof arg !== 'object') return arg;
-  if (Object.prototype.hasOwnProperty.call(arg, 'termOverride') || Object.prototype.hasOwnProperty.call(arg, 'faculty')) {
+  if (
+    Object.prototype.hasOwnProperty.call(arg, 'termOverride') ||
+    (Object.prototype.hasOwnProperty.call(arg, 'faculty') && arg.faculty && typeof arg.faculty === 'object')
+  ) {
     return arg.faculty ?? arg;
   }
   return arg;
