@@ -8,7 +8,7 @@ import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter
 } from '@chakra-ui/react';
 import { Skeleton, SkeletonText, Fade } from '@chakra-ui/react';
-import { FiRefreshCw, FiUpload, FiSearch, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus, FiPrinter, FiClock, FiChevronDown, FiShuffle } from 'react-icons/fi';
+import { FiRefreshCw, FiUpload, FiSearch, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus, FiPrinter, FiClock, FiChevronDown, FiShuffle, FiActivity } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadBlocksThunk } from '../store/blockThunks';
 import { selectBlocks } from '../store/blockSlice';
@@ -36,6 +36,7 @@ import CoursesView from '../components/CoursesView';
 import CourseSummaryView from '../components/CourseSummaryView';
 import CourseLoadingSupport from '../components/CourseLoadingSupport';
 import CourseLoadingFacultySummary from '../components/CourseLoadingFacultySummary';
+import FacultyAuditLogModal from '../components/FacultyAuditLogModal';
 
 const COURSE_LOADING_SEMESTER_OPTIONS = [
   { value: '1st', label: '1st Semester' },
@@ -1586,6 +1587,7 @@ export default function CourseLoading() {
   // History modal state
   const [histOpen, setHistOpen] = React.useState(false);
   const [histScheduleId, setHistScheduleId] = React.useState(null);
+  const [facultyAuditOpen, setFacultyAuditOpen] = React.useState(false);
 
   // Shared indexes/stats for faculty-view scoring (mirrors block view engine)
 
@@ -7423,6 +7425,9 @@ const prefill = hit ? {
                 <HStack>
                   <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintFaculty} isDisabled={loading || (Array.isArray(facultySchedules.items) ? facultySchedules.items.length === 0 : true)}>Print</Button>
                   <Button leftIcon={<FiRefreshCw />} size="sm" variant="outline" onClick={()=>fetchFacultySchedules(selectedFaculty)} isDisabled={loading}>Reload</Button>
+                  <Button leftIcon={<FiActivity />} size="sm" variant="outline" onClick={()=>setFacultyAuditOpen(true)} isDisabled={!selectedFaculty || facultySchedules.loading}>
+                    Audit Logs
+                  </Button>
                   <Button leftIcon={<FiShuffle />} size="sm" variant="outline" colorScheme="orange" onClick={openFacultyTermBalancer} isDisabled={facultySchedules.loading || !selectedFaculty || facultySchedules.items.length === 0}>
                     Term Balancer
                   </Button>
@@ -7698,6 +7703,12 @@ const prefill = hit ? {
 
       {/* Assign Faculty Modal for Blocks view */}
       <ScheduleHistoryModal scheduleId={histScheduleId} isOpen={histOpen} onClose={()=>{ setHistOpen(false); setHistScheduleId(null); }} />
+      <FacultyAuditLogModal
+        isOpen={facultyAuditOpen}
+        onClose={() => setFacultyAuditOpen(false)}
+        faculty={selectedFaculty}
+        settingsLoad={settingsLoad}
+      />
       <AssignFacultyModal
         isOpen={assignOpen}
         onClose={()=>{ setAssignOpen(false); setAssignIndex(null); }}
