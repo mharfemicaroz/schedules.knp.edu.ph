@@ -143,8 +143,6 @@ export default function CoursesView({ settingsLoadOverride = null }) {
   }, [dispatch, settingsLoad?.school_year, settingsLoad?.semester]);
   const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
   const [allowedDepts, setAllowedDepts] = React.useState(null); // null=unknown, []=none
-  const [remoteVacantCounts, setRemoteVacantCounts] = React.useState(new Map());
-  const [vacantLoading, setVacantLoading] = React.useState(false);
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -375,64 +373,19 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     return map;
   }, [blockMetaList, courseOptions, scopedCourses, program, year]);
 
-  // Prefer server-provided vacant counts when available to ensure parity; fallback to local memo
-  React.useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      if (!Array.isArray(courseOptions) || courseOptions.length === 0) {
-        if (!cancelled) {
-          setRemoteVacantCounts(new Map());
-          setVacantLoading(false);
-        }
-        return;
-      }
-      setVacantLoading(true);
-      const sy = settingsLoad?.school_year || '';
-      const sem = settingsLoad?.semester || '';
-      const maxRequests = 40; // cap to keep it efficient
-      const slice = courseOptions.slice(0, maxRequests);
-      try {
-        const entries = await Promise.all(slice.map(async (c) => {
-          try {
-            const key = `${normCode(c.courseName || c.course_name || c.code)}|${norm(c.courseTitle || c.course_title || c.title)}`;
-            const resp = await api.getVacantBlocksForCourse({
-              course: c.courseName || c.code,
-              programcode: program || c.programcode || c.program,
-              yearlevel: year || c.yearlevel,
-              schoolyear: sy,
-              semester: sem,
-            });
-            if (resp != null) return [key, resp];
-          } catch {
-            // ignore and rely on local fallback
-          }
-          return null;
-        }));
-        const filtered = entries.filter(Boolean);
-        if (!cancelled) setRemoteVacantCounts(new Map(filtered));
-      } finally {
-        if (!cancelled) setVacantLoading(false);
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [courseOptions, program, year, settingsLoad?.school_year, settingsLoad?.semester]);
-
   const getVacancyMeta = React.useCallback((course) => {
     const key = `${normCode(course?.courseName || course?.course_name || course?.code)}|${norm(course?.courseTitle || course?.course_title || course?.title)}`;
     const stats = courseVacancyStats.get(key) || { open: 0, total: 0, assigned: 0 };
-    const hasRemote = remoteVacantCounts.has(key);
-    const openCount = hasRemote ? (remoteVacantCounts.get(key) ?? stats.open ?? 0) : (stats.open ?? 0);
+    const openCount = stats.open ?? 0;
     const totalBlocks = stats.total ?? 0;
-    const assignedFromTotal = totalBlocks ? Math.max(0, totalBlocks - openCount) : (stats.assigned ?? 0);
-    const assignedCount = hasRemote ? assignedFromTotal : (stats.assigned ?? assignedFromTotal);
+    const assignedCount = stats.assigned ?? Math.max(0, totalBlocks - openCount);
     let status = 'all-set';
     if (openCount > 0) {
       status = assignedCount > 0 ? 'open-partial' : 'open-none';
     }
     const colorScheme = status === 'all-set' ? 'green' : (status === 'open-partial' ? 'orange' : 'red');
     return { key, openCount, assignedCount, totalBlocks, status, colorScheme };
-  }, [courseVacancyStats, remoteVacantCounts]);
+  }, [courseVacancyStats]);
 
   const sortedCourseOptions = React.useMemo(() => {
     const rank = { 'open-none': 0, 'open-partial': 1, 'all-set': 2 };
@@ -1206,7 +1159,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
           </HStack>
           <Divider />
           <VStack align="stretch" spacing={2} maxH="45vh" overflowY="auto">
-            {(loading || vacantLoading) && Array.from({length: Math.min(10, Math.max(6, sortedCourseOptions.length || 8))}).map((_,i)=> (
+            {loading && Array.from({length: Math.min(10, Math.max(6, sortedCourseOptions.length || 8))}).map((_,i)=> (
               <Box key={`sk-course-${i}`} borderWidth="1px" borderColor={border} rounded="md" p={2}>
                 <Skeleton height="12px" width="38%" mb={2} startColor={skStart} endColor={skEnd} />
                 <Skeleton height="10px" width="72%" mb={3} startColor={skStart} endColor={skEnd} />
@@ -1219,7 +1172,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                 </HStack>
               </Box>
             ))}
-            {!(loading || vacantLoading) && sortedCourseOptions.map((c, idx) => (
+            {!loading && sortedCourseOptions.map((c, idx) => (
               <Box key={`${c.programcode}-${c.yearlevel}-${idx}`} role="button" borderWidth="1px" borderColor={border} rounded="md" p={2}
                    onClick={()=> setSelectedCourse(c)} _hover={{ bg: hoverBg }}>
                 {(() => {
@@ -1254,7 +1207,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                 })()}
               </Box>
             ))}
-            {!(loading || vacantLoading) && sortedCourseOptions.length === 0 && (
+            {!loading && sortedCourseOptions.length === 0 && (
               <Text fontSize="sm" color={subtle}>No courses match filters.</Text>
             )}
           </VStack>
