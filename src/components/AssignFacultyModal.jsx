@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Button, HStack, VStack, Input, Select, Text, Box, useColorModeValue, Table, Thead, Tr, Th, Tbody, Td, Spinner, Tooltip, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter, useDisclosure, Badge, Divider, Progress, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, Tag } from '@chakra-ui/react';
 import { FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useDispatch, useSelector } from 'react-redux';
@@ -19,6 +19,26 @@ const TBA_FACULTY = {
   employment: 'TBA',
   _isTBA: true,
 };
+
+function normalizePrimaryTerm(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return '';
+  if (text.startsWith('1')) return '1st';
+  if (text.startsWith('2')) return '2nd';
+  return '';
+}
+
+function oppositePrimaryTerm(term) {
+  if (term === '1st') return '2nd';
+  if (term === '2nd') return '1st';
+  return '';
+}
+
+function formatPrimaryTerm(term) {
+  if (term === '1st') return '1st Term';
+  if (term === '2nd') return '2nd Term';
+  return term || '-';
+}
 
 
 function useIndexes(courses) {
@@ -161,6 +181,38 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
   const indexes = useMemo(() => buildIndexes(scopedCourses), [scopedCourses]);
   const indexesAll = useMemo(() => buildIndexes(allCourses), [allCourses]);
   const stats = useMemo(() => buildFacultyStats(faculties, scopedCourses), [faculties, scopedCourses]);
+  const facultyTermStats = useMemo(() => {
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const map = new Map();
+    (faculties || []).forEach((faculty) => {
+      const facultyId = faculty?.id != null ? String(faculty.id) : '';
+      const facultyName = norm(faculty?.name || faculty?.faculty || faculty?.full_name || '');
+      const rows = (indexes.byFac.get(`id:${facultyId}`) || []).concat(indexes.byFac.get(`nm:${facultyName}`) || []);
+      const seen = new Set();
+      let first = 0;
+      let second = 0;
+      rows.forEach((row) => {
+        const code = String(row.code || row.courseName || '').trim().toLowerCase();
+        const sec = norm(row.section || row.blockCode || row.block || '');
+        const term = normalizePrimaryTerm(row.term || row.semester || row.sem || '');
+        const time = String(row.scheduleKey || row.schedule || row.time || '').trim().toLowerCase();
+        if (!code || !sec || !term) return;
+        const key = [code, sec, term, time || 'n/a'].join('|');
+        if (seen.has(key)) return;
+        seen.add(key);
+        if (term === '1st') first += 1;
+        if (term === '2nd') second += 1;
+      });
+      map.set(String(faculty.id), {
+        first,
+        second,
+        total: first + second,
+        difference: Math.abs(first - second),
+        dominantTerm: first === second ? '' : (first > second ? '1st' : '2nd'),
+      });
+    });
+    return map;
+  }, [faculties, indexes]);
 
 
   const filtered = useMemo(() => {
@@ -196,6 +248,8 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
   const [busy, setBusy] = useState(false);
   const confirm = useDisclosure();
   const [pendingFac, setPendingFac] = useState(null);
+  const [pendingTermOverride, setPendingTermOverride] = useState('');
+  const [pendingImbalance, setPendingImbalance] = useState(null);
   const cancelRef = React.useRef();
 
 
@@ -209,6 +263,36 @@ export default function AssignFacultyModal({ isOpen, onClose, schedule, onAssign
       room: schedule?.room || '-',
     };
   }, [schedule]);
+
+  const getImbalanceInfo = React.useCallback((faculty) => {
+    if (!faculty || faculty?._isTBA) return null;
+    const assignedTerm = normalizePrimaryTerm(schedule?.term || semester || settings?.schedulesLoad?.semester || '');
+    if (!assignedTerm) return null;
+    const termStats = facultyTermStats.get(String(faculty.id)) || { first: 0, second: 0, total: 0, difference: 0, dominantTerm: '' };
+    const dominantTerm = termStats.dominantTerm;
+    const suggestedTerm = oppositePrimaryTerm(dominantTerm);
+    const dominantCount = dominantTerm === '1st' ? termStats.first : termStats.second;
+    const suggestedCount = suggestedTerm === '1st' ? termStats.first : termStats.second;
+    const hasImbalance = !!dominantTerm && dominantCount >= 5 && termStats.difference >= 2;
+    if (!hasImbalance) return null;
+
+    const alternateEligible = suggestedTerm
+      ? isEligibleAssignment({ ...schedule, term: suggestedTerm }, faculty, indexes)
+      : false;
+
+    return {
+      firstCount: termStats.first,
+      secondCount: termStats.second,
+      dominantTerm,
+      assignedTerm,
+      suggestedTerm,
+      suggestedCount,
+      dominantCount,
+      difference: termStats.difference,
+      alternateEligible,
+      needsPrompt: assignedTerm === dominantTerm,
+    };
+  }, [facultyTermStats, schedule, semester, settings, indexes]);
 
   // Deterministic tie-break randomness for score sorting (advisable only for near-ties)
   const seededRand = (seedStr) => {
@@ -906,8 +990,14 @@ const scoreOf = useMemo(
                       const entry = scoreOf.get(String(f.id)) || { score: 0, parts: {} };
                       const score = entry.score;
                       const isTBA = !!f?._isTBA;
+                      const imbalance = getImbalanceInfo(f);
                       const overloadBadge = s.overload > 0 ? (
                         <Badge colorScheme="red" ml={2}>Overload +{s.overload}</Badge>
+                      ) : null;
+                      const imbalanceBadge = imbalance ? (
+                        <Badge colorScheme="orange" ml={2}>
+                          {imbalance.dominantTerm === '1st' ? '1st-heavy' : '2nd-heavy'} {imbalance.firstCount}-{imbalance.secondCount}
+                        </Badge>
                       ) : null;
                       return (
                         <Tr key={isTBA ? 'tba-option' : f.id}>
@@ -917,6 +1007,7 @@ const scoreOf = useMemo(
                                 <Text fontWeight="700">{f.name || f.faculty || f.full_name || '-'}</Text>
                                 {isTBA && <Badge colorScheme="purple">Placeholder</Badge>}
                                 {overloadBadge}
+                                {imbalanceBadge}
                               </HStack>
                               <Text fontSize="xs" color="gray.500">{isTBA ? 'Assign without creating a faculty record' : (f.email || '')}</Text>
                             </VStack>
@@ -939,7 +1030,13 @@ const scoreOf = useMemo(
                             )}
                           </Td>
                           <Td textAlign="right">
-                            <Button size="sm" colorScheme={isTBA ? 'purple' : 'blue'} onClick={()=> { setPendingFac(f); confirm.onOpen(); }}>
+                            <Button size="sm" colorScheme={isTBA ? 'purple' : 'blue'} onClick={()=> {
+                              const nextImbalance = getImbalanceInfo(f);
+                              setPendingFac(f);
+                              setPendingImbalance(nextImbalance);
+                              setPendingTermOverride(nextImbalance?.alternateEligible && nextImbalance?.suggestedTerm ? nextImbalance.suggestedTerm : '');
+                              confirm.onOpen();
+                            }}>
                               {isTBA ? 'Assign TBA' : 'Assign'}
                             </Button>
                           </Td>
@@ -1045,7 +1142,7 @@ const scoreOf = useMemo(
     <AlertDialog isOpen={confirm.isOpen} onClose={confirm.onClose} leastDestructiveRef={cancelRef} isCentered>
       <AlertDialogOverlay />
       <AlertDialogContent>
-        <AlertDialogHeader>Confirm Assignment</AlertDialogHeader>
+        <AlertDialogHeader>{pendingImbalance?.needsPrompt ? 'Term Imbalance Check' : 'Confirm Assignment'}</AlertDialogHeader>
         <AlertDialogBody>
           <VStack align="start" spacing={2}>
             <Text>Assign <Text as="span" fontWeight="700">{pendingFac?.name || pendingFac?.faculty || '-'}</Text> to:</Text>
@@ -1058,12 +1155,92 @@ const scoreOf = useMemo(
                 <Text>Room: <Text as="span" fontWeight="600">{scheduleInfo.room}</Text></Text>
               </HStack>
             </Box>
-            <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>This will update the schedule's faculty and recheck conflicts.</Text>
+            {pendingImbalance?.needsPrompt && (
+              <Box borderWidth="1px" borderColor={useColorModeValue('orange.200','orange.700')} bg={useColorModeValue('orange.50','orange.900')} rounded="lg" p={3} w="full">
+                <VStack align="stretch" spacing={3}>
+                  <HStack justify="space-between" wrap="wrap">
+                    <Badge colorScheme="orange">Imbalanced Load</Badge>
+                    <Text fontSize="sm" fontWeight="700">{pendingImbalance.firstCount} / {pendingImbalance.secondCount}</Text>
+                  </HStack>
+                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={3}>
+                    <Box borderWidth="1px" borderColor={useColorModeValue('orange.100','orange.600')} rounded="md" p={2.5} bg={useColorModeValue('white','blackAlpha.200')}>
+                      <Text fontSize="xs" color={useColorModeValue('gray.600','gray.300')}>1st Term</Text>
+                      <Text fontSize="lg" fontWeight="700">{pendingImbalance.firstCount}</Text>
+                    </Box>
+                    <Box borderWidth="1px" borderColor={useColorModeValue('orange.100','orange.600')} rounded="md" p={2.5} bg={useColorModeValue('white','blackAlpha.200')}>
+                      <Text fontSize="xs" color={useColorModeValue('gray.600','gray.300')}>2nd Term</Text>
+                      <Text fontSize="lg" fontWeight="700">{pendingImbalance.secondCount}</Text>
+                    </Box>
+                  </SimpleGrid>
+                  <Text fontSize="sm" color={useColorModeValue('orange.900','orange.100')}>
+                    This faculty is already heavier in <b>{formatPrimaryTerm(pendingImbalance.dominantTerm)}</b>. Assigning this class to the same term will increase the imbalance.
+                  </Text>
+                  {pendingImbalance.alternateEligible ? (
+                    <Box borderWidth="1px" borderColor={useColorModeValue('blue.200','blue.700')} bg={useColorModeValue('blue.50','blue.900')} rounded="md" p={2.5}>
+                      <Text fontSize="sm" color={useColorModeValue('blue.900','blue.100')}>
+                        Suggested rebalance: keep the same time and assign this load to <b>{formatPrimaryTerm(pendingImbalance.suggestedTerm)}</b> instead. No same-time conflict was found for that term.
+                      </Text>
+                    </Box>
+                  ) : (
+                    <Text fontSize="sm" color={useColorModeValue('gray.600','gray.300')}>
+                      No safe same-time alternate term was found for this faculty.
+                    </Text>
+                  )}
+                </VStack>
+              </Box>
+            )}
+            <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>
+              {pendingImbalance?.needsPrompt
+                ? 'Choose whether to keep the current term or use the suggested rebalance.'
+                : "This will update the schedule's faculty and recheck conflicts."}
+            </Text>
           </VStack>
         </AlertDialogBody>
         <AlertDialogFooter>
-          <Button ref={cancelRef} onClick={()=>{ setPendingFac(null); confirm.onClose(); }} variant="ghost">Cancel</Button>
-          <Button colorScheme="blue" ml={3} onClick={async ()=>{ if (pendingFac) { await onAssign?.(pendingFac); } setPendingFac(null); confirm.onClose(); }}>Confirm</Button>
+          <Button
+            ref={cancelRef}
+            onClick={()=>{
+              setPendingFac(null);
+              setPendingImbalance(null);
+              setPendingTermOverride('');
+              confirm.onClose();
+            }}
+            variant="ghost"
+          >
+            Cancel
+          </Button>
+          {pendingImbalance?.needsPrompt && pendingImbalance?.alternateEligible && (
+            <Button
+              colorScheme="green"
+              ml={3}
+              onClick={async ()=>{
+                if (pendingFac) {
+                  await onAssign?.({ faculty: pendingFac, termOverride: pendingImbalance.suggestedTerm });
+                }
+                setPendingFac(null);
+                setPendingImbalance(null);
+                setPendingTermOverride('');
+                confirm.onClose();
+              }}
+            >
+              Use {formatPrimaryTerm(pendingImbalance.suggestedTerm)}
+            </Button>
+          )}
+          <Button
+            colorScheme="blue"
+            ml={3}
+            onClick={async ()=>{
+              if (pendingFac) {
+                await onAssign?.(pendingFac);
+              }
+              setPendingFac(null);
+              setPendingImbalance(null);
+              setPendingTermOverride('');
+              confirm.onClose();
+            }}
+          >
+            {pendingImbalance?.needsPrompt ? `Keep ${formatPrimaryTerm(scheduleInfo.term)}` : 'Confirm'}
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

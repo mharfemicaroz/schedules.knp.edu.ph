@@ -785,8 +785,10 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       faculty: r._faculty,
     };
   }, [assignIndex, rows]);
-  const handleAssignFromModal = async (fac) => {
+  const handleAssignFromModal = async (arg) => {
     if (assignIndex == null) return;
+    const fac = arg?.faculty || arg;
+    const termOverride = arg?.termOverride || '';
     const facultyId = fac?.facultyId ?? fac?.id ?? fac?.value ?? null;
     const facultyName = fac?.facultyName ?? fac?.name ?? fac?.faculty ?? fac?.full_name ?? fac?.label ?? '';
     const row = rows[assignIndex];
@@ -794,8 +796,9 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     handleChange(assignIndex, {
       _facultyId: facultyId,
       _faculty: facultyName,
+      ...(termOverride ? { _term: termOverride } : {}),
       ...(isTba ? {
-        _term: String(row?._term || toShortTerm(settingsLoad?.semester || '') || '').trim(),
+        _term: String(termOverride || row?._term || toShortTerm(settingsLoad?.semester || '') || '').trim(),
         _time: String(row?._time || '').trim() || 'TBA',
         _day: String(row?._day || row?.day || '').trim() || 'MON-FRI',
       } : {}),

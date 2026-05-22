@@ -3245,17 +3245,20 @@ const prefill = hit ? {
       session: selectedBlock?.session || '',
     };
   }, [assignIndex, rows, selectedBlock]);
-  const handleAssignFromModal = async (fac) => {
+  const handleAssignFromModal = async (arg) => {
     const idx = assignIndex;
     if (idx == null || !rows[idx]) { setAssignOpen(false); setAssignIndex(null); return; }
+    const fac = arg?.faculty || arg;
+    const termOverride = arg?.termOverride || '';
     const name = fac?.name || fac?.faculty || fac?.full_name || '';
     const isTba = String(name || '').trim().toUpperCase() === 'TBA';
     const nextRow = {
       ...rows[idx],
       _faculty: name,
       _facultyId: fac?.id || null,
+      ...(termOverride ? { _term: termOverride } : {}),
       ...(isTba ? {
-        _term: String(rows[idx]?._term || canonicalTerm(settingsLoad?.semester || '') || '').trim(),
+        _term: String(termOverride || rows[idx]?._term || canonicalTerm(settingsLoad?.semester || '') || '').trim(),
         _time: String(rows[idx]?._time || '').trim() || 'TBA',
         _day: String(rows[idx]?._day || rows[idx]?.day || '').trim() || 'MON-FRI',
       } : {}),
@@ -3972,11 +3975,13 @@ const prefill = hit ? {
       session: it.session || '',
     };
   }, [facAssignIndex, facultySchedules.items]);
-  const handleFacAssign = async (fac) => {
+  const handleFacAssign = async (arg) => {
     const idx = facAssignIndex;
     const it = facultySchedules.items[idx];
     if (idx == null || !it) { setFacAssignOpen(false); setFacAssignIndex(null); return; }
     try {
+      const fac = arg?.faculty || arg;
+      const termOverride = arg?.termOverride || '';
       const targetName = fac?.name || fac?.faculty || '';
       const isTba = String(targetName || '').trim().toUpperCase() === 'TBA';
       // Enforce load limit for non-admin: adding this course to target faculty
@@ -3997,7 +4002,7 @@ const prefill = hit ? {
         changes: {
           faculty_id: fac?.id || null,
           instructor: targetName || null,
-          term: String(it.term || canonicalTerm(settingsLoad?.semester || '') || '').trim(),
+          term: String(termOverride || it.term || canonicalTerm(settingsLoad?.semester || '') || '').trim(),
           time: String(it.schedule || it.time || '').trim() || (isTba ? 'TBA' : ''),
           day: String(it.day || '').trim() || 'MON-FRI',
         },
