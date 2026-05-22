@@ -7707,6 +7707,7 @@ const prefill = hit ? {
         isOpen={facultyAuditOpen}
         onClose={() => setFacultyAuditOpen(false)}
         faculty={selectedFaculty}
+        facultySchedules={facultySchedules.items}
         settingsLoad={settingsLoad}
       />
       <AssignFacultyModal

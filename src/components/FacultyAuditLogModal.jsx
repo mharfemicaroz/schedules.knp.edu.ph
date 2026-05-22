@@ -128,6 +128,7 @@ export default function FacultyAuditLogModal({
   isOpen,
   onClose,
   faculty,
+  facultySchedules = [],
   settingsLoad,
 }) {
   const border = useColorModeValue('gray.200', 'gray.700');
@@ -156,15 +157,27 @@ export default function FacultyAuditLogModal({
   const facultyName = String(faculty?.name || faculty?.faculty || '').trim();
   const schoolyear = String(settingsLoad?.school_year || '').trim();
   const semester = String(settingsLoad?.semester || '').trim();
+  const scheduleIds = React.useMemo(() => (
+    Array.from(
+      new Set(
+        (Array.isArray(facultySchedules) ? facultySchedules : [])
+          .map((item) => item?._existingId ?? item?.id)
+          .filter((value) => value != null && !String(value).startsWith('tmp:'))
+          .map((value) => String(value).trim())
+          .filter(Boolean)
+      )
+    )
+  ), [facultySchedules]);
 
   const loadFeed = React.useCallback(async () => {
-    if (!isOpen || !facultyId || !schoolyear || !semester) return;
+    if (!isOpen || !facultyId || !schoolyear || !semester || scheduleIds.length === 0) return;
     try {
       setLoading(true);
       setError('');
       const res = await api.getScheduleHistoryFeed({
         page,
         limit,
+        scheduleIds: scheduleIds.join(','),
         facultyId,
         facultyName,
         schoolyear,
@@ -189,7 +202,7 @@ export default function FacultyAuditLogModal({
     } finally {
       setLoading(false);
     }
-  }, [facultyId, facultyName, isOpen, limit, page, schoolyear, semester]);
+  }, [facultyId, facultyName, isOpen, limit, page, schoolyear, semester, scheduleIds]);
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -199,7 +212,7 @@ export default function FacultyAuditLogModal({
   React.useEffect(() => {
     if (!isOpen) return;
     setPage(1);
-  }, [facultyId, schoolyear, semester, isOpen]);
+  }, [facultyId, schoolyear, semester, scheduleIds, isOpen]);
 
   const items = payload.items || [];
   const summary = payload.summary || {};
@@ -281,7 +294,13 @@ export default function FacultyAuditLogModal({
                   </Box>
                 ) : null}
 
-                {!loading && !error && items.length === 0 ? (
+                {!loading && !error && scheduleIds.length === 0 ? (
+                  <Box px={4} py={8}>
+                    <Text color={muted}>No saved schedules are currently loaded for this faculty in the selected SY/semester.</Text>
+                  </Box>
+                ) : null}
+
+                {!loading && !error && scheduleIds.length > 0 && items.length === 0 ? (
                   <Box px={4} py={8}>
                     <Text color={muted}>No audit log entries matched this faculty and load context.</Text>
                   </Box>
