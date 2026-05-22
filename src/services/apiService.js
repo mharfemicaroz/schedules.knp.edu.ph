@@ -240,6 +240,26 @@ class ApiService {
     return await res.json();
   }
 
+  async getFacultyTermBalanceSuggestions(payload = {}, { maxDepth } = {}) {
+    const search = new URLSearchParams();
+    if (maxDepth != null) search.set("maxDepth", String(maxDepth));
+    const qs = search.toString();
+    const url = `${this.baseURL}${this.schedulesPath}/faculty/term-balance${
+      qs ? `?${qs}` : ""
+    }`;
+    const res = await this._fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+      },
+      body: JSON.stringify(payload || {}),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   // POST /api/schedules/:id/resolve - Resolve double-book by deleting conflicting row and saving candidate
   async resolveSchedule(id, payload) {
     const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/resolve`;

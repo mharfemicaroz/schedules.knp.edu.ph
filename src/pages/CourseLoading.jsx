@@ -199,6 +199,28 @@ function programBase(s) {
   const m = txt.match(/^([A-Z0-9]+)/);
   return m ? m[1] : '';
 }
+function normalizePrimaryBalanceTerm(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return '';
+  if (text.startsWith('1')) return '1st';
+  if (text.startsWith('2')) return '2nd';
+  return '';
+}
+function formatPrimaryBalanceTerm(value) {
+  const term = normalizePrimaryBalanceTerm(value);
+  if (term === '1st') return '1st Term';
+  if (term === '2nd') return '2nd Term';
+  return String(value || '-');
+}
+function stablePlannerNoise(input) {
+  const text = String(input || '');
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ((hash >>> 0) % 1000) / 1000;
+}
 function rankAcademicPosition(pos) {
   const p = String(pos || '').trim().toLowerCase();
   if (p === 'dean') return 3;
@@ -1211,6 +1233,8 @@ export default function CourseLoading() {
   const termBorderSecond = useColorModeValue('green.200','green.700');
   const termBorderSem = useColorModeValue('orange.200','orange.700');
   const termBorderOther = useColorModeValue('gray.200','gray.700');
+  const balanceStepBg = useColorModeValue('gray.50', 'whiteAlpha.100');
+  const balanceInfoBg = useColorModeValue('blue.50', 'whiteAlpha.100');
   // Skeleton shared colors and overlay
   const skStart = useColorModeValue('gray.100','gray.700');
   const skEnd = useColorModeValue('gray.200','gray.600');
@@ -3964,6 +3988,634 @@ const prefill = hit ? {
     }, { savedUnits: 0, draftUnits: 0, savedCount: 0, draftCount: 0 });
     return { ...totals, totalUnits: totals.savedUnits + totals.draftUnits };
   }, [facultySchedules]);
+  const selectedFacultyDisplayName = React.useMemo(
+    () => String(selectedFaculty?.name || selectedFaculty?.faculty || '').trim(),
+    [selectedFaculty]
+  );
+  const facultyBalanceItems = React.useMemo(() => {
+    const items = Array.isArray(facultySchedules?.items) ? facultySchedules.items : [];
+    return items.map((it) => {
+      const e = facEdits[it.id] || {};
+      const effectiveTerm = String(e.term || it.term || it.semester || '').trim();
+      const effectiveTime = String(e.time || it.schedule || it.time || '').trim();
+      const effectiveDay = String(e.day || it.day || 'MON-FRI').trim() || 'MON-FRI';
+      const effectiveFacultyName = String(e.faculty || it.faculty || it.instructor || selectedFacultyDisplayName || '').trim();
+      const effectiveFacultyId = e.facultyId ?? it.facultyId ?? it.faculty_id ?? selectedFaculty?.id ?? null;
+      return {
+        id: String(it.id ?? ''),
+        code: it.code || it.courseName || '',
+        title: it.title || it.courseTitle || '',
+        unit: Number(it.unit ?? 0) || 0,
+        term: effectiveTerm,
+        primaryTerm: normalizePrimaryBalanceTerm(effectiveTerm),
+        time: effectiveTime,
+        day: effectiveDay,
+        blockCode: it.blockCode || it.section || '',
+        programcode: it.programcode || it.program || parseBlockMeta(it.blockCode || it.section || '').programcode || '',
+        yearlevel: it.yearlevel || parseBlockMeta(it.blockCode || it.section || '').yearlevel || '',
+        facultyName: effectiveFacultyName,
+        facultyId: effectiveFacultyId,
+        locked: !!it?._locked || (String(it?.lock || '').toLowerCase() === 'yes') || (String(it?.lock || '').toLowerCase() === 'true') || (String(it?.lock || '').toLowerCase() === '1'),
+        isDraft: !!it?._draft || String(it?.id || '').startsWith('tmp:'),
+      };
+    });
+  }, [facultySchedules, facEdits, selectedFaculty?.id, selectedFacultyDisplayName]);
+  const facultyTermBalanceStats = React.useMemo(() => {
+    const stats = facultyBalanceItems.reduce((acc, row) => {
+      if (row.primaryTerm === '1st') acc.first += 1;
+      else if (row.primaryTerm === '2nd') acc.second += 1;
+      else acc.other += 1;
+      return acc;
+    }, { first: 0, second: 0, other: 0 });
+    const difference = Math.abs(stats.first - stats.second);
+    const dominantTerm = difference === 0 ? '' : (stats.first > stats.second ? '1st' : '2nd');
+    const lighterTerm = dominantTerm === '1st' ? '2nd' : (dominantTerm === '2nd' ? '1st' : '');
+    return {
+      ...stats,
+      totalPrimary: stats.first + stats.second,
+      difference,
+      dominantTerm,
+      lighterTerm,
+      thresholdReached: stats.first > 4 && stats.second > 4,
+    };
+  }, [facultyBalanceItems]);
+  const [termBalancerOpen, setTermBalancerOpen] = React.useState(false);
+  const [termBalancerBusy, setTermBalancerBusy] = React.useState(false);
+  const [termBalancerPlans, setTermBalancerPlans] = React.useState([]);
+  const [termBalancerSummary, setTermBalancerSummary] = React.useState(null);
+  const generateFacultyTermBalancerSuggestions = React.useCallback(() => {
+    const normalizeNameKey = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const selectedTarget = {
+      facultyId: selectedFaculty?.id != null ? String(selectedFaculty.id) : '',
+      facultyName: selectedFacultyDisplayName,
+    };
+    const sameFacultyEntity = (row, target) => {
+      if (!row || !target) return false;
+      const rowId = row.facultyId != null ? String(row.facultyId) : '';
+      const targetId = target.facultyId != null ? String(target.facultyId) : '';
+      if (rowId && targetId) return rowId === targetId;
+      const rowName = normalizeNameKey(row.facultyName || row.faculty || row.instructor || '');
+      const targetName = normalizeNameKey(target.facultyName || target.faculty || target.name || '');
+      return !!rowName && !!targetName && rowName === targetName;
+    };
+    const toPlannerRow = (src, overrides = {}) => {
+      const rawId = overrides.id ?? src.id ?? src.schedule_id ?? src.scheduleId ?? src._existingId ?? '';
+      const blockCode = String(overrides.blockCode ?? src.blockCode ?? src.section ?? src.block ?? src.block_code ?? '').trim();
+      const meta = parseBlockMeta(blockCode);
+      const facultyIdVal = overrides.facultyId ?? src.facultyId ?? src.faculty_id ?? null;
+      const term = String(overrides.term ?? src.term ?? src.semester ?? src.sem ?? src._term ?? '').trim();
+      return {
+        id: String(rawId || `${blockCode}|${src.courseName || src.code || ''}|${term}|${src.time || src.schedule || src._time || ''}`),
+        code: String(overrides.code ?? src.courseName ?? src.code ?? '').trim(),
+        title: String(overrides.title ?? src.courseTitle ?? src.title ?? '').trim(),
+        unit: Number(overrides.unit ?? src.unit ?? src.units ?? src.hours ?? 0) || 0,
+        term,
+        primaryTerm: normalizePrimaryBalanceTerm(term),
+        time: String(overrides.time ?? src.time ?? src.schedule ?? src._time ?? '').trim(),
+        day: String(overrides.day ?? src.day ?? src._day ?? 'MON-FRI').trim() || 'MON-FRI',
+        blockCode,
+        programcode: String(overrides.programcode ?? src.programcode ?? src.program ?? meta.programcode ?? '').trim(),
+        yearlevel: String(overrides.yearlevel ?? src.yearlevel ?? src.year ?? meta.yearlevel ?? '').trim(),
+        facultyId: facultyIdVal != null && facultyIdVal !== '' ? String(facultyIdVal) : '',
+        facultyName: String(overrides.facultyName ?? src.faculty ?? src.instructor ?? src.facultyName ?? '').trim(),
+        locked: !!(overrides.locked ?? src._locked) || ['yes', 'true', '1'].includes(String(src.lock ?? src.is_locked ?? src.locked ?? '').toLowerCase()),
+        isDraft: !!(overrides.isDraft ?? src._draft) || String(rawId || '').startsWith('tmp:'),
+      };
+    };
+    const matchesCurrentLoad = (row) => {
+      const loadSy = String(settingsLoad?.school_year || '').trim();
+      const loadSem = normalizeTermForCompare(settingsLoad?.semester || '');
+      const rowSy = String(row?.sy || row?.schoolyear || row?.school_year || row?.schoolYear || '').trim();
+      const rowSem = normalizeTermForCompare(row?.semester || row?.term || row?.sem || '');
+      if (loadSy && rowSy && loadSy !== rowSy) return false;
+      if (loadSem && rowSem && loadSem !== rowSem) return false;
+      return true;
+    };
+    const poolById = new Map();
+    (Array.isArray(existing) ? existing : [])
+      .filter(matchesCurrentLoad)
+      .forEach((row) => {
+        const normalized = toPlannerRow(row);
+        if (normalized.id) poolById.set(normalized.id, normalized);
+      });
+    facultyBalanceItems.forEach((row) => {
+      const normalized = toPlannerRow(row, {
+        id: row.id,
+        code: row.code,
+        title: row.title,
+        unit: row.unit,
+        term: row.term,
+        time: row.time,
+        day: row.day,
+        blockCode: row.blockCode,
+        programcode: row.programcode,
+        yearlevel: row.yearlevel,
+        facultyId: row.facultyId,
+        facultyName: row.facultyName,
+        locked: row.locked,
+        isDraft: row.isDraft,
+      });
+      poolById.set(normalized.id, normalized);
+    });
+    const basePool = Array.from(poolById.values());
+    const computeSelectedSummary = (pool) => {
+      const counts = pool.reduce((acc, row) => {
+        if (row.deleted) return acc;
+        if (!sameFacultyEntity(row, selectedTarget)) return acc;
+        if (row.primaryTerm === '1st') acc.first += 1;
+        else if (row.primaryTerm === '2nd') acc.second += 1;
+        return acc;
+      }, { first: 0, second: 0 });
+      const difference = Math.abs(counts.first - counts.second);
+      const dominantTerm = difference === 0 ? '' : (counts.first > counts.second ? '1st' : '2nd');
+      return {
+        ...counts,
+        difference,
+        dominantTerm,
+        lighterTerm: dominantTerm === '1st' ? '2nd' : (dominantTerm === '2nd' ? '1st' : ''),
+        totalPrimary: counts.first + counts.second,
+      };
+    };
+    const baseSummary = computeSelectedSummary(basePool);
+    if (!selectedFaculty || baseSummary.totalPrimary === 0) {
+      return {
+        summary: {
+          before: baseSummary,
+          afterBest: baseSummary,
+          note: 'No primary-term schedules are available for the selected faculty.',
+          thresholdReached: false,
+        },
+        plans: [],
+      };
+    }
+    const getDays = (value) => {
+      const parsed = parseF2FDays(value);
+      return parsed.length > 0 ? parsed : ['ANY'];
+    };
+    const hasDayOverlap = (aDay, bDay) => {
+      const a = getDays(aDay);
+      const b = getDays(bDay);
+      if (a.includes('ANY')) return b.includes('ANY');
+      if (b.includes('ANY')) return false;
+      return a.some((day) => b.includes(day));
+    };
+    const canPlace = (pool, row, targetFaculty, targetTerm, excludeIds = []) => {
+      const targetTime = String(row?.time || '').trim();
+      const targetDay = String(row?.day || '').trim();
+      const targetRange = getTimeRange(targetTime);
+      const targetPrimary = normalizePrimaryBalanceTerm(targetTerm);
+      if (!targetPrimary || !targetTime || !targetDay) return false;
+      if (!(targetRange && (Number.isFinite(targetRange.start) || Number.isFinite(targetRange.end) || String(targetRange.key || '').trim()))) return false;
+      const sectionKey = normalizeBlockLookupCode(row?.blockCode || '');
+      const excluded = new Set(excludeIds.map((id) => String(id)));
+      return !pool.some((other) => {
+        if (!other || other.deleted) return false;
+        if (excluded.has(String(other.id))) return false;
+        if (normalizePrimaryBalanceTerm(other.term) !== targetPrimary) return false;
+        if (!hasDayOverlap(targetDay, other.day)) return false;
+        const otherRange = getTimeRange(other.time);
+        if (!(otherRange && (Number.isFinite(otherRange.start) || Number.isFinite(otherRange.end) || String(otherRange.key || '').trim()))) return false;
+        if (!timeRangesOverlap(targetRange, otherRange)) return false;
+        if (sameFacultyEntity(other, targetFaculty)) return true;
+        return sectionKey && sectionKey === normalizeBlockLookupCode(other.blockCode || '');
+      });
+    };
+    const resolveFacultyMeta = (facultyId, facultyName) => {
+      const byId = facultyId != null && facultyId !== ''
+        ? (facultyAll || []).find((item) => String(item?.id) === String(facultyId))
+        : null;
+      if (byId) return byId;
+      const target = normalizeNameKey(facultyName);
+      return (facultyAll || []).find((item) => normalizeNameKey(item?.name || item?.faculty || item?.full_name || '') === target) || null;
+    };
+    const calcUnitsInPool = (pool, facultyTarget) => {
+      return pool.reduce((sum, row) => {
+        if (row.deleted) return sum;
+        if (!sameFacultyEntity(row, facultyTarget)) return sum;
+        return sum + (Number(row.unit || 0) || 0);
+      }, 0);
+    };
+    const facultyFitScore = (row, faculty) => {
+      const rowProg = normalizeProgramCode(row?.programcode || parseBlockMeta(row?.blockCode || '').programcode || '');
+      const rowBase = programBase(rowProg);
+      const deptRaw = faculty?.department || faculty?.dept || faculty?.department_name || faculty?.departmentName || '';
+      const deptNorm = normalizeProgramCode(deptRaw);
+      const deptBase = programBase(deptRaw);
+      if (rowProg && deptNorm && rowProg === deptNorm) return 4;
+      if (rowProg && deptBase && rowProg === deptBase) return 3;
+      if (rowBase && deptNorm && rowBase === deptNorm) return 2;
+      if (rowBase && deptBase && rowBase === deptBase) return 1;
+      return 0;
+    };
+    const describeAction = (action, pool) => {
+      const row = pool.find((item) => String(item.id) === String(action.rowId));
+      const label = `${row?.code || 'Course'} • ${row?.blockCode || '-'}`;
+      if (action.kind === 'move') {
+        return {
+          kind: action.kind,
+          key: action.key,
+          label: `Move ${label} to ${formatPrimaryBalanceTerm(action.toTerm)}`,
+          course: label,
+          from: formatPrimaryBalanceTerm(row?.term),
+          to: formatPrimaryBalanceTerm(action.toTerm),
+          note: `${selectedFacultyDisplayName || 'Faculty'} keeps the same day and time.`,
+          requiresUnlock: !!row?.locked,
+        };
+      }
+      if (action.kind === 'reassign') {
+        return {
+          kind: action.kind,
+          key: action.key,
+          label: `Transfer ${label} to ${action.targetFacultyName}`,
+          course: label,
+          from: selectedFacultyDisplayName || 'Current faculty',
+          to: action.targetFacultyName,
+          note: action.deptLabel ? `Prefer ${action.deptLabel} coverage.` : 'Hand off this heavier-term load to another faculty.',
+          requiresUnlock: !!row?.locked,
+        };
+      }
+      if (action.kind === 'swap') {
+        const partner = pool.find((item) => String(item.id) === String(action.partnerId));
+        return {
+          kind: action.kind,
+          key: action.key,
+          label: `Swap ${label} with ${partner?.code || 'partner course'} • ${partner?.blockCode || '-'}`,
+          course: label,
+          from: `${selectedFacultyDisplayName || 'Current faculty'} / ${formatPrimaryBalanceTerm(row?.term)}`,
+          to: `${partner?.code || 'Partner'} / ${formatPrimaryBalanceTerm(partner?.term)}`,
+          note: `Swap teaching coverage with ${action.targetFacultyName}.`,
+          requiresUnlock: !!row?.locked || !!partner?.locked,
+        };
+      }
+      return {
+        kind: action.kind,
+        key: action.key,
+        label: `Delete ${label}`,
+        course: label,
+        from: formatPrimaryBalanceTerm(row?.term),
+        to: 'Removed',
+        note: 'Last-resort cleanup if no safer rebalance works.',
+        requiresUnlock: !!row?.locked,
+      };
+    };
+    const simulateAction = (pool, action) => {
+      const next = pool.map((row) => ({ ...row }));
+      const idx = next.findIndex((row) => String(row.id) === String(action.rowId));
+      if (idx === -1) return null;
+      const row = next[idx];
+      if (action.kind === 'move') {
+        if (!canPlace(next, row, selectedTarget, action.toTerm, [row.id])) return null;
+        row.term = action.toTerm;
+        row.primaryTerm = normalizePrimaryBalanceTerm(action.toTerm);
+        return next;
+      }
+      if (action.kind === 'reassign') {
+        const targetMeta = resolveFacultyMeta(action.targetFacultyId, action.targetFacultyName);
+        if (!targetMeta) return null;
+        if (!canPlace(next, row, { facultyId: String(action.targetFacultyId || ''), facultyName: action.targetFacultyName }, row.term, [row.id])) return null;
+        const currentUnits = calcUnitsInPool(next, { facultyId: String(action.targetFacultyId || ''), facultyName: action.targetFacultyName });
+        if ((currentUnits + (Number(row.unit || 0) || 0)) > maxUnitsFor(targetMeta)) return null;
+        row.facultyId = String(action.targetFacultyId || '');
+        row.facultyName = action.targetFacultyName;
+        return next;
+      }
+      if (action.kind === 'swap') {
+        const partnerIdx = next.findIndex((item) => String(item.id) === String(action.partnerId));
+        if (partnerIdx === -1) return null;
+        const partner = next[partnerIdx];
+        const partnerTarget = { facultyId: String(action.targetFacultyId || ''), facultyName: action.targetFacultyName };
+        const selectedCurrentUnits = calcUnitsInPool(next, selectedTarget);
+        const partnerCurrentUnits = calcUnitsInPool(next, partnerTarget);
+        const selectedAfterUnits = selectedCurrentUnits - (Number(row.unit || 0) || 0) + (Number(partner.unit || 0) || 0);
+        const partnerMeta = resolveFacultyMeta(action.targetFacultyId, action.targetFacultyName);
+        const partnerAfterUnits = partnerCurrentUnits - (Number(partner.unit || 0) || 0) + (Number(row.unit || 0) || 0);
+        if (partnerMeta && partnerAfterUnits > maxUnitsFor(partnerMeta)) return null;
+        if (selectedFaculty && selectedAfterUnits > maxUnitsFor(selectedFaculty)) return null;
+        if (!canPlace(next, partner, selectedTarget, partner.term, [row.id, partner.id])) return null;
+        if (!canPlace(next, row, partnerTarget, row.term, [row.id, partner.id])) return null;
+        row.facultyId = String(action.targetFacultyId || '');
+        row.facultyName = action.targetFacultyName;
+        partner.facultyId = selectedTarget.facultyId;
+        partner.facultyName = selectedTarget.facultyName;
+        return next;
+      }
+      if (action.kind === 'delete') {
+        next.splice(idx, 1);
+        return next;
+      }
+      return null;
+    };
+    const generateActions = (pool) => {
+      const summary = computeSelectedSummary(pool);
+      const heavyTerm = summary.dominantTerm;
+      const lighterTerm = summary.lighterTerm;
+      if (!heavyTerm || !lighterTerm) return [];
+      const heavyRows = pool
+        .filter((row) => !row.deleted && sameFacultyEntity(row, selectedTarget) && row.primaryTerm === heavyTerm)
+        .sort((a, b) => {
+          if (!!a.locked !== !!b.locked) return a.locked ? 1 : -1;
+          if ((Number(a.unit || 0) || 0) !== (Number(b.unit || 0) || 0)) return (Number(a.unit || 0) || 0) - (Number(b.unit || 0) || 0);
+          return String(a.code || '').localeCompare(String(b.code || ''));
+        });
+      const allActions = [];
+      heavyRows.forEach((row) => {
+        if (canPlace(pool, row, selectedTarget, lighterTerm, [row.id])) {
+          allActions.push({
+            kind: 'move',
+            key: `move:${row.id}:${lighterTerm}`,
+            rowId: row.id,
+            toTerm: lighterTerm,
+            rank: 96 - (row.locked ? 12 : 0) - (Number(row.unit || 0) || 0) * 0.35 + stablePlannerNoise(`move:${row.id}`),
+          });
+        }
+        const alternatives = (facultyAll || [])
+          .filter((faculty) => isFacultyActive(faculty))
+          .filter((faculty) => !sameFacultyEntity({ facultyId: String(faculty?.id ?? ''), facultyName: faculty?.name || faculty?.faculty || '' }, selectedTarget))
+          .map((faculty) => {
+            const deptFit = facultyFitScore(row, faculty);
+            const currentUnits = calcUnitsInPool(pool, { facultyId: String(faculty?.id ?? ''), facultyName: faculty?.name || faculty?.faculty || '' });
+            const capacity = maxUnitsFor(faculty) - currentUnits;
+            return { faculty, deptFit, capacity };
+          })
+          .filter((entry) => entry.capacity >= (Number(row.unit || 0) || 0))
+          .filter((entry) => canPlace(pool, row, { facultyId: String(entry.faculty?.id ?? ''), facultyName: entry.faculty?.name || entry.faculty?.faculty || '' }, row.term, [row.id]))
+          .sort((a, b) => {
+            const scoreA = a.deptFit * 40 + a.capacity + stablePlannerNoise(`fac:${a.faculty?.id || a.faculty?.name}:${row.id}`);
+            const scoreB = b.deptFit * 40 + b.capacity + stablePlannerNoise(`fac:${b.faculty?.id || b.faculty?.name}:${row.id}`);
+            return scoreB - scoreA;
+          })
+          .slice(0, 3);
+        alternatives.forEach(({ faculty, deptFit }) => {
+          const deptLabel = faculty?.department || faculty?.dept || faculty?.department_name || faculty?.departmentName || '';
+          allActions.push({
+            kind: 'reassign',
+            key: `reassign:${row.id}:${faculty?.id ?? faculty?.name}`,
+            rowId: row.id,
+            targetFacultyId: faculty?.id ?? '',
+            targetFacultyName: faculty?.name || faculty?.faculty || '',
+            deptLabel,
+            rank: 68 + deptFit * 11 - (row.locked ? 8 : 0) + stablePlannerNoise(`reassign:${row.id}:${faculty?.id ?? faculty?.name}`),
+          });
+        });
+        const swapCandidates = pool
+          .filter((partner) => !partner.deleted && !sameFacultyEntity(partner, selectedTarget) && partner.primaryTerm === lighterTerm)
+          .map((partner) => {
+            const partnerMeta = resolveFacultyMeta(partner.facultyId, partner.facultyName);
+            const deptFit = partnerMeta ? facultyFitScore(row, partnerMeta) : 0;
+            return { partner, partnerMeta, deptFit };
+          })
+          .filter(({ partnerMeta }) => !!partnerMeta)
+          .filter(({ partner, partnerMeta }) => {
+            const partnerTarget = { facultyId: String(partnerMeta?.id ?? partner.facultyId ?? ''), facultyName: partnerMeta?.name || partnerMeta?.faculty || partner.facultyName || '' };
+            const selectedCurrentUnits = calcUnitsInPool(pool, selectedTarget);
+            const partnerCurrentUnits = calcUnitsInPool(pool, partnerTarget);
+            const selectedAfterUnits = selectedCurrentUnits - (Number(row.unit || 0) || 0) + (Number(partner.unit || 0) || 0);
+            const partnerAfterUnits = partnerCurrentUnits - (Number(partner.unit || 0) || 0) + (Number(row.unit || 0) || 0);
+            if (selectedFaculty && selectedAfterUnits > maxUnitsFor(selectedFaculty)) return false;
+            if (partnerAfterUnits > maxUnitsFor(partnerMeta)) return false;
+            if (!canPlace(pool, partner, selectedTarget, partner.term, [row.id, partner.id])) return false;
+            if (!canPlace(pool, row, partnerTarget, row.term, [row.id, partner.id])) return false;
+            return true;
+          })
+          .sort((a, b) => {
+            const unitPenaltyA = Math.abs((Number(a.partner.unit || 0) || 0) - (Number(row.unit || 0) || 0));
+            const unitPenaltyB = Math.abs((Number(b.partner.unit || 0) || 0) - (Number(row.unit || 0) || 0));
+            const scoreA = a.deptFit * 20 - unitPenaltyA + stablePlannerNoise(`swap:${row.id}:${a.partner.id}`);
+            const scoreB = b.deptFit * 20 - unitPenaltyB + stablePlannerNoise(`swap:${row.id}:${b.partner.id}`);
+            return scoreB - scoreA;
+          })
+          .slice(0, 3);
+        swapCandidates.forEach(({ partner, partnerMeta, deptFit }) => {
+          allActions.push({
+            kind: 'swap',
+            key: `swap:${row.id}:${partner.id}`,
+            rowId: row.id,
+            partnerId: partner.id,
+            targetFacultyId: partnerMeta?.id ?? partner.facultyId ?? '',
+            targetFacultyName: partnerMeta?.name || partnerMeta?.faculty || partner.facultyName || '',
+            rank: 82 + deptFit * 9 - (row.locked || partner.locked ? 10 : 0) + stablePlannerNoise(`swap:${row.id}:${partner.id}`),
+          });
+        });
+        allActions.push({
+          kind: 'delete',
+          key: `delete:${row.id}`,
+          rowId: row.id,
+          rank: 16 - (row.locked ? 4 : 0) + stablePlannerNoise(`delete:${row.id}`),
+        });
+      });
+      const deduped = new Map();
+      allActions.forEach((action) => {
+        if (!deduped.has(action.key)) deduped.set(action.key, action);
+      });
+      return Array.from(deduped.values()).sort((a, b) => b.rank - a.rank);
+    };
+    const buildPlan = (steps, pool) => {
+      const after = computeSelectedSummary(pool);
+      const before = baseSummary;
+      const improvement = Math.max(0, before.difference - after.difference);
+      const counts = steps.reduce((acc, step) => {
+        acc[step.kind] = (acc[step.kind] || 0) + 1;
+        if (step.requiresUnlock) acc.unlocks += 1;
+        return acc;
+      }, { unlocks: 0 });
+      const score =
+        improvement * 120 +
+        (after.difference === 0 ? 36 : 0) -
+        steps.length * 8 -
+        (counts.delete || 0) * 34 -
+        (counts.reassign || 0) * 12 -
+        (counts.swap || 0) * 8 -
+        counts.unlocks * 9 +
+        stablePlannerNoise(steps.map((step) => step.key).join('|')) * 5;
+      const method = steps.length === 1 && steps[0].kind === 'move'
+        ? 'Deterministic'
+        : (steps.some((step) => step.kind === 'delete') ? 'Hybrid • last resort' : 'Hybrid');
+      const confidence = after.difference === 0
+        ? (steps.length === 1 ? 'High' : 'Medium')
+        : (improvement >= 2 ? 'Medium' : 'Low');
+      const impact = after.difference === 0
+        ? 'Fully balanced'
+        : `Gap reduced by ${improvement}`;
+      const title = steps.length === 1
+        ? steps[0].label
+        : `${impact} in ${steps.length} steps`;
+      const rationale = [
+        steps.some((step) => step.kind === 'move') ? 'Prefer direct term flips that preserve day and time.' : null,
+        steps.some((step) => step.kind === 'reassign') ? 'Same-program and same-department handoffs are ranked ahead of cross-department moves.' : null,
+        steps.some((step) => step.kind === 'swap') ? 'Swaps are favored when they rebalance both sides without creating time conflicts.' : null,
+        steps.some((step) => step.kind === 'delete') ? 'Deletion is only surfaced as a fallback when safer moves are limited.' : null,
+      ].filter(Boolean);
+      return {
+        id: steps.map((step) => step.key).join('>'),
+        title,
+        method,
+        confidence,
+        impact,
+        score,
+        before,
+        after,
+        improvement,
+        steps,
+        rationale,
+      };
+    };
+    if (baseSummary.difference === 0) {
+      return {
+        summary: {
+          before: baseSummary,
+          afterBest: baseSummary,
+          note: 'The selected faculty is already balanced across 1st and 2nd terms.',
+          thresholdReached: facultyTermBalanceStats.thresholdReached,
+        },
+        plans: [],
+      };
+    }
+    const collected = [];
+    let frontier = [{ pool: basePool, steps: [] }];
+    const visited = new Set();
+    for (let depth = 0; depth < 3; depth += 1) {
+      const nextFrontier = [];
+      frontier.forEach((state) => {
+        const currentSummary = computeSelectedSummary(state.pool);
+        const actions = generateActions(state.pool);
+        const deterministic = actions.slice(0, 4);
+        const exploratory = actions.slice(4, 10)
+          .slice()
+          .sort((a, b) => stablePlannerNoise(`${a.key}|${depth}`) - stablePlannerNoise(`${b.key}|${depth}`))
+          .slice(0, 2);
+        [...deterministic, ...exploratory].forEach((action) => {
+          if (state.steps.some((step) => step.key === action.key)) return;
+          const nextPool = simulateAction(state.pool, action);
+          if (!nextPool) return;
+          const step = describeAction(action, state.pool);
+          const nextSteps = [...state.steps, step];
+          const signature = `${computeSelectedSummary(nextPool).first}|${computeSelectedSummary(nextPool).second}|${nextSteps.map((item) => item.key).join('|')}`;
+          if (visited.has(signature)) return;
+          visited.add(signature);
+          const plan = buildPlan(nextSteps, nextPool);
+          if (plan.improvement > 0) collected.push(plan);
+          if (currentSummary.difference > 1) {
+            nextFrontier.push({ pool: nextPool, steps: nextSteps });
+          }
+        });
+      });
+      frontier = nextFrontier
+        .sort((a, b) => buildPlan(b.steps, b.pool).score - buildPlan(a.steps, a.pool).score)
+        .slice(0, 10);
+      if (frontier.length === 0) break;
+    }
+    const dedupedPlans = [];
+    const seenPlanIds = new Set();
+    collected
+      .sort((a, b) => b.score - a.score)
+      .forEach((plan) => {
+        if (seenPlanIds.has(plan.id)) return;
+        seenPlanIds.add(plan.id);
+        dedupedPlans.push(plan);
+      });
+    return {
+      summary: {
+        before: baseSummary,
+        afterBest: dedupedPlans[0]?.after || baseSummary,
+        note: facultyTermBalanceStats.thresholdReached
+          ? 'Deterministic term flips are ranked first, then a probabilistic explorer samples deeper handoff, swap, and cleanup paths up to 3 moves.'
+          : 'The imbalance is light, so the planner still searched for low-disruption fixes but kept the suggestions conservative.',
+        thresholdReached: facultyTermBalanceStats.thresholdReached,
+      },
+      plans: dedupedPlans.slice(0, 6),
+    };
+  }, [
+    existing,
+    facEdits,
+    facultyAll,
+    facultyBalanceItems,
+    facultyTermBalanceStats.thresholdReached,
+    isFacultyActive,
+    maxUnitsFor,
+    selectedFaculty,
+    selectedFacultyDisplayName,
+    settingsLoad?.school_year,
+    settingsLoad?.semester,
+  ]);
+  const openFacultyTermBalancer = React.useCallback(async () => {
+    if (!selectedFaculty) return;
+    setTermBalancerOpen(true);
+    setTermBalancerBusy(true);
+    setTermBalancerPlans([]);
+    setTermBalancerSummary({
+      before: facultyTermBalanceStats,
+      afterBest: facultyTermBalanceStats,
+      note: 'Processing the request and exploring low-disruption rebalance paths.',
+      thresholdReached: facultyTermBalanceStats.thresholdReached,
+    });
+    try {
+      const payload = {
+        facultyId: selectedFaculty?.id ?? '',
+        facultyName: selectedFacultyDisplayName,
+        schoolyear: settingsLoad?.school_year || '',
+        semester: settingsLoad?.semester || '',
+        currentItems: facultyBalanceItems.map((row) => ({
+          id: row.id,
+          code: row.code,
+          title: row.title,
+          unit: row.unit,
+          term: row.term,
+          time: row.time,
+          day: row.day,
+          blockCode: row.blockCode,
+          programcode: row.programcode,
+          yearlevel: row.yearlevel,
+          facultyId: row.facultyId,
+          facultyName: row.facultyName,
+          locked: row.locked,
+          isDraft: row.isDraft,
+        })),
+      };
+      let result = null;
+      try {
+        result = await api.getFacultyTermBalanceSuggestions(payload, {
+          maxDepth: 3,
+        });
+      } catch (remoteError) {
+        result = null;
+        if (remoteError?.status && remoteError.status !== 404) {
+          throw remoteError;
+        }
+      }
+      if (!result) {
+        result = generateFacultyTermBalancerSuggestions();
+        if (result?.summary) {
+          result = {
+            ...result,
+            summary: {
+              ...result.summary,
+              note: `Backend planner unavailable. ${result.summary.note || 'Using local fallback suggestions.'}`,
+            },
+          };
+        }
+      }
+      setTermBalancerPlans(Array.isArray(result?.plans) ? result.plans : []);
+      setTermBalancerSummary(result?.summary || null);
+    } catch (error) {
+      setTermBalancerPlans([]);
+      setTermBalancerSummary({
+        before: facultyTermBalanceStats,
+        afterBest: facultyTermBalanceStats,
+        note: error?.message || 'Could not compute term-balance suggestions.',
+        thresholdReached: facultyTermBalanceStats.thresholdReached,
+      });
+    } finally {
+      setTermBalancerBusy(false);
+    }
+  }, [
+    facultyBalanceItems,
+    facultyTermBalanceStats,
+    generateFacultyTermBalancerSuggestions,
+    selectedFaculty,
+    selectedFacultyDisplayName,
+    settingsLoad?.school_year,
+    settingsLoad?.semester,
+  ]);
 
 
   const toggleFacSelect = (id, checked) => {
@@ -6666,10 +7318,18 @@ const prefill = hit ? {
                 <HStack>
                   <Heading size="sm">Faculty:</Heading>
                   <Badge colorScheme="purple">{selectedFaculty.name || selectedFaculty.faculty}</Badge>
+                  {(facultyTermBalanceStats.first > 0 || facultyTermBalanceStats.second > 0) && (
+                    <Badge colorScheme={facultyTermBalanceStats.difference > 0 ? 'orange' : 'green'} variant="subtle">
+                      {facultyTermBalanceStats.first} / {facultyTermBalanceStats.second}
+                    </Badge>
+                  )}
                 </HStack>
                 <HStack>
                   <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintFaculty} isDisabled={loading || (Array.isArray(facultySchedules.items) ? facultySchedules.items.length === 0 : true)}>Print</Button>
                   <Button leftIcon={<FiRefreshCw />} size="sm" variant="outline" onClick={()=>fetchFacultySchedules(selectedFaculty)} isDisabled={loading}>Reload</Button>
+                  <Button leftIcon={<FiShuffle />} size="sm" variant="outline" colorScheme="orange" onClick={openFacultyTermBalancer} isDisabled={facultySchedules.loading || !selectedFaculty || facultySchedules.items.length === 0}>
+                    Term Balancer
+                  </Button>
                   <Button size="sm" colorScheme="blue" variant="solid" onClick={()=>setSchedAssignOpen(true)}>Assign Schedules</Button>
                 </HStack>
               </HStack>
@@ -7034,6 +7694,180 @@ const prefill = hit ? {
               </VStack>
             )}
           </ModalBody>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={termBalancerOpen} onClose={()=>{ if (!termBalancerBusy) setTermBalancerOpen(false); }} isCentered size="4xl" scrollBehavior="inside">
+        <ModalOverlay />
+        <ModalContent maxW={{ base: '94vw', lg: '1100px' }}>
+          <ModalHeader>
+            <HStack justify="space-between" align="center" pr={10}>
+              <VStack align="start" spacing={0}>
+                <HStack>
+                  <Text fontWeight="700">Term Balancer</Text>
+                  <Badge colorScheme="orange" variant="solid">Faculty View</Badge>
+                </HStack>
+                <Text fontSize="sm" color={subtle}>
+                  Deterministic core plus probabilistic search for low-disruption fixes up to 3 moves.
+                </Text>
+              </VStack>
+              {termBalancerSummary?.before && (
+                <Badge colorScheme={termBalancerSummary.before.difference > 0 ? 'orange' : 'green'} fontSize="0.85rem" px={3} py={1}>
+                  {termBalancerSummary.before.first} / {termBalancerSummary.before.second}
+                </Badge>
+              )}
+            </HStack>
+          </ModalHeader>
+          <ModalCloseButton isDisabled={termBalancerBusy} />
+          <ModalBody>
+            <VStack align="stretch" spacing={4}>
+              <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
+                <Box p={3} rounded="xl" borderWidth="1px" borderColor={termBorderFirst} bg={termBgFirst}>
+                  <Text fontSize="xs" textTransform="uppercase" letterSpacing="0.08em" color={subtle}>1st Term</Text>
+                  <Heading size="lg" mt={1}>{termBalancerSummary?.before?.first ?? facultyTermBalanceStats.first}</Heading>
+                </Box>
+                <Box p={3} rounded="xl" borderWidth="1px" borderColor={termBorderSecond} bg={termBgSecond}>
+                  <Text fontSize="xs" textTransform="uppercase" letterSpacing="0.08em" color={subtle}>2nd Term</Text>
+                  <Heading size="lg" mt={1}>{termBalancerSummary?.before?.second ?? facultyTermBalanceStats.second}</Heading>
+                </Box>
+                <Box p={3} rounded="xl" borderWidth="1px" borderColor={border} bg={panelBg}>
+                  <Text fontSize="xs" textTransform="uppercase" letterSpacing="0.08em" color={subtle}>Projected Best Gap</Text>
+                  <Heading size="lg" mt={1}>
+                    {termBalancerSummary?.afterBest?.difference ?? facultyTermBalanceStats.difference}
+                  </Heading>
+                  <Text fontSize="xs" color={subtle} mt={1}>
+                    {termBalancerSummary?.afterBest?.dominantTerm
+                      ? `${formatPrimaryBalanceTerm(termBalancerSummary.afterBest.dominantTerm)} remains heavier`
+                      : 'Balanced across primary terms'}
+                  </Text>
+                </Box>
+              </SimpleGrid>
+              <Box p={4} rounded="xl" borderWidth="1px" borderColor={border} bg={panelBg}>
+                <HStack justify="space-between" align="start" flexWrap="wrap" spacing={3}>
+                  <VStack align="start" spacing={1}>
+                    <Text fontWeight="600">Planner Note</Text>
+                    <Text fontSize="sm" color={subtle}>
+                      {termBalancerSummary?.note || 'Processing the current load and exploring rebalance paths.'}
+                    </Text>
+                  </VStack>
+                  {!termBalancerBusy && (
+                    <Badge colorScheme={termBalancerSummary?.thresholdReached ? 'purple' : 'gray'} variant="subtle">
+                      {termBalancerSummary?.thresholdReached ? 'Full imbalance mode' : 'Light imbalance mode'}
+                    </Badge>
+                  )}
+                </HStack>
+              </Box>
+              {termBalancerBusy ? (
+                <Box p={8} rounded="2xl" borderWidth="1px" borderColor={border} bg={panelBg}>
+                  <VStack spacing={4}>
+                    <Spinner size="lg" color="orange.400" thickness="3px" speed="0.65s" />
+                    <VStack spacing={1}>
+                      <Text fontWeight="700">Processing request</Text>
+                      <Text fontSize="sm" color={subtle}>Finding optimal rebalance suggestions for the selected faculty.</Text>
+                    </VStack>
+                    <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3} w="full">
+                      <Box p={3} rounded="lg" borderWidth="1px" borderColor={border} bg={termBgFirst}>
+                        <Text fontSize="sm" fontWeight="600">Checking term counts</Text>
+                        <Text fontSize="xs" color={subtle}>Measure current 1st and 2nd-term skew.</Text>
+                      </Box>
+                      <Box p={3} rounded="lg" borderWidth="1px" borderColor={border} bg={termBgSecond}>
+                        <Text fontSize="sm" fontWeight="600">Testing direct flips</Text>
+                        <Text fontSize="xs" color={subtle}>Look for same-faculty moves with no time conflict.</Text>
+                      </Box>
+                      <Box p={3} rounded="lg" borderWidth="1px" borderColor={border} bg={termBgSem}>
+                        <Text fontSize="sm" fontWeight="600">Exploring deeper paths</Text>
+                        <Text fontSize="xs" color={subtle}>Sample handoffs, swaps, and fallback cleanup up to depth 3.</Text>
+                      </Box>
+                    </SimpleGrid>
+                  </VStack>
+                </Box>
+              ) : (
+                <VStack align="stretch" spacing={3}>
+                  {Array.isArray(termBalancerPlans) && termBalancerPlans.length > 0 ? (
+                    termBalancerPlans.map((plan, idx) => (
+                      <Box key={plan.id || idx} p={4} rounded="2xl" borderWidth="1px" borderColor={border} bg={panelBg} boxShadow="sm">
+                        <VStack align="stretch" spacing={3}>
+                          <HStack justify="space-between" align="start" flexWrap="wrap">
+                            <VStack align="start" spacing={1}>
+                              <Text fontWeight="700">{plan.title}</Text>
+                              <HStack spacing={2} flexWrap="wrap">
+                                <Badge colorScheme={plan.after?.difference === 0 ? 'green' : 'blue'}>{plan.impact}</Badge>
+                                <Badge colorScheme="purple" variant="subtle">{plan.method}</Badge>
+                                <Badge colorScheme={plan.confidence === 'High' ? 'green' : (plan.confidence === 'Medium' ? 'yellow' : 'red')} variant="subtle">
+                                  {plan.confidence} confidence
+                                </Badge>
+                              </HStack>
+                            </VStack>
+                            <Box textAlign={{ base: 'left', md: 'right' }}>
+                              <Text fontSize="xs" color={subtle}>After rebalance</Text>
+                              <Text fontWeight="700">
+                                {plan.after?.first ?? 0} / {plan.after?.second ?? 0}
+                              </Text>
+                            </Box>
+                          </HStack>
+                          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={3}>
+                            <Box p={3} rounded="xl" borderWidth="1px" borderColor={border}>
+                              <Text fontSize="xs" color={subtle} textTransform="uppercase" letterSpacing="0.08em">Steps</Text>
+                              <VStack align="stretch" spacing={2} mt={2}>
+                                {plan.steps.map((step, stepIndex) => (
+                                  <Box key={step.key || stepIndex} p={3} rounded="lg" bg={balanceStepBg}>
+                                    <HStack justify="space-between" align="start" spacing={3}>
+                                      <HStack align="start" spacing={3}>
+                                        <Badge colorScheme="blue" mt={0.5}>{stepIndex + 1}</Badge>
+                                        <VStack align="start" spacing={1}>
+                                          <Text fontWeight="600" fontSize="sm">{step.label}</Text>
+                                          <Text fontSize="sm" color={subtle}>{step.course}</Text>
+                                          <Text fontSize="xs" color={subtle}>
+                                            {step.from} {'->'} {step.to}
+                                          </Text>
+                                        </VStack>
+                                      </HStack>
+                                      {step.requiresUnlock && <Badge colorScheme="red" variant="subtle">Unlock first</Badge>}
+                                    </HStack>
+                                    {step.note && (
+                                      <Text mt={2} fontSize="xs" color={subtle}>{step.note}</Text>
+                                    )}
+                                  </Box>
+                                ))}
+                              </VStack>
+                            </Box>
+                            <Box p={3} rounded="xl" borderWidth="1px" borderColor={border}>
+                              <Text fontSize="xs" color={subtle} textTransform="uppercase" letterSpacing="0.08em">Why this ranks well</Text>
+                              <VStack align="stretch" spacing={2} mt={2}>
+                                {(plan.rationale || []).map((reason, reasonIndex) => (
+                                  <Box key={reasonIndex} p={3} rounded="lg" bg={balanceStepBg}>
+                                    <Text fontSize="sm" color={subtle}>{reason}</Text>
+                                  </Box>
+                                ))}
+                                <Box p={3} rounded="lg" bg={balanceInfoBg}>
+                                  <Text fontSize="sm" color={subtle}>
+                                    This is a suggestion only. No schedule is changed until you apply edits manually.
+                                  </Text>
+                                </Box>
+                              </VStack>
+                            </Box>
+                          </SimpleGrid>
+                        </VStack>
+                      </Box>
+                    ))
+                  ) : (
+                    <Box p={8} rounded="2xl" borderWidth="1px" borderColor={border} bg={panelBg}>
+                      <VStack spacing={3}>
+                        <Badge colorScheme="gray" variant="subtle">No strong plan found</Badge>
+                        <Text fontWeight="600">No low-conflict rebalance path was found in the current search window.</Text>
+                        <Text fontSize="sm" color={subtle} textAlign="center">
+                          Try adjusting one blocking schedule first, then run the planner again. The current search checks direct flips, faculty transfers, swaps, and cleanup paths up to 3 moves.
+                        </Text>
+                      </VStack>
+                    </Box>
+                  )}
+                </VStack>
+              )}
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={()=>setTermBalancerOpen(false)} isDisabled={termBalancerBusy}>Close</Button>
+          </ModalFooter>
         </ModalContent>
       </Modal>
 
