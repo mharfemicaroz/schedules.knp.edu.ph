@@ -1214,6 +1214,10 @@ export default function CourseLoading() {
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
   const subtle = useColorModeValue('gray.600','gray.300');
+  const swapPreviewCardBg = useColorModeValue('gray.50', 'whiteAlpha.100');
+  const swapSelectedBg = useColorModeValue('blue.50', 'blue.900');
+  const swapErrorBg = useColorModeValue('red.50', 'red.900');
+  const swapSuccessBg = useColorModeValue('green.50', 'green.900');
   const loadContextCardBg = useColorModeValue('linear(to-r, blue.50, white)', 'linear(to-r, whiteAlpha.100, transparent)');
   const dividerBorder = useColorModeValue('gray.100','gray.700');
   const savedBg = useColorModeValue('green.50','green.900');
@@ -1575,6 +1579,10 @@ export default function CourseLoading() {
   // Swap tray selections (persist across block/program changes)
   const [swapA, setSwapA] = React.useState(null);
   const [swapB, setSwapB] = React.useState(null);
+  const [swapModalOpen, setSwapModalOpen] = React.useState(false);
+  const [swapMode, setSwapMode] = React.useState('faculty');
+  const [swapPreviewBusy, setSwapPreviewBusy] = React.useState(false);
+  const [swapPreviewMap, setSwapPreviewMap] = React.useState({ faculty: null, schedule: null });
   // History modal state
   const [histOpen, setHistOpen] = React.useState(false);
   const [histScheduleId, setHistScheduleId] = React.useState(null);
@@ -5992,31 +6000,90 @@ const prefill = hit ? {
     // clear originals after revert (once)
     setAutoArrangeOriginalTerms(new Map());
   }, [autoArrange, autoArrangeOriginalTerms, rowIdentity]);
+  const formatSwapEntryLabel = React.useCallback((entry) => {
+    if (!entry) return '';
+    const parts = [
+      entry.courseName || 'Course',
+      entry.facultyName || 'Faculty',
+      entry.blockCode || '',
+      [entry.term || '', entry.time || ''].filter(Boolean).join(' • '),
+    ].filter(Boolean);
+    return parts.join(' • ');
+  }, []);
+  const summarizeSwapPreview = React.useCallback((preview) => {
+    if (!preview) {
+      return { colorScheme: 'gray', label: 'Not checked' };
+    }
+    if (Array.isArray(preview.blockers) && preview.blockers.length > 0) {
+      return { colorScheme: 'red', label: preview.blockers[0] };
+    }
+    if (preview.conflictFree) {
+      return { colorScheme: 'green', label: 'Conflict free' };
+    }
+    const sourceCount = Array.isArray(preview?.source?.conflicts) ? preview.source.conflicts.length : 0;
+    const targetCount = Array.isArray(preview?.target?.conflicts) ? preview.target.conflicts.length : 0;
+    return {
+      colorScheme: 'orange',
+      label: `${sourceCount + targetCount} conflict${sourceCount + targetCount === 1 ? '' : 's'} detected`,
+    };
+  }, []);
+  const openSwapModal = React.useCallback(async (entryA, entryB) => {
+    if (!entryA || !entryB) {
+      toast({ title: 'Select two schedules', description: 'Choose two existing schedules first.', status: 'info' });
+      return;
+    }
+    setSwapA(entryA);
+    setSwapB(entryB);
+    setSwapMode('faculty');
+    setSwapModalOpen(true);
+    setSwapPreviewBusy(true);
+    setSwapPreviewMap({ faculty: null, schedule: null });
+    try {
+      const [facultyPreview, schedulePreview] = await Promise.all([
+        api.swapSchedules(entryA.id, entryB.id, { mode: 'faculty', preview: true }),
+        api.swapSchedules(entryA.id, entryB.id, { mode: 'schedule', preview: true }),
+      ]);
+      setSwapPreviewMap({
+        faculty: facultyPreview,
+        schedule: schedulePreview,
+      });
+      if (schedulePreview?.conflictFree && !facultyPreview?.conflictFree) {
+        setSwapMode('schedule');
+      } else {
+        setSwapMode('faculty');
+      }
+    } catch (e) {
+      setSwapPreviewMap({ faculty: null, schedule: null });
+      toast({ title: 'Swap preview failed', description: e?.message || 'Could not evaluate swap options.', status: 'error' });
+    } finally {
+      setSwapPreviewBusy(false);
+    }
+  }, [toast]);
   const swapSelected = async () => {
     const idxs = rows.map((r,i) => (r._selected ? i : -1)).filter(i => i >= 0);
-    if (idxs.length !== 2) { toast({ title: 'Select two rows', description: 'Pick exactly two schedules to swap faculty.', status: 'info' }); return; }
+    if (idxs.length !== 2) { toast({ title: 'Select two rows', description: 'Pick exactly two schedules to compare swap options.', status: 'info' }); return; }
     const [i1, i2] = idxs;
     const r1 = rows[i1], r2 = rows[i2];
     if (!r1._existingId || !r2._existingId) { toast({ title: 'Swap unavailable', description: 'Swap applies only to existing schedules.', status: 'warning' }); return; }
     if (r1._locked || r2._locked) { toast({ title: 'Locked schedule', description: 'Unlock schedules before swapping.', status: 'warning' }); return; }
-    if (r1._status === 'Conflict' || r2._status === 'Conflict') { toast({ title: 'Resolve conflicts first', description: 'Swap requires no conflicts on both schedules.', status: 'warning' }); return; }
-    try {
-      setSwapBusy(true);
-      await api.swapSchedules(r1._existingId, r2._existingId);
-      // Update UI immediately to reflect swapped faculty, then refresh
-      setRows(prev => prev.map((r, idx) => {
-        if (idx === i1) return { ...r, _faculty: (r2._faculty || ''), _facultyId: (r2._facultyId ?? null) };
-        if (idx === i2) return { ...r, _faculty: (r1._faculty || ''), _facultyId: (r1._facultyId ?? null) };
-        return r;
-      }));
-      try { await onSelectBlock(selectedBlock); } catch {}
-      try { reloadSchedulesForLoad(); } catch {}
-      toast({ title: 'Swapped', description: 'Faculty swapped successfully.', status: 'success' });
-    } catch (e) {
-      toast({ title: 'Swap failed', description: e?.message || 'Could not swap faculty.', status: 'error' });
-    } finally {
-      setSwapBusy(false);
-    }
+    await openSwapModal(
+      {
+        id: r1._existingId,
+        courseName: r1.course_name || r1.courseName || r1.code || '',
+        facultyName: r1._faculty || r1.faculty || r1.instructor || '',
+        blockCode: selectedBlock?.blockCode || r1.blockCode || r1.section || '',
+        term: r1._term || r1.term || '',
+        time: r1._time || r1.time || '',
+      },
+      {
+        id: r2._existingId,
+        courseName: r2.course_name || r2.courseName || r2.code || '',
+        facultyName: r2._faculty || r2.faculty || r2.instructor || '',
+        blockCode: selectedBlock?.blockCode || r2.blockCode || r2.section || '',
+        term: r2._term || r2.term || '',
+        time: r2._time || r2.time || '',
+      }
+    );
   };
 
   const addToSwap = (row) => {
@@ -6027,6 +6094,24 @@ const prefill = hit ? {
     if (!swapA || (swapA && swapA.id === entry.id)) { setSwapA(entry); return; }
     if (!swapB || (swapB && swapB.id === entry.id)) { setSwapB(entry); return; }
     // Replace A if both filled
+    setSwapA(entry);
+  };
+
+  const addToSwapRich = (row) => {
+    if (!row || !row._existingId) { toast({ title: 'Only existing schedules', description: 'Save a schedule before adding to swap.', status: 'info' }); return; }
+    if (row._locked) { toast({ title: 'Locked schedule', description: 'Unlock before swapping.', status: 'warning' }); return; }
+    const entry = {
+      id: row._existingId,
+      courseName: row.course_name || row.courseName || row.code || 'Course',
+      facultyName: row._faculty || row.faculty || row.instructor || 'Faculty',
+      term: row._term || row.term || '',
+      time: row._time || row.time || '',
+      day: (row._day || row.day || '').toString(),
+      blockCode: selectedBlock?.blockCode || row.blockCode || row.section || '',
+    };
+    entry.label = formatSwapEntryLabel(entry);
+    if (!swapA || (swapA && swapA.id === entry.id)) { setSwapA(entry); return; }
+    if (!swapB || (swapB && swapB.id === entry.id)) { setSwapB(entry); return; }
     setSwapA(entry);
   };
 
@@ -6049,7 +6134,7 @@ const prefill = hit ? {
       blockCode: c.blockCode || c.section || '',
       section: c.section || c.blockCode || ''
     };
-    addToSwap(proxy);
+    addToSwapRich(proxy);
   };
 
   // Faculty-view: resolve conflicting old schedule and keep this edit
@@ -6131,32 +6216,42 @@ const prefill = hit ? {
 
   const swapNow = async () => {
     if (!swapA || !swapB) { toast({ title: 'Select two schedules', status: 'info' }); return; }
+    await openSwapModal(swapA, swapB);
+  };
+  const confirmSwapAction = async () => {
+    if (!swapA || !swapB) return;
+    const preview = swapPreviewMap?.[swapMode] || null;
+    if (!preview?.conflictFree) {
+      toast({ title: 'Swap blocked', description: 'Choose a conflict-free option before proceeding.', status: 'warning' });
+      return;
+    }
     setSwapBusy(true);
     try {
-      await api.swapSchedules(swapA.id, swapB.id);
-      // Retry reload quickly to reflect persisted swap
+      await api.swapSchedules(swapA.id, swapB.id, { mode: swapMode });
       try { await retryReloadCurrentBlock(3, 400); } catch {}
-      // Refresh other affected block(s) by temporarily selecting and reloading them, then restore current
       try {
         const prev = selectedBlock;
         const otherCodes = Array.from(new Set([swapA.blockCode, swapB.blockCode].filter(Boolean)));
         for (const code of otherCodes) {
           if (!prev || (prev && String(prev.blockCode) === String(code))) continue;
           const other = (blocks || []).find(b => String(b.blockCode) === String(code));
-          if (other) {
-            await onSelectBlock(other);
-          }
+          if (other) await onSelectBlock(other);
         }
         if (prev) await onSelectBlock(prev);
       } catch {}
-
       try { await onSelectBlock(selectedBlock); } catch {}
       try { reloadSchedulesForLoad(); } catch {}
-
-      toast({ title: 'Swapped', description: 'Faculty swapped successfully.', status: 'success' });
-      setSwapA(null); setSwapB(null);
+      toast({
+        title: 'Swapped',
+        description: swapMode === 'schedule' ? 'Schedule time/term swapped successfully.' : 'Faculty swapped successfully.',
+        status: 'success',
+      });
+      setSwapModalOpen(false);
+      setSwapA(null);
+      setSwapB(null);
+      setSwapPreviewMap({ faculty: null, schedule: null });
     } catch (e) {
-      toast({ title: 'Swap failed', description: e?.message || 'Could not swap faculty.', status: 'error' });
+      toast({ title: 'Swap failed', description: e?.message || 'Could not complete the swap.', status: 'error' });
     } finally {
       setSwapBusy(false);
     }
@@ -6725,7 +6820,7 @@ const prefill = hit ? {
                       isDisabled={!canLoad || !swapA || !swapB || swapBusy}
                       isLoading={swapBusy}
                     >
-                      Swap Now
+                      Review Swap
                     </Button>
                   </HStack>
                 </Stack>
@@ -6843,7 +6938,7 @@ const prefill = hit ? {
                         );
                       })()}
                         <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
-                        <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
+                        <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Review Swap</Button>
                         <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
                           Lock Selected
                         </Button>
@@ -6948,7 +7043,7 @@ const prefill = hit ? {
                                       onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
                                       onRequestSuggest={()=>openSuggestions(idx)}
                                       onRequestAssign={()=>openAssignForRow(idx)}
-                                      onRequestAddToSwap={()=>addToSwap(rows[idx])}
+                                      onRequestAddToSwap={()=>addToSwapRich(rows[idx])}
                                       onRequestDelete={()=>requestDelete(idx)}
                                       onRequestResolve={()=>requestResolve(idx)}
                                       onRequestHistory={openHistoryForRow}
@@ -7038,7 +7133,7 @@ const prefill = hit ? {
                         <Badge colorScheme={swapB ? 'purple' : 'gray'}>B</Badge>
                         <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapB ? swapB.label : 'Add a schedule to slot B'}</Text>
                         {swapB && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('B')}>Clear</Button>}
-                        <Button size="sm" colorScheme="blue" onClick={swapNow} isDisabled={!canLoad || !swapA || !swapB || swapBusy} isLoading={swapBusy}>Swap Now</Button>
+                        <Button size="sm" colorScheme="blue" onClick={swapNow} isDisabled={!canLoad || !swapA || !swapB || swapBusy} isLoading={swapBusy}>Review Swap</Button>
                       </HStack>
                     </Box>
                   )}
@@ -7071,7 +7166,7 @@ const prefill = hit ? {
                           );
                         })()}
                         <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
-                        <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Swap Faculty</Button>
+                        <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Review Swap</Button>
                         <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
                           Lock Selected
                         </Button>
@@ -7176,7 +7271,7 @@ const prefill = hit ? {
                               onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
                               onRequestSuggest={()=>openSuggestions(idx)}
                               onRequestAssign={()=>openAssignForRow(idx)}
-                              onRequestAddToSwap={()=>addToSwap(rows[idx])}
+                              onRequestAddToSwap={()=>addToSwapRich(rows[idx])}
                               onRequestDelete={()=>requestDelete(idx)}
                               onRequestResolve={()=>requestResolve(idx)}
                               onRequestHistory={openHistoryForRow}
@@ -7261,7 +7356,7 @@ const prefill = hit ? {
                                           onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
                                           onRequestSuggest={()=>openSuggestions(idx)}
                                           onRequestAssign={()=>openAssignForRow(idx)}
-                                          onRequestAddToSwap={()=>addToSwap(rows[idx])}
+                                          onRequestAddToSwap={()=>addToSwapRich(rows[idx])}
                                           onRequestDelete={()=>requestDelete(idx)}
                                           onRequestResolve={()=>requestResolve(idx)}
                                           onRequestHistory={openHistoryForRow}
@@ -8034,6 +8129,133 @@ const prefill = hit ? {
               </VStack>
             )}
           </ModalBody>
+        </ModalContent>
+      </Modal>
+      <Modal isOpen={swapModalOpen} onClose={()=>{ if (!swapBusy && !swapPreviewBusy) setSwapModalOpen(false); }} isCentered size="3xl">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Choose Swap Strategy</ModalHeader>
+          <ModalCloseButton isDisabled={swapBusy || swapPreviewBusy} />
+          <ModalBody>
+            <VStack align="stretch" spacing={4}>
+              <Text fontSize="sm" color={subtle}>
+                Compare the swap strategies first. The backend checks whether each option is conflict free before anything is applied.
+              </Text>
+              <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                {['faculty', 'schedule'].map((modeKey) => {
+                  const preview = swapPreviewMap?.[modeKey] || null;
+                  const summary = summarizeSwapPreview(preview);
+                  const isActive = swapMode === modeKey;
+                  return (
+                    <Box
+                      key={modeKey}
+                      borderWidth="1px"
+                      borderColor={isActive ? 'blue.400' : border}
+                      rounded="xl"
+                      p={4}
+                      cursor="pointer"
+                      bg={isActive ? swapSelectedBg : panelBg}
+                      onClick={() => setSwapMode(modeKey)}
+                    >
+                      <HStack justify="space-between" align="start">
+                        <VStack align="start" spacing={1}>
+                          <Heading size="sm">{modeKey === 'faculty' ? 'Faculty Swap' : 'Schedule Swap'}</Heading>
+                          <Text fontSize="sm" color={subtle}>
+                            {modeKey === 'faculty'
+                              ? 'Keep the current time/term, exchange the assigned faculty.'
+                              : 'Keep the current faculty, exchange the time and term.'}
+                          </Text>
+                        </VStack>
+                        <Badge colorScheme={summary.colorScheme}>{summary.label}</Badge>
+                      </HStack>
+                      <VStack align="stretch" spacing={2} mt={3}>
+                        <Box p={3} rounded="lg" bg={swapPreviewCardBg}>
+                          <Text fontSize="xs" textTransform="uppercase" color={subtle}>A</Text>
+                          <Text fontWeight="600">{swapA?.courseName || '-'}</Text>
+                          <Text fontSize="sm" color={subtle}>
+                            {modeKey === 'faculty'
+                              ? `${swapA?.facultyName || '-'} → ${preview?.source?.next?.faculty || '-'}`
+                              : `${swapA?.term || '-'} • ${swapA?.time || '-'} → ${preview?.source?.next?.term || '-'} • ${preview?.source?.next?.time || '-'}`
+                            }
+                          </Text>
+                        </Box>
+                        <Box p={3} rounded="lg" bg={swapPreviewCardBg}>
+                          <Text fontSize="xs" textTransform="uppercase" color={subtle}>B</Text>
+                          <Text fontWeight="600">{swapB?.courseName || '-'}</Text>
+                          <Text fontSize="sm" color={subtle}>
+                            {modeKey === 'faculty'
+                              ? `${swapB?.facultyName || '-'} → ${preview?.target?.next?.faculty || '-'}`
+                              : `${swapB?.term || '-'} • ${swapB?.time || '-'} → ${preview?.target?.next?.term || '-'} • ${preview?.target?.next?.time || '-'}`
+                            }
+                          </Text>
+                        </Box>
+                      </VStack>
+                    </Box>
+                  );
+                })}
+              </SimpleGrid>
+              {swapPreviewBusy ? (
+                <HStack spacing={3} py={3}>
+                  <Spinner size="sm" />
+                  <Text fontSize="sm">Checking swap options and conflict risk…</Text>
+                </HStack>
+              ) : (
+                (() => {
+                  const activePreview = swapPreviewMap?.[swapMode] || null;
+                  const blockers = Array.isArray(activePreview?.blockers) ? activePreview.blockers : [];
+                  const sourceConflicts = Array.isArray(activePreview?.source?.conflicts) ? activePreview.source.conflicts : [];
+                  const targetConflicts = Array.isArray(activePreview?.target?.conflicts) ? activePreview.target.conflicts : [];
+                  return (
+                    <VStack align="stretch" spacing={3}>
+                      {blockers.length > 0 && (
+                        <Box p={3} rounded="lg" borderWidth="1px" borderColor="red.200" bg={swapErrorBg}>
+                          {blockers.map((item, idx) => (
+                            <Text key={idx} fontSize="sm" color="red.600">{item}</Text>
+                          ))}
+                        </Box>
+                      )}
+                      {sourceConflicts.length === 0 && targetConflicts.length === 0 && blockers.length === 0 ? (
+                        <Box p={3} rounded="lg" borderWidth="1px" borderColor="green.200" bg={swapSuccessBg}>
+                          <Text fontSize="sm" color="green.600">This {swapMode === 'faculty' ? 'faculty' : 'schedule'} swap is conflict free.</Text>
+                        </Box>
+                      ) : (
+                        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={3}>
+                          <Box p={3} rounded="lg" borderWidth="1px" borderColor={border}>
+                            <Text fontWeight="700" mb={2}>Source impact</Text>
+                            {sourceConflicts.length ? sourceConflicts.map((item, idx) => (
+                              <Text key={idx} fontSize="sm" color={subtle}>
+                                {item?.reason || 'Conflict'}: {item?.item?.code || item?.item?.section || 'schedule'}
+                              </Text>
+                            )) : <Text fontSize="sm" color={subtle}>No conflicts.</Text>}
+                          </Box>
+                          <Box p={3} rounded="lg" borderWidth="1px" borderColor={border}>
+                            <Text fontWeight="700" mb={2}>Target impact</Text>
+                            {targetConflicts.length ? targetConflicts.map((item, idx) => (
+                              <Text key={idx} fontSize="sm" color={subtle}>
+                                {item?.reason || 'Conflict'}: {item?.item?.code || item?.item?.section || 'schedule'}
+                              </Text>
+                            )) : <Text fontSize="sm" color={subtle}>No conflicts.</Text>}
+                          </Box>
+                        </SimpleGrid>
+                      )}
+                    </VStack>
+                  );
+                })()
+              )}
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={()=>setSwapModalOpen(false)} isDisabled={swapBusy || swapPreviewBusy}>Cancel</Button>
+            <Button
+              ml={3}
+              colorScheme="blue"
+              onClick={confirmSwapAction}
+              isDisabled={swapBusy || swapPreviewBusy || !(swapPreviewMap?.[swapMode]?.conflictFree)}
+              isLoading={swapBusy}
+            >
+              {swapMode === 'faculty' ? 'Swap Faculty' : 'Swap Schedule'}
+            </Button>
+          </ModalFooter>
         </ModalContent>
       </Modal>
       <AssignSchedulesModal

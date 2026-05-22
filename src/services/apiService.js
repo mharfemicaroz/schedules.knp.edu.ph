@@ -768,9 +768,14 @@ class ApiService {
     });
   }
 
-  async swapSchedules(id, targetId) {
+  async swapSchedules(id, targetId, options = {}) {
     const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/swap`;
-    const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify({ targetId }) });
+    const body = {
+      targetId,
+      ...(options?.mode ? { mode: options.mode } : {}),
+      ...(options?.preview != null ? { preview: !!options.preview } : {}),
+    };
+    const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
