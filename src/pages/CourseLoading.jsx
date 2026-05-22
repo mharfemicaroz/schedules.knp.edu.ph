@@ -5,7 +5,7 @@ import {
   useColorModeValue, Spinner, Badge, Tag, Wrap, WrapItem, useToast, Checkbox, Switch,
   SimpleGrid, Tooltip, Menu, MenuButton, MenuList, MenuItem,
   AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody
+  Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter
 } from '@chakra-ui/react';
 import { Skeleton, SkeletonText, Fade } from '@chakra-ui/react';
 import { FiRefreshCw, FiUpload, FiSearch, FiLock, FiInfo, FiHelpCircle, FiTrash, FiUserPlus, FiPrinter, FiClock, FiChevronDown, FiShuffle } from 'react-icons/fi';
