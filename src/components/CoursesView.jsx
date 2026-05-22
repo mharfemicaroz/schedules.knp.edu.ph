@@ -207,6 +207,13 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     if (!s) return true;
     return ['true', '1', 'yes', 'active'].includes(s);
   }, []);
+  const blockIsActive = React.useCallback((row) => {
+    const raw = row?.isActive ?? row?.is_active;
+    if (typeof raw === 'boolean') return raw;
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return true;
+    return ['true', '1', 'yes', 'active'].includes(s);
+  }, []);
 
   const scopedCourses = React.useMemo(() => {
     const sy = String(settingsLoad?.school_year || '').trim();
@@ -217,6 +224,21 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     return out;
   }, [existing, settingsLoad?.school_year, settingsLoad?.semester]);
   const mappedSchedules = React.useMemo(() => scopedCourses || [], [scopedCourses]);
+  const mappedBlockCodesForLoad = React.useMemo(() => {
+    const set = new Set();
+    (scopedCourses || []).forEach((item) => {
+      const code = String(item?.blockCode || item?.section || item?.block || item?.block_code || '').trim().toLowerCase();
+      if (code) set.add(code);
+    });
+    return set;
+  }, [scopedCourses]);
+  const visibleBlocks = React.useMemo(() => {
+    return (Array.isArray(blocks) ? blocks : []).filter((block) => {
+      const code = String(block?.blockCode || block?.section || block?.block_code || '').trim().toLowerCase();
+      const isMapped = !!(code && mappedBlockCodesForLoad.has(code));
+      return blockIsActive(block) || isMapped;
+    });
+  }, [blocks, mappedBlockCodesForLoad, blockIsActive]);
   const mappedProspectusIndex = React.useMemo(() => {
     const byId = new Set();
     const byKey = new Set();
@@ -304,15 +326,15 @@ export default function CoursesView({ settingsLoadOverride = null }) {
   }, [allProspectus, program, year, query, settingsLoad?.semester, allowedDepts, isAdmin, courseIsActive, hasMappedScheduleForProspectus]);
 
   const blockMetaList = React.useMemo(() => {
-    if (!Array.isArray(blocks)) return [];
-    return blocks.map(b => {
+    if (!Array.isArray(visibleBlocks)) return [];
+    return visibleBlocks.map(b => {
       const meta = parseBlockMeta(b.blockCode);
       const normProg = normalizeProgramCode(meta.programcode || '');
       const baseProg = normalizeProgramCode((meta.programcode || '').split('-')[0] || normProg);
       const yearDigits = extractYearDigits(meta.yearlevel || meta.year || '');
       return { block: b, blockCodeTrim: String(b.blockCode || '').trim(), normProg, baseProg, year: yearDigits };
     });
-  }, [blocks]);
+  }, [visibleBlocks]);
 
   const courseVacancyStats = React.useMemo(() => {
     const map = new Map();
@@ -463,7 +485,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     let out = fromPros;
     if (out.length === 0) {
       // Fallback to programs derived from blocks if Prospectus is unavailable
-      const fromBlocks = Array.from(new Set((blocks || [])
+      const fromBlocks = Array.from(new Set((visibleBlocks || [])
         .map(b => parseBlockMeta(b.blockCode).programcode)
         .filter(Boolean)));
       out = fromBlocks;
@@ -475,7 +497,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       }
     } catch {}
     return out.slice().sort();
-  }, [allProspectus, blocks, allowedDepts, isAdmin]);
+  }, [allProspectus, visibleBlocks, allowedDepts, isAdmin]);
 
   const yearOptions = React.useMemo(() => [
     { value: '1', label: '1st Year' },
@@ -496,7 +518,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       const courseProgRaw = normalizeProgramCode(selectedCourse.programcode || selectedCourse.program || program);
       const courseProgBase = normalizeProgramCode((courseProgRaw.split('-')[0] || courseProgRaw));
       const courseYear = extractYearDigits(selectedCourse.yearlevel || year);
-      const blocksFor = (blocks || [])
+      const blocksFor = (visibleBlocks || [])
         .filter(b => {
           const meta = parseBlockMeta(b.blockCode);
           const metaProg = normalizeProgramCode(meta.programcode || '');
@@ -587,7 +609,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       if (!ignore) setRows(initRows);
     })();
     return () => { ignore = true; };
-  }, [selectedCourse, program, year, blocks, mappedSchedules, settingsLoad?.school_year, settingsLoad?.semester]);
+  }, [selectedCourse, program, year, visibleBlocks, mappedSchedules, settingsLoad?.school_year, settingsLoad?.semester]);
 
   const anySelected = rows.some(r => r._selected);
   const canSave = anySelected && rows.filter(r => r._selected).every(r => r._term && r._time && (r._faculty || r._facultyId) && !r._checking && !r._conflict);
@@ -903,7 +925,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       const courseProgRaw = normalizeProgramCode(selectedCourse.programcode || selectedCourse.program || program);
       const courseProgBase = normalizeProgramCode((courseProgRaw.split('-')[0] || courseProgRaw));
       const courseYear = extractYearDigits(selectedCourse.yearlevel || year);
-      const blocksFor = (blocks || [])
+      const blocksFor = (visibleBlocks || [])
         .filter(b => {
           const meta = parseBlockMeta(b.blockCode);
           const metaProg = normalizeProgramCode(meta.programcode || '');
@@ -975,7 +997,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       setRows(freshRows);
     } catch {}
     finally { setMapLoading(false); }
-  }, [blocks, mappedSchedules, program, selectedCourse, year, reloadSchedulesForLoad, settingsLoad?.school_year, settingsLoad?.semester]);
+  }, [visibleBlocks, mappedSchedules, program, selectedCourse, year, reloadSchedulesForLoad, settingsLoad?.school_year, settingsLoad?.semester]);
   const openResolve = (i) => {
     const r = rows[i];
     if (!r || !Array.isArray(r._conflictDetails)) return;
@@ -1029,7 +1051,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     if (!selectedCourse) { setRows([]); return; }
     reloadMapping();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCourse, program, year, blocks]);
+  }, [selectedCourse, program, year, visibleBlocks]);
 
   const saveSelected = async () => {
     const chosen = rows.filter(r => r._selected && r._term && r._time && (r._faculty || r._facultyId) );
@@ -1446,7 +1468,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                     const courseProgRaw = normalizeProgramCode(selectedCourse.programcode || selectedCourse.program || program);
                     const courseProgBase = normalizeProgramCode((courseProgRaw.split('-')[0] || courseProgRaw));
                     const courseYear = extractYearDigits(selectedCourse.yearlevel || year);
-                    const blocksFor = (blocks || [])
+                    const blocksFor = (visibleBlocks || [])
                       .filter(b => {
                         const meta = parseBlockMeta(b.blockCode);
                         const metaProg = normalizeProgramCode(meta.programcode || '');
