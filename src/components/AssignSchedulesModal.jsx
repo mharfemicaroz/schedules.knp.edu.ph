@@ -20,6 +20,7 @@ import { parseBlockMeta } from '../utils/blockMeta';
 const normalizeText = (value) => String(value || '').trim();
 const normalizeLower = (value) => normalizeText(value).toLowerCase();
 const normalizeProgram = (value) => normalizeText(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
+const normalizeProgramBase = (value) => normalizeProgram(String(value || '').split('-')[0] || value);
 const getYearDigit = (value) => {
   const match = String(value ?? '').match(/(\d+)/);
   return match ? String(parseInt(match[1], 10)) : '';
@@ -109,8 +110,8 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
 
   React.useEffect(() => {
     if (!isOpen) return;
-    dispatch(loadProspectusThunk({}));
-    dispatch(loadBlocksThunk({}));
+    dispatch(loadProspectusThunk({ active: true, limit: 5000 }));
+    dispatch(loadBlocksThunk({ active: true, limit: 5000 }));
   }, [isOpen, dispatch]);
 
   React.useEffect(() => {
@@ -137,7 +138,11 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
     if (!allowedReady && !isAdmin) return [];
     let items = Array.isArray(prospectus) ? prospectus.filter(prospectusIsActive) : [];
     if (hasDeptRestriction) {
-      items = items.filter((row) => allowedDeptSet.has(normalizeProgram(row?.programcode || row?.program)));
+      items = items.filter((row) => {
+        const exact = normalizeProgram(row?.programcode || row?.program);
+        const base = normalizeProgramBase(row?.programcode || row?.program);
+        return allowedDeptSet.has(exact) || allowedDeptSet.has(base);
+      });
     }
     return items;
   }, [prospectus, allowedReady, isAdmin, hasDeptRestriction, allowedDeptSet]);
@@ -149,7 +154,9 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
       items = items.filter((block) => {
         const rawCode = block?.blockCode || block?.block_code || '';
         const meta = parseBlockMeta(rawCode);
-        return allowedDeptSet.has(normalizeProgram(meta.programcode || rawCode));
+        const exact = normalizeProgram(meta.programcode || rawCode);
+        const base = normalizeProgramBase(meta.programcode || rawCode);
+        return allowedDeptSet.has(exact) || allowedDeptSet.has(base);
       });
     }
     return items;
@@ -176,6 +183,7 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
 
   const blockOptions = React.useMemo(() => {
     const selectedProgram = normalizeProgram(program);
+    const selectedProgramBase = normalizeProgramBase(program);
     const selectedYear = getYearDigit(yearlevel);
     return activeBlocks
       .map((block) => normalizeText(block?.blockCode || block?.block_code))
@@ -183,13 +191,26 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
       .filter((code) => {
         const meta = parseBlockMeta(code);
         const blockProgram = normalizeProgram(meta.programcode || code);
+        const blockProgramBase = normalizeProgramBase(meta.programcode || code);
         const blockYear = getYearDigit(meta.yearlevel);
-        const programMatches = selectedProgram ? blockProgram === selectedProgram : true;
+        const programMatches = selectedProgram
+          ? (
+              blockProgram === selectedProgram
+              || blockProgram === selectedProgramBase
+              || blockProgramBase === selectedProgram
+              || blockProgramBase === selectedProgramBase
+            )
+          : true;
         const yearMatches = selectedYear ? blockYear === selectedYear : true;
         if (programMatches && yearMatches) return true;
         if (!meta.programcode && selectedProgram) {
           const cleanedCode = normalizeProgram(code);
-          return cleanedCode.includes(selectedProgram) && (!selectedYear || cleanedCode.includes(selectedYear));
+          const cleanedBase = normalizeProgramBase(code);
+          const programInCode = cleanedCode.includes(selectedProgram)
+            || cleanedCode.includes(selectedProgramBase)
+            || cleanedBase === selectedProgram
+            || cleanedBase === selectedProgramBase;
+          return programInCode && (!selectedYear || cleanedCode.includes(selectedYear));
         }
         return false;
       })
