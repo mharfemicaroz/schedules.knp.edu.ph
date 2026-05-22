@@ -1790,17 +1790,11 @@ export default function CourseLoading() {
       return null;
     })();
     if (typeof directProspectusActive === 'boolean') {
-      if (!directProspectusActive && keyedHit?.active) {
-        return { active: true, matched: keyedHit.row };
-      }
       return { active: directProspectusActive, matched: row?.prospectus || keyedHit?.row || null };
     }
     const directId = row?.prospectusId ?? row?.prospectus_id ?? row?.prospectus?.id ?? row?.id;
     if (directId != null && prospectusStatusIndex.byId.has(String(directId))) {
       const hit = prospectusStatusIndex.byId.get(String(directId));
-      if (!hit.active && keyedHit?.active) {
-        return { active: true, matched: keyedHit.row };
-      }
       return { active: hit.active, matched: hit.row };
     }
     if (keyedHit) return { active: keyedHit.active, matched: keyedHit.row };
