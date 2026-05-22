@@ -184,6 +184,7 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
   const blockOptions = React.useMemo(() => {
     const selectedProgram = normalizeProgram(program);
     const selectedProgramBase = normalizeProgramBase(program);
+    const selectedHasMajor = selectedProgram.includes('-') || normalizeText(program).includes('-');
     const selectedYear = getYearDigit(yearlevel);
     return activeBlocks
       .map((block) => normalizeText(block?.blockCode || block?.block_code))
@@ -192,24 +193,35 @@ export default function AssignSchedulesModal({ isOpen, onClose, currentFacultyNa
         const meta = parseBlockMeta(code);
         const blockProgram = normalizeProgram(meta.programcode || code);
         const blockProgramBase = normalizeProgramBase(meta.programcode || code);
+        const blockMajor = normalizeProgram(meta.major || '');
+        const fullBlockProgram = normalizeProgram(
+          blockMajor ? `${meta.programcode || ''}-${meta.major || ''}` : (meta.programcode || code)
+        );
         const blockYear = getYearDigit(meta.yearlevel);
-        const programMatches = selectedProgram
-          ? (
+        let programMatches = true;
+        if (selectedProgram) {
+          if (selectedHasMajor) {
+            programMatches = fullBlockProgram === selectedProgram || blockProgram === selectedProgram;
+          } else {
+            programMatches = (
               blockProgram === selectedProgram
-              || blockProgram === selectedProgramBase
-              || blockProgramBase === selectedProgram
               || blockProgramBase === selectedProgramBase
-            )
-          : true;
+            );
+          }
+        }
         const yearMatches = selectedYear ? blockYear === selectedYear : true;
         if (programMatches && yearMatches) return true;
         if (!meta.programcode && selectedProgram) {
           const cleanedCode = normalizeProgram(code);
           const cleanedBase = normalizeProgramBase(code);
-          const programInCode = cleanedCode.includes(selectedProgram)
-            || cleanedCode.includes(selectedProgramBase)
-            || cleanedBase === selectedProgram
-            || cleanedBase === selectedProgramBase;
+          const programInCode = selectedHasMajor
+            ? cleanedCode.includes(selectedProgram)
+            : (
+                cleanedCode.includes(selectedProgram)
+                || cleanedCode.includes(selectedProgramBase)
+                || cleanedBase === selectedProgram
+                || cleanedBase === selectedProgramBase
+              );
           return programInCode && (!selectedYear || cleanedCode.includes(selectedYear));
         }
         return false;
