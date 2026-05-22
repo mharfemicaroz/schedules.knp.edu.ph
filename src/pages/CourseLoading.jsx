@@ -6027,6 +6027,13 @@ const prefill = hit ? {
       label: `${sourceCount + targetCount} conflict${sourceCount + targetCount === 1 ? '' : 's'} detected`,
     };
   }, []);
+  const isSwapPreviewConflictFree = React.useCallback((preview) => {
+    if (!preview) return false;
+    const blockers = Array.isArray(preview?.blockers) ? preview.blockers : [];
+    const sourceConflicts = Array.isArray(preview?.source?.conflicts) ? preview.source.conflicts : [];
+    const targetConflicts = Array.isArray(preview?.target?.conflicts) ? preview.target.conflicts : [];
+    return blockers.length === 0 && sourceConflicts.length === 0 && targetConflicts.length === 0;
+  }, []);
   const openSwapModal = React.useCallback(async (entryA, entryB) => {
     if (!entryA || !entryB) {
       toast({ title: 'Select two schedules', description: 'Choose two existing schedules first.', status: 'info' });
@@ -6218,10 +6225,10 @@ const prefill = hit ? {
     if (!swapA || !swapB) { toast({ title: 'Select two schedules', status: 'info' }); return; }
     await openSwapModal(swapA, swapB);
   };
-  const confirmSwapAction = async () => {
+  const confirmSwapAction = React.useCallback(async () => {
     if (!swapA || !swapB) return;
     const preview = swapPreviewMap?.[swapMode] || null;
-    if (!preview?.conflictFree) {
+    if (!isSwapPreviewConflictFree(preview)) {
       toast({ title: 'Swap blocked', description: 'Choose a conflict-free option before proceeding.', status: 'warning' });
       return;
     }
@@ -6255,7 +6262,7 @@ const prefill = hit ? {
     } finally {
       setSwapBusy(false);
     }
-  };
+  }, [blocks, isSwapPreviewConflictFree, onSelectBlock, reloadSchedulesForLoad, retryReloadCurrentBlock, selectedBlock, swapA, swapB, swapMode, swapPreviewMap, toast]);
 
   // Resolve conflict: delete conflicting old schedule and save current row
   const requestResolve = async (idx) => {
@@ -8145,6 +8152,15 @@ const prefill = hit ? {
                 {['faculty', 'schedule'].map((modeKey) => {
                   const preview = swapPreviewMap?.[modeKey] || null;
                   const summary = summarizeSwapPreview(preview);
+                  const counterpart = modeKey === 'faculty'
+                    ? {
+                        source: swapB,
+                        target: swapA,
+                      }
+                    : {
+                        source: swapB,
+                        target: swapA,
+                      };
                   const isActive = swapMode === modeKey;
                   return (
                     <Box
@@ -8174,8 +8190,8 @@ const prefill = hit ? {
                           <Text fontWeight="600">{swapA?.courseName || '-'}</Text>
                           <Text fontSize="sm" color={subtle}>
                             {modeKey === 'faculty'
-                              ? `${swapA?.facultyName || '-'} → ${preview?.source?.next?.faculty || '-'}`
-                              : `${swapA?.term || '-'} • ${swapA?.time || '-'} → ${preview?.source?.next?.term || '-'} • ${preview?.source?.next?.time || '-'}`
+                              ? `${swapA?.facultyName || '-'} → ${preview?.source?.next?.faculty || counterpart.source?.facultyName || '-'}`
+                              : `${swapA?.term || '-'} • ${swapA?.time || '-'} → ${preview?.source?.next?.term || counterpart.source?.term || '-'} • ${preview?.source?.next?.time || counterpart.source?.time || '-'}`
                             }
                           </Text>
                         </Box>
@@ -8184,8 +8200,8 @@ const prefill = hit ? {
                           <Text fontWeight="600">{swapB?.courseName || '-'}</Text>
                           <Text fontSize="sm" color={subtle}>
                             {modeKey === 'faculty'
-                              ? `${swapB?.facultyName || '-'} → ${preview?.target?.next?.faculty || '-'}`
-                              : `${swapB?.term || '-'} • ${swapB?.time || '-'} → ${preview?.target?.next?.term || '-'} • ${preview?.target?.next?.time || '-'}`
+                              ? `${swapB?.facultyName || '-'} → ${preview?.target?.next?.faculty || counterpart.target?.facultyName || '-'}`
+                              : `${swapB?.term || '-'} • ${swapB?.time || '-'} → ${preview?.target?.next?.term || counterpart.target?.term || '-'} • ${preview?.target?.next?.time || counterpart.target?.time || '-'}`
                             }
                           </Text>
                         </Box>
@@ -8246,11 +8262,11 @@ const prefill = hit ? {
           </ModalBody>
           <ModalFooter>
             <Button variant="ghost" onClick={()=>setSwapModalOpen(false)} isDisabled={swapBusy || swapPreviewBusy}>Cancel</Button>
-            <Button
+              <Button
               ml={3}
               colorScheme="blue"
               onClick={confirmSwapAction}
-              isDisabled={swapBusy || swapPreviewBusy || !(swapPreviewMap?.[swapMode]?.conflictFree)}
+              isDisabled={swapBusy || swapPreviewBusy || !isSwapPreviewConflictFree(swapPreviewMap?.[swapMode])}
               isLoading={swapBusy}
             >
               {swapMode === 'faculty' ? 'Swap Faculty' : 'Swap Schedule'}
