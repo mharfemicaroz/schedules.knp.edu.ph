@@ -84,6 +84,24 @@ const toShortTerm = (s) => {
   if (v.includes('2nd semester')) return '2nd';
   return s;
 };
+const unwrapAssignedFacultyArg = (arg) => {
+  if (!arg || typeof arg !== 'object') return arg;
+  if (Object.prototype.hasOwnProperty.call(arg, 'termOverride') || Object.prototype.hasOwnProperty.call(arg, 'faculty')) {
+    return arg.faculty ?? arg;
+  }
+  return arg;
+};
+const extractAssignedFacultyId = (fac) =>
+  fac?.facultyId ?? fac?.faculty_id ?? fac?.id ?? fac?.value ?? null;
+const extractAssignedFacultyName = (fac) =>
+  fac?.facultyName ??
+  fac?.name ??
+  fac?.faculty ??
+  fac?.full_name ??
+  fac?.instructorName ??
+  fac?.instructor ??
+  fac?.label ??
+  '';
 const toFullSemester = (t) => {
   const v = String(t || '').trim().toLowerCase();
   if (v.startsWith('1')) return '1st Semester';
@@ -787,10 +805,10 @@ export default function CoursesView({ settingsLoadOverride = null }) {
   }, [assignIndex, rows]);
   const handleAssignFromModal = async (arg) => {
     if (assignIndex == null) return;
-    const fac = arg?.faculty || arg;
+    const fac = unwrapAssignedFacultyArg(arg);
     const termOverride = arg?.termOverride || '';
-    const facultyId = fac?.facultyId ?? fac?.id ?? fac?.value ?? null;
-    const facultyName = fac?.facultyName ?? fac?.name ?? fac?.faculty ?? fac?.full_name ?? fac?.label ?? '';
+    const facultyId = extractAssignedFacultyId(fac);
+    const facultyName = extractAssignedFacultyName(fac);
     const row = rows[assignIndex];
     const isTba = String(facultyName || '').trim().toUpperCase() === 'TBA';
     handleChange(assignIndex, {

@@ -43,6 +43,27 @@ const COURSE_LOADING_SEMESTER_OPTIONS = [
   { value: 'Summer', label: 'Summer' },
 ];
 
+const unwrapAssignedFacultyArg = (arg) => {
+  if (!arg || typeof arg !== 'object') return arg;
+  if (Object.prototype.hasOwnProperty.call(arg, 'termOverride') || Object.prototype.hasOwnProperty.call(arg, 'faculty')) {
+    return arg.faculty ?? arg;
+  }
+  return arg;
+};
+
+const extractAssignedFacultyId = (fac) =>
+  fac?.facultyId ?? fac?.faculty_id ?? fac?.id ?? fac?.value ?? null;
+
+const extractAssignedFacultyName = (fac) =>
+  fac?.facultyName ??
+  fac?.name ??
+  fac?.faculty ??
+  fac?.full_name ??
+  fac?.instructorName ??
+  fac?.instructor ??
+  fac?.label ??
+  '';
+
 
 function pickSchedules(rows = [], limit = 40) {
   return rows.slice(0, limit).map((r) => ({
@@ -3248,14 +3269,15 @@ const prefill = hit ? {
   const handleAssignFromModal = async (arg) => {
     const idx = assignIndex;
     if (idx == null || !rows[idx]) { setAssignOpen(false); setAssignIndex(null); return; }
-    const fac = arg?.faculty || arg;
+    const fac = unwrapAssignedFacultyArg(arg);
     const termOverride = arg?.termOverride || '';
-    const name = fac?.name || fac?.faculty || fac?.full_name || '';
+    const name = extractAssignedFacultyName(fac);
+    const facultyId = extractAssignedFacultyId(fac);
     const isTba = String(name || '').trim().toUpperCase() === 'TBA';
     const nextRow = {
       ...rows[idx],
       _faculty: name,
-      _facultyId: fac?.id || null,
+      _facultyId: facultyId,
       ...(termOverride ? { _term: termOverride } : {}),
       ...(isTba ? {
         _term: String(termOverride || rows[idx]?._term || canonicalTerm(settingsLoad?.semester || '') || '').trim(),
@@ -3980,13 +4002,14 @@ const prefill = hit ? {
     const it = facultySchedules.items[idx];
     if (idx == null || !it) { setFacAssignOpen(false); setFacAssignIndex(null); return; }
     try {
-      const fac = arg?.faculty || arg;
+      const fac = unwrapAssignedFacultyArg(arg);
       const termOverride = arg?.termOverride || '';
-      const targetName = fac?.name || fac?.faculty || '';
+      const targetName = extractAssignedFacultyName(fac);
+      const targetId = extractAssignedFacultyId(fac);
       const isTba = String(targetName || '').trim().toUpperCase() === 'TBA';
       // Enforce load limit for non-admin: adding this course to target faculty
       if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) && !isTba) {
-        const meta = findFacultyById(fac?.id) || findFacultyByName(targetName);
+        const meta = findFacultyById(targetId) || findFacultyByName(targetName);
         const max = maxUnitsFor(meta);
         const current = await (async () => { try { const sy = settingsLoad?.school_year || ""; const sem = settingsLoad?.semester || ""; const qs = new URLSearchParams(); qs.set("instructor", targetName); if (sy) qs.set("schoolyear", sy); if (sem) qs.set("semester", sem); const res = await api.request(`/?${qs.toString()}&_ts=${Date.now()}`); const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : (res?.items || [])); return (list || []).reduce((s,c)=> s + (Number(c.unit)||0), 0); } catch { return 0; } })();
         const same = normalizeName(targetName) === normalizeName(it.faculty || it.instructor || '');
@@ -4000,7 +4023,7 @@ const prefill = hit ? {
       await dispatch(updateScheduleThunk({
         id: it.id,
         changes: {
-          faculty_id: fac?.id || null,
+          faculty_id: targetId,
           instructor: targetName || null,
           term: String(termOverride || it.term || canonicalTerm(settingsLoad?.semester || '') || '').trim(),
           time: String(it.schedule || it.time || '').trim() || (isTba ? 'TBA' : ''),
