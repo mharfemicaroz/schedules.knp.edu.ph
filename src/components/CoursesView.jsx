@@ -116,6 +116,12 @@ const isPlaceholderAssignment = (v) => {
   const s = String(v ?? '').trim().toUpperCase();
   return s === 'TBA' || s === 'TBD' || s === 'N/A' || s === 'NA' || s === 'NONE' || s === 'NULL' || s === '-';
 };
+const hasRealFacultyAssignment = (row) => {
+  const facultyName = String(extractAssignedFacultyName(row) || '').trim();
+  if (facultyName) return !isPlaceholderAssignment(facultyName);
+  const facultyId = extractAssignedFacultyId(row);
+  return facultyId != null && String(facultyId).trim() !== '';
+};
 
 export default function CoursesView({ settingsLoadOverride = null }) {
   const toast = useToast();
@@ -335,6 +341,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
     if (!Array.isArray(courseOptions) || courseOptions.length === 0) return map;
     const existingByBlock = new Map();
     (scopedCourses || []).forEach(s => {
+      if (!hasRealFacultyAssignment(s)) return;
       const b = String(s.blockCode || s.block || '').trim();
       if (!b) return;
       const entry = existingByBlock.get(b) || { codes: new Set(), titles: new Set() };
