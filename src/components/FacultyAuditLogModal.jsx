@@ -29,6 +29,20 @@ import {
 import { FiActivity, FiArrowRight, FiClock, FiRefreshCw, FiTrash2, FiEdit3, FiPlusCircle } from 'react-icons/fi';
 import api from '../services/apiService';
 
+const EMPTY_PAYLOAD = {
+  items: [],
+  count: 0,
+  page: 1,
+  limit: 25,
+  summary: {
+    totalEntries: 0,
+    uniqueSchedules: 0,
+    uniqueUsers: 0,
+    recent24h: 0,
+    actionCounts: [],
+  },
+};
+
 const actionMeta = (action) => {
   const key = String(action || '').toLowerCase();
   if (key.includes('create')) return { label: 'Created', color: 'green', icon: FiPlusCircle };
@@ -139,19 +153,7 @@ export default function FacultyAuditLogModal({
   const [error, setError] = React.useState('');
   const [page, setPage] = React.useState(1);
   const [limit, setLimit] = React.useState(25);
-  const [payload, setPayload] = React.useState({
-    items: [],
-    count: 0,
-    page: 1,
-    limit: 25,
-    summary: {
-      totalEntries: 0,
-      uniqueSchedules: 0,
-      uniqueUsers: 0,
-      recent24h: 0,
-      actionCounts: [],
-    },
-  });
+  const [payload, setPayload] = React.useState(EMPTY_PAYLOAD);
 
   const facultyId = faculty?.id ?? '';
   const facultyName = String(faculty?.name || faculty?.faculty || '').trim();
@@ -170,7 +172,16 @@ export default function FacultyAuditLogModal({
   ), [facultySchedules]);
 
   const loadFeed = React.useCallback(async () => {
-    if (!isOpen || !facultyId || !schoolyear || !semester || scheduleIds.length === 0) return;
+    if (!isOpen || !facultyId || !schoolyear || !semester || scheduleIds.length === 0) {
+      setError('');
+      setPayload((prev) => ({
+        ...EMPTY_PAYLOAD,
+        page: 1,
+        limit: prev?.limit || limit,
+      }));
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError('');
@@ -198,6 +209,11 @@ export default function FacultyAuditLogModal({
         },
       });
     } catch (e) {
+      setPayload((prev) => ({
+        ...EMPTY_PAYLOAD,
+        page: prev?.page || page,
+        limit: prev?.limit || limit,
+      }));
       setError(e?.message || 'Failed to load faculty audit logs.');
     } finally {
       setLoading(false);
@@ -205,13 +221,28 @@ export default function FacultyAuditLogModal({
   }, [facultyId, facultyName, isOpen, limit, page, schoolyear, semester, scheduleIds]);
 
   React.useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setLoading(false);
+      setError('');
+      setPayload((prev) => ({
+        ...EMPTY_PAYLOAD,
+        page: 1,
+        limit: prev?.limit || limit,
+      }));
+      return;
+    }
     loadFeed();
-  }, [isOpen, loadFeed]);
+  }, [isOpen, limit, loadFeed]);
 
   React.useEffect(() => {
     if (!isOpen) return;
     setPage(1);
+    setError('');
+    setPayload((prev) => ({
+      ...EMPTY_PAYLOAD,
+      page: 1,
+      limit: prev?.limit || limit,
+    }));
   }, [facultyId, schoolyear, semester, scheduleIds, isOpen]);
 
   const items = payload.items || [];
@@ -297,12 +328,6 @@ export default function FacultyAuditLogModal({
                 {!loading && !error && scheduleIds.length === 0 ? (
                   <Box px={4} py={8}>
                     <Text color={muted}>No saved schedules are currently loaded for this faculty in the selected SY/semester.</Text>
-                  </Box>
-                ) : null}
-
-                {!loading && !error && scheduleIds.length > 0 && items.length === 0 ? (
-                  <Box px={4} py={8}>
-                    <Text color={muted}>No audit log entries matched this faculty and load context.</Text>
                   </Box>
                 ) : null}
 
