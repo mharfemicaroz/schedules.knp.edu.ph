@@ -30,6 +30,11 @@ function normalizeName(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function isPlaceholderFaculty(value) {
+  const s = String(value || '').trim().toUpperCase();
+  return s === 'TBA' || s === 'TBD' || s === 'N/A' || s === 'NA' || s === 'NONE' || s === 'NULL' || s === '-';
+}
+
 function isNSTPCourse(course) {
   const text = [
     course?.courseTitle,
@@ -104,6 +109,7 @@ function buildFacultyCourseStats(courses = []) {
   (courses || []).forEach((r) => {
     const fid = r.facultyId ?? r.faculty_id;
     const name = r.facultyName || r.faculty || r.instructor || '';
+    if (isPlaceholderFaculty(name)) return;
     const code = String(r.code || r.courseName || '').trim().toLowerCase();
     const section = normalizeName(r.section || r.blockCode || '');
     if (!code || !section) return;
@@ -271,7 +277,9 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
           : Array.isArray(res)
           ? res
           : [];
-        const normalized = payload.map((r, idx) => normalizeServerRow(r, idx));
+        const normalized = payload
+          .map((r, idx) => normalizeServerRow(r, idx))
+          .filter((row) => !isPlaceholderFaculty(row?.faculty));
         if (!alive) return;
         setServerRows(normalized);
       } catch (e) {
@@ -291,6 +299,7 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
     return (faculties || []).map((f, idx) => {
       const fid = f.id != null ? String(f.id) : '';
       const fname = f.name || f.faculty || f.full_name || f.instructor || '';
+      if (isPlaceholderFaculty(fname)) return null;
       const deptVal = f.department || f.dept || '';
       const empVal = f.employment || '';
       const releaseUnits = Number(f.load_release_units ?? f.loadReleaseUnits ?? f.loadRelease ?? 0) || 0;
@@ -346,7 +355,7 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
         nstpFirstHours: nstpUnitsToHours(nstpFirstUnits),
         nstpSecondHours: nstpUnitsToHours(nstpSecondUnits)
       };
-    });
+    }).filter(Boolean);
   }, [faculties, courseStatsByKey]);
 
   const baseRows = React.useMemo(
