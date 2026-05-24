@@ -844,6 +844,10 @@ export default function CoursesView({ settingsLoadOverride = null }) {
       setMapLoading(false);
     }
   }, [reloadSchedulesForLoad]);
+  const handleSelectCourse = React.useCallback((course) => {
+    setSelectedCourse(course || null);
+    void reloadMapping();
+  }, [reloadMapping]);
 
   const openResolve = (i) => {
     const r = rows[i];
@@ -1061,7 +1065,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
             ))}
             {!loading && sortedCourseOptions.map((c, idx) => (
               <Box key={`${c.programcode}-${c.yearlevel}-${idx}`} role="button" borderWidth="1px" borderColor={border} rounded="md" p={2}
-                   onClick={()=> setSelectedCourse(c)} _hover={{ bg: hoverBg }}>
+                   onClick={()=>handleSelectCourse(c)} _hover={{ bg: hoverBg }}>
                 {(() => {
                   const meta = getVacancyMeta(c);
                   const badgeLabel = meta.status === 'all-set'

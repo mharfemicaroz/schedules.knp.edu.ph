@@ -4666,6 +4666,8 @@ const prefill = hit ? {
       const targetName = extractAssignedFacultyName(fac);
       const targetId = extractAssignedFacultyId(fac);
       const isTba = String(targetName || '').trim().toUpperCase() === 'TBA';
+      const semLabel = resolveSemesterLabel(settingsLoad?.semester) || resolveSemesterLabel(it.semester || it.sem || it.term || '');
+      const schoolyearLabel = String(settingsLoad?.school_year || it.schoolyear || it.school_year || it.sy || '').trim();
       // Enforce load limit for non-admin: adding this course to target faculty
       if ((!isAdmin && Array.isArray(allowedDepts) && allowedDepts.length > 0) && !isTba) {
         const meta = findFacultyById(targetId) || findFacultyByName(targetName);
@@ -4687,6 +4689,8 @@ const prefill = hit ? {
           term: String(termOverride || it.term || canonicalTerm(settingsLoad?.semester || '') || '').trim(),
           time: String(it.schedule || it.time || '').trim() || (isTba ? 'TBA' : ''),
           day: String(it.day || '').trim() || 'MON-FRI',
+          ...(schoolyearLabel ? { schoolyear: schoolyearLabel } : {}),
+          ...(semLabel ? { semester: semLabel, sem: semLabel } : {}),
         },
       }));
       await fetchFacultySchedules(isTba ? selectedFaculty : selectedFaculty);
@@ -4868,8 +4872,7 @@ const prefill = hit ? {
         const baseTime = String(it.schedule || it.time || '').trim();
         if (baseTime !== time) changes.time = time;
         if (String(it.day || '').trim() !== String(day || '').trim()) changes.day = day || '';
-        const semChanged = termChanged && semLabel && normalizeTermForCompare(existingSemLabel) !== normalizeTermForCompare(semLabel);
-        if (semChanged) { changes.semester = semLabel; changes.sem = semLabel; }
+        if (semLabel) { changes.semester = semLabel; changes.sem = semLabel; }
         if (Object.keys(changes).length === 0) continue;
         try {
           const semesterForCheck = changes.semester ?? existingSemLabel ?? semLabel ?? settingsLoad?.semester;
