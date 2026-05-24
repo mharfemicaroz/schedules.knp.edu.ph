@@ -7513,7 +7513,7 @@ const prefill = hit ? {
                   </HStack>
                   <Text fontSize="xs" color={subtle}>Total load if all drafts are saved</Text>
                 </Box>
-                <Box p={3} rounded="md" borderWidth="1px" borderColor={border} bg={cardBg} boxShadow="xs">
+                <Box p={3} rounded="md" borderWidth="1px" borderColor={border} bg={panelBg} boxShadow="xs">
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="0.08em" color={subtle}>Unique preparations</Text>
                   <HStack justify="space-between" align="baseline" mt={1}>
                     <Heading size="lg">{facultyPreparationStats.totalUniquePreparations}</Heading>
