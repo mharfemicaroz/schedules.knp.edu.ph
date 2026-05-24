@@ -4024,6 +4024,57 @@ const prefill = hit ? {
       };
     });
   }, [facultySchedules, facEdits, selectedFaculty?.id, selectedFacultyDisplayName]);
+  const facultyPreparationStats = React.useMemo(() => {
+    const items = Array.isArray(facultyBalanceItems) ? facultyBalanceItems : [];
+    const byRowId = new Map();
+    const byTermMap = new Map();
+    const orderTerm = (value) => {
+      const v = String(value || '').trim().toLowerCase();
+      if (v.startsWith('1')) return 1;
+      if (v.startsWith('2')) return 2;
+      if (v.startsWith('s')) return 3;
+      return 9;
+    };
+
+    items.forEach((row) => {
+      const rowId = String(row?.id ?? '');
+      const termLabel = canonicalTerm(row?.term) || String(row?.term || '').trim() || 'Unspecified';
+      const codeKey = normalizeLookupCode(row?.code || row?.courseName || '');
+      const titleKey = normalizeLookupText(row?.title || row?.courseTitle || '');
+      const prepKey = (codeKey || titleKey) ? `${codeKey}|${titleKey}` : `row:${rowId}`;
+
+      let termEntry = byTermMap.get(termLabel);
+      if (!termEntry) {
+        termEntry = { term: termLabel, rowCount: 0, prepOrder: [], prepIndex: new Map() };
+        byTermMap.set(termLabel, termEntry);
+      }
+      if (!termEntry.prepIndex.has(prepKey)) {
+        termEntry.prepOrder.push(prepKey);
+        termEntry.prepIndex.set(prepKey, termEntry.prepOrder.length);
+      }
+      termEntry.rowCount += 1;
+      byRowId.set(rowId, {
+        term: termLabel,
+        prepNumber: termEntry.prepIndex.get(prepKey),
+      });
+    });
+
+    const byTerm = Array.from(byTermMap.values())
+      .sort((a, b) => orderTerm(a.term) - orderTerm(b.term))
+      .map((entry) => ({
+        term: entry.term,
+        rowCount: entry.rowCount,
+        uniquePreparations: entry.prepOrder.length,
+      }));
+
+    return {
+      byRowId,
+      byTerm,
+      byTermMap: new Map(byTerm.map((entry) => [entry.term, entry])),
+      totalUniquePreparations: byTerm.reduce((sum, entry) => sum + entry.uniquePreparations, 0),
+      summaryText: byTerm.map((entry) => `${entry.term}: ${entry.uniquePreparations}`).join(' | '),
+    };
+  }, [facultyBalanceItems, normalizeLookupCode, normalizeLookupText]);
   const facultyTermBalanceStats = React.useMemo(() => {
     const stats = facultyBalanceItems.reduce((acc, row) => {
       if (row.primaryTerm === '1st') acc.first += 1;
@@ -7437,7 +7488,7 @@ const prefill = hit ? {
                   <Button size="sm" colorScheme="blue" variant="solid" onClick={()=>setSchedAssignOpen(true)}>Assign Schedules</Button>
                 </HStack>
               </HStack>
-              <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
+              <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={3}>
                 <Box p={3} rounded="md" borderWidth="1px" borderColor={savedBorder} bg={savedBg} boxShadow="xs">
                   <Text fontSize="xs" textTransform="uppercase" letterSpacing="0.08em" color={savedTone}>Saved load</Text>
                   <HStack justify="space-between" align="baseline" mt={1}>
@@ -7461,6 +7512,16 @@ const prefill = hit ? {
                     <Badge colorScheme="blue" variant="solid">{facultyUnitStats.savedCount + facultyUnitStats.draftCount} item(s)</Badge>
                   </HStack>
                   <Text fontSize="xs" color={subtle}>Total load if all drafts are saved</Text>
+                </Box>
+                <Box p={3} rounded="md" borderWidth="1px" borderColor={border} bg={cardBg} boxShadow="xs">
+                  <Text fontSize="xs" textTransform="uppercase" letterSpacing="0.08em" color={subtle}>Unique preparations</Text>
+                  <HStack justify="space-between" align="baseline" mt={1}>
+                    <Heading size="lg">{facultyPreparationStats.totalUniquePreparations}</Heading>
+                    <Badge colorScheme="cyan" variant="solid">{facultyPreparationStats.byTerm.length} term(s)</Badge>
+                  </HStack>
+                  <Text fontSize="xs" color={subtle}>
+                    {facultyPreparationStats.summaryText || 'Unique course entries grouped by term'}
+                  </Text>
                 </Box>
               </SimpleGrid>
               <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
@@ -7513,19 +7574,30 @@ const prefill = hit ? {
                     {(() => {
                       const groups = new Map();
                       facultySchedules.items.forEach(s => {
+                        const nextTerm = facEdits[s.id]?.term || s.term || s.semester || '';
+                        const effectiveGroupKey = canonicalTerm(nextTerm) || String(nextTerm || '').trim() || 'Unspecified';
                         const key = String(s.term || '').trim() || '—';
-                        const arr = groups.get(key) || []; arr.push(s); groups.set(key, arr);
+                        const arr = groups.get(effectiveGroupKey) || []; arr.push(s); groups.set(effectiveGroupKey, arr);
                       });
                       const order = (t) => { const v=String(t).toLowerCase(); if (v.startsWith('1')) return 1; if (v.startsWith('2')) return 2; if (v.startsWith('s')) return 3; return 9; };
                       return Array.from(groups.entries()).sort((a,b)=>order(a[0])-order(b[0])).map(([term, arr]) => (
                         <Box key={term} borderWidth="1px" rounded="md" p={2}>
-                          <HStack justify="space-between" mb={1}><Badge colorScheme="blue">{term}</Badge><Text fontSize="xs" color={subtle}>{arr.length} item(s)</Text></HStack>
+                          <HStack justify="space-between" mb={1}>
+                            <HStack spacing={2}>
+                              <Badge colorScheme="blue">{term}</Badge>
+                              <Badge colorScheme="cyan" variant="subtle">
+                                {facultyPreparationStats.byTermMap.get(term)?.uniquePreparations || 0} prep(s)
+                              </Badge>
+                            </HStack>
+                            <Text fontSize="xs" color={subtle}>{arr.length} item(s)</Text>
+                          </HStack>
                           <VStack align="stretch" spacing={2}>
                             {arr.map((c, i) => {
                               const e = facEdits[c.id] || { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), day: c.day || 'MON-FRI' };
-                            const blkKey = normalizeBlockCode(c.blockCode || c.section || '');
-                            const sessionKey = normalizeSessionKey(blockSessionMap.get(blkKey) || c.session || '');
-    const timeOpts = timeOptionsForSession(sessionKey, e.time, c, e.day || c.day);
+                              const prepMeta = facultyPreparationStats.byRowId.get(String(c.id));
+                              const blkKey = normalizeBlockCode(c.blockCode || c.section || '');
+                              const sessionKey = normalizeSessionKey(blockSessionMap.get(blkKey) || c.session || '');
+                              const timeOpts = timeOptionsForSession(sessionKey, e.time, c, e.day || c.day);
                             const dirty =
                               canonicalTerm(c.term || '') !== e.term ||
                               String(c.schedule || c.time || '').trim() !== e.time ||
@@ -7542,6 +7614,7 @@ const prefill = hit ? {
                                   <Checkbox isChecked={facSelected.has(c.id)} onChange={(e)=>toggleFacSelect(c.id, e.target.checked)} isDisabled={!isEditable} />
                                     <Badge>{c.code || c.courseName}</Badge>
                                     {String(c.id || '').startsWith('tmp:') && <Badge colorScheme="pink">Draft</Badge>}
+                                    {prepMeta?.prepNumber ? <Badge colorScheme="cyan" variant="subtle">Prep {prepMeta.prepNumber}</Badge> : null}
                                     <HStack space="2" flex="1" alignItems="center">
                                     {/* Unit Badge */}
                                     <Box
