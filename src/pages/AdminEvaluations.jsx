@@ -65,6 +65,61 @@ const QUESTIONS = [
 ];
 
 const normalizeText = (value) => String(value || '').trim().toLowerCase();
+const normalizeSearchValue = (value) => normalizeText(value)
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9\s]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+const levenshteinDistance = (source, target) => {
+  const a = String(source || '');
+  const b = String(target || '');
+
+  if (!a) return b.length;
+  if (!b) return a.length;
+
+  const matrix = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+
+  for (let i = 0; i <= a.length; i += 1) matrix[i][0] = i;
+  for (let j = 0; j <= b.length; j += 1) matrix[0][j] = j;
+
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      );
+    }
+  }
+
+  return matrix[a.length][b.length];
+};
+const matchesSmartSearch = (values, query) => {
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedQuery) return true;
+
+  const haystacks = values
+    .map((value) => normalizeSearchValue(value))
+    .filter(Boolean);
+
+  if (haystacks.some((value) => value.includes(normalizedQuery))) return true;
+
+  const queryTokens = normalizedQuery.split(' ').filter(Boolean);
+  if (!queryTokens.length) return false;
+
+  const haystackTokens = haystacks.flatMap((value) => value.split(' ').filter(Boolean));
+
+  return queryTokens.every((queryToken) => {
+    const maxDistance = queryToken.length >= 8 ? 2 : queryToken.length >= 5 ? 1 : 0;
+    return haystackTokens.some((candidateToken) => {
+      if (candidateToken.includes(queryToken) || queryToken.includes(candidateToken)) return true;
+      if (Math.abs(candidateToken.length - queryToken.length) > maxDistance) return false;
+      return levenshteinDistance(candidateToken, queryToken) <= maxDistance;
+    });
+  });
+};
 const isFacultyActive = (row) => {
   const raw = row?.isActive ?? row?.is_active;
   if (typeof raw === 'boolean') return raw;
@@ -256,7 +311,7 @@ export default function AdminEvaluations() {
   }, [allFaculty, rows]);
 
   const filteredRows = React.useMemo(() => {
-    const query = normalizeText(filters.q);
+    const query = String(filters.q || '').trim();
     let list = view === 'faculty' ? mergedFacultyRows.slice() : (Array.isArray(rows) ? rows.slice() : []);
 
     if (view === 'faculty') {
@@ -281,30 +336,30 @@ export default function AdminEvaluations() {
 
     return list.filter((row) => {
       if (view === 'course') {
-        return [
+        return matchesSmartSearch([
           row?.schedule?.programcode,
           row?.schedule?.course_name,
           row?.schedule?.course_title,
           row?.schedule?.instructor,
           row?.faculty?.faculty,
-        ].some((value) => normalizeText(value).includes(query));
+        ], query);
       }
       if (view === 'faculty') {
-        return [
+        return matchesSmartSearch([
           getFacultyName(row?.faculty),
           row?.instructor,
           getFacultyDept(row?.faculty) || row?.dept,
           getFacultyEmployment(row?.faculty) || row?.employment,
-        ].some((value) => normalizeText(value).includes(query));
+        ], query);
       }
-      return [
+      return matchesSmartSearch([
         row?.student_name,
         row?.student?.name,
         row?.student_id,
         row?.student?.id,
         row?.program,
         row?.programcode,
-      ].some((value) => normalizeText(value).includes(query));
+      ], query);
     });
   }, [filters.dept, filters.employment, filters.faculty, filters.q, mergedFacultyRows, rows, view]);
 
