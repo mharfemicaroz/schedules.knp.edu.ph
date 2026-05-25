@@ -120,6 +120,82 @@ const matchesSmartSearch = (values, query) => {
     });
   });
 };
+const normalizeCompactSearchValue = (value) => normalizeSearchValue(value).replace(/\s+/g, '');
+const getStudentSearchValues = (row) => {
+  const student = row?.student || {};
+  const lastName = String(
+    row?.last_name ||
+    row?.lastname ||
+    student?.last_name ||
+    student?.lastname ||
+    ''
+  ).trim();
+  const firstName = String(
+    row?.first_name ||
+    row?.firstname ||
+    student?.first_name ||
+    student?.firstname ||
+    ''
+  ).trim();
+  const middleName = String(
+    row?.middle_name ||
+    row?.middlename ||
+    row?.midname ||
+    student?.middle_name ||
+    student?.middlename ||
+    student?.midname ||
+    ''
+  ).trim();
+  const suffix = String(
+    row?.suffix ||
+    row?.name_ext ||
+    row?.nameext ||
+    student?.suffix ||
+    student?.name_ext ||
+    student?.nameext ||
+    ''
+  ).trim();
+  const rawName = String(row?.student_name || student?.name || row?.name || '').trim();
+  const parts = [lastName, firstName, middleName, suffix].filter(Boolean);
+  const altParts = [firstName, middleName, lastName, suffix].filter(Boolean);
+
+  return [
+    row?.student_id,
+    student?.id,
+    row?.program,
+    row?.programcode,
+    rawName,
+    parts.join(' '),
+    altParts.join(' '),
+    lastName,
+    firstName,
+    middleName,
+    suffix,
+  ].filter(Boolean);
+};
+const matchesStudentSearch = (row, query) => {
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedQuery) return true;
+
+  const values = getStudentSearchValues(row);
+  const normalizedValues = values.map((value) => normalizeSearchValue(value)).filter(Boolean);
+  const compactValues = values.map((value) => normalizeCompactSearchValue(value)).filter(Boolean);
+  const compactQuery = normalizeCompactSearchValue(query);
+
+  if (normalizedValues.some((value) => value.includes(normalizedQuery))) return true;
+  if (compactQuery && compactValues.some((value) => value.includes(compactQuery))) return true;
+
+  const queryTokens = normalizedQuery.split(' ').filter(Boolean);
+  if (!queryTokens.length) return false;
+
+  const valueTokens = normalizedValues.flatMap((value) => value.split(' ').filter(Boolean));
+
+  return queryTokens.every((queryToken) => (
+    valueTokens.some((valueToken) => (
+      valueToken.startsWith(queryToken) || valueToken.includes(queryToken)
+    ))
+  ));
+};
 const isFacultyActive = (row) => {
   const raw = row?.isActive ?? row?.is_active;
   if (typeof raw === 'boolean') return raw;
@@ -373,14 +449,7 @@ export default function AdminEvaluations() {
           getFacultyEmployment(row?.faculty) || row?.employment,
         ], query);
       }
-      return matchesSmartSearch([
-        row?.student_name,
-        row?.student?.name,
-        row?.student_id,
-        row?.student?.id,
-        row?.program,
-        row?.programcode,
-      ], query);
+      return matchesStudentSearch(row, query);
     });
   }, [filters.dept, filters.employment, filters.faculty, filters.q, mergedFacultyRows, rows, view]);
 
@@ -665,7 +734,7 @@ export default function AdminEvaluations() {
         description: 'Review which students have submitted evaluations and inspect the courses they evaluated.',
         icon: FiClipboard,
         accent: 'teal',
-        searchPlaceholder: 'Search student ID, name, or program',
+        searchPlaceholder: 'Search student ID, last name, or any name part',
         emptyText: 'No student evaluation records matched the current filters.',
         countLabel: 'Students shown',
       };
