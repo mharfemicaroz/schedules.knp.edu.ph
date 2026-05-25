@@ -1244,6 +1244,8 @@ export default function CourseLoading() {
   const skStart = useColorModeValue('gray.100','gray.700');
   const skEnd = useColorModeValue('gray.200','gray.600');
   const overlayBg = useColorModeValue('whiteAlpha.600','blackAlpha.500');
+  const printSelectionCardBg = useColorModeValue('blue.50', 'blue.900');
+  const printSelectionHoverBorder = useColorModeValue('gray.300', 'gray.600');
 
   const blocksAll = useSelector(selectBlocks);
   const facultyAll = useSelector(selectAllFaculty);
@@ -1560,6 +1562,12 @@ export default function CourseLoading() {
   const [facSuggTargetId, setFacSuggTargetId] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
   const [printingAll, setPrintingAll] = React.useState(false);
+  const [printAllModalOpen, setPrintAllModalOpen] = React.useState(false);
+  const [printAllPreparing, setPrintAllPreparing] = React.useState(false);
+  const [printAllPrepared, setPrintAllPrepared] = React.useState(null);
+  const [printAllSelectedKeys, setPrintAllSelectedKeys] = React.useState([]);
+  const [printAllSearch, setPrintAllSearch] = React.useState('');
+  const [printAllShowFaculty, setPrintAllShowFaculty] = React.useState(true);
   const [lockDialogBusy, setLockDialogBusy] = React.useState(false);
   const [lockDialogIndex, setLockDialogIndex] = React.useState(null);
   const [lockDialogBulkIdxs, setLockDialogBulkIdxs] = React.useState([]);
@@ -1936,14 +1944,15 @@ export default function CourseLoading() {
     });
   };
 
-  const onPrintAllBlocks = async () => {
-    const list = Array.isArray(blocks) ? blocks.slice() : [];
+  const onPrintAllBlocks = async (candidateBlocks = null, options = {}) => {
+    const list = Array.isArray(candidateBlocks) ? candidateBlocks.slice() : (Array.isArray(blocks) ? blocks.slice() : []);
     if (list.length === 0) {
       toast({ title: 'Nothing to print', description: 'No blocks found.', status: 'info' });
       return;
     }
     const headers = ['#','Course','Title','Units','Term','Time','Day','Room','Faculty'];
-    const hideFacultyNames = registrarViewOnly;
+    const showFacultyNames = options?.showFacultyNames !== false;
+    const hideFacultyNames = !showFacultyNames;
     const termText = (r) => {
       const raw = r?._term || r?.term || r?.semester || r?.sem || '';
       const norm = canonicalTerm(raw);
@@ -2220,7 +2229,7 @@ export default function CourseLoading() {
         return String(a.course_name || a.courseName || a.code || '').localeCompare(String(b.course_name || b.courseName || b.code || ''));
       });
       const bodyRows = sorted.map((r,i) => {
-        const rawFaculty = registrarViewOnly ? 'Hidden' : resolveFacultyName(r);
+        const rawFaculty = hideFacultyNames ? 'Hidden' : resolveFacultyName(r);
         return [
           String(i+1),
           String(r.course_name || r.courseName || r.code || ''),
@@ -2706,6 +2715,167 @@ export default function CourseLoading() {
     };
     return filtered.slice().sort((a, b) => keyOf(a).localeCompare(keyOf(b)));
   }, [visibleBlocks, blockFilterProgram, blockFilterYear, blockFilterQuery]);
+  const printPreviewSchedulePool = React.useMemo(() => {
+    const loadSy = String(settingsLoad?.school_year || '').trim();
+    const loadSem = mapSemesterLabel(settingsLoad?.semester || '').trim().toLowerCase();
+    const normSy = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, '');
+    const matchesLoad = (rec) => {
+      if (!loadSy && !loadSem) return true;
+      const syVal = String(
+        rec?.schoolyear ||
+        rec?.schoolYear ||
+        rec?.school_year ||
+        rec?.sy ||
+        rec?.schedule?.schoolyear ||
+        rec?.schedule?.schoolYear ||
+        rec?.schedule?.school_year ||
+        rec?.schedule?.sy ||
+        ''
+      ).trim();
+      if (loadSy && (!syVal || normSy(syVal) !== normSy(loadSy))) return false;
+      if (loadSem) {
+        const semRaw = rec?.semester || rec?.sem || rec?.schedule?.semester || rec?.schedule?.sem || '';
+        const semVal = mapSemesterLabel(semRaw).trim().toLowerCase();
+        if (!semVal || semVal !== loadSem) return false;
+      }
+      return true;
+    };
+    const sources = [scopedCourses, rawSchedules, existing];
+    for (const source of sources) {
+      const filtered = (Array.isArray(source) ? source : []).filter(matchesLoad);
+      if (filtered.length > 0) return filtered;
+    }
+    return [];
+  }, [existing, rawSchedules, scopedCourses, settingsLoad?.school_year, settingsLoad?.semester]);
+  const printPreviewStatsByBlock = React.useMemo(() => {
+    const map = new Map();
+    printPreviewSchedulePool.forEach((item) => {
+      const key = normalizeBlockLookupCode(item?.blockCode || item?.block_code || item?.section || item?.block || '');
+      if (!key) return;
+      const entry = map.get(key) || { courseCount: 0, totalUnits: 0 };
+      entry.courseCount += 1;
+      const units = Number(item?.unit ?? item?.units ?? 0);
+      if (Number.isFinite(units)) entry.totalUnits += units;
+      map.set(key, entry);
+    });
+    return map;
+  }, [printPreviewSchedulePool]);
+  const printAllAvailableBlocks = React.useMemo(() => {
+    const keyOf = (block) => {
+      const meta = parseBlockMeta(block?.blockCode || block?.block_code || block?.section || block?.block || '');
+      const yearNum = parseInt(meta.yearlevel || '0', 10) || 0;
+      const sec = String(meta.section || '').padStart(3, '0');
+      const code = String(block?.blockCode || block?.block_code || block?.section || block?.block || '').trim();
+      return [meta.programcode, yearNum.toString().padStart(2, '0'), sec, code].join('|');
+    };
+    return (Array.isArray(blocks) ? blocks : [])
+      .reduce((acc, block) => {
+        const code = String(block?.blockCode || block?.block_code || block?.section || block?.block || '').trim();
+        const selectionKey = normalizeBlockLookupCode(code);
+        if (!selectionKey || !mappedBlockCodesForLoad.has(selectionKey)) return acc;
+        const previewStats = printPreviewStatsByBlock.get(selectionKey) || { courseCount: 0, totalUnits: 0 };
+        acc.push({
+          ref: block,
+          blockCode: code,
+          selectionKey,
+          meta: parseBlockMeta(code),
+          room: String(block?.room || block?.rooms || '').trim(),
+          session: String(block?.session || block?.session_name || block?.sessionName || '').trim(),
+          courseCount: previewStats.courseCount,
+          totalUnits: previewStats.totalUnits,
+          mappedInactive: !!block?._courseLoadingMappedWhileInactive,
+        });
+        return acc;
+      }, [])
+      .sort((a, b) => keyOf(a).localeCompare(keyOf(b)));
+  }, [blocks, mappedBlockCodesForLoad, printPreviewStatsByBlock]);
+  const openPrintAllBlocksModal = React.useCallback(() => {
+    if (!printAllAvailableBlocks.length) {
+      toast({ title: 'Nothing to print', description: 'No blocks with courses found for the selected load.', status: 'info' });
+      return;
+    }
+    setPrintAllPreparing(true);
+    setPrintAllPrepared(printAllAvailableBlocks);
+    setPrintAllSelectedKeys(printAllAvailableBlocks.map((entry) => entry.selectionKey));
+    setPrintAllSearch('');
+    setPrintAllShowFaculty(true);
+    setPrintAllModalOpen(true);
+    setPrintAllPreparing(false);
+  }, [printAllAvailableBlocks, toast]);
+  const printAllEntries = React.useMemo(() => (
+    Array.isArray(printAllPrepared) ? printAllPrepared : []
+  ), [printAllPrepared]);
+  const printAllSelectedSet = React.useMemo(() => new Set(printAllSelectedKeys), [printAllSelectedKeys]);
+  const printAllVisibleEntries = React.useMemo(() => {
+    const queryValue = normalizeLookupText(printAllSearch);
+    if (!queryValue) return printAllEntries;
+    return printAllEntries.filter((entry) => {
+      const hay = normalizeLookupText([
+        entry.blockCode,
+        entry.meta?.programcode,
+        entry.meta?.yearlevel ? `Year ${entry.meta.yearlevel}` : '',
+        entry.meta?.section,
+        entry.session,
+        entry.room,
+      ].filter(Boolean).join(' '));
+      return hay.includes(queryValue);
+    });
+  }, [normalizeLookupText, printAllEntries, printAllSearch]);
+  const printAllGroups = React.useMemo(() => {
+    const grouped = new Map();
+    printAllVisibleEntries.forEach((entry) => {
+      const programKey = entry.meta?.programcode || 'Other';
+      const yearKey = String(entry.meta?.yearlevel || 'Unspecified');
+      if (!grouped.has(programKey)) grouped.set(programKey, new Map());
+      const yearMap = grouped.get(programKey);
+      if (!yearMap.has(yearKey)) yearMap.set(yearKey, []);
+      yearMap.get(yearKey).push(entry);
+    });
+    return Array.from(grouped.entries()).map(([programKey, yearMap]) => ({
+      programKey,
+      years: Array.from(yearMap.entries()).map(([yearKey, entries]) => ({ yearKey, entries })),
+    }));
+  }, [printAllVisibleEntries]);
+  const printAllVisibleKeys = React.useMemo(() => (
+    printAllVisibleEntries.map((entry) => entry.selectionKey)
+  ), [printAllVisibleEntries]);
+  const printAllProgramCount = React.useMemo(() => (
+    new Set(printAllEntries.map((entry) => entry.meta?.programcode || 'Other')).size
+  ), [printAllEntries]);
+  const updatePrintAllSelection = React.useCallback((keys, checked) => {
+    const keyList = Array.isArray(keys) ? keys : [keys];
+    setPrintAllSelectedKeys((prev) => {
+      const next = new Set(prev);
+      keyList.forEach((key) => {
+        if (!key) return;
+        if (checked) next.add(key);
+        else next.delete(key);
+      });
+      return Array.from(next);
+    });
+  }, []);
+  const closePrintAllModal = React.useCallback(() => {
+    if (printingAll) return;
+    setPrintAllModalOpen(false);
+  }, [printingAll]);
+  const handlePrintSelectedBlocks = React.useCallback(async () => {
+    const selectedBlocks = printAllEntries
+      .filter((entry) => printAllSelectedSet.has(entry.selectionKey))
+      .map((entry) => entry.ref);
+    if (!selectedBlocks.length) {
+      toast({ title: 'Nothing selected', description: 'Select at least one block to print.', status: 'info' });
+      return;
+    }
+    setPrintingAll(true);
+    try {
+      await onPrintAllBlocks(selectedBlocks, { showFacultyNames: printAllShowFaculty });
+      setPrintAllModalOpen(false);
+    } catch (e) {
+      toast({ title: 'Print failed', description: e?.message || 'Unable to print selected blocks.', status: 'error' });
+    } finally {
+      setPrintingAll(false);
+    }
+  }, [onPrintAllBlocks, printAllEntries, printAllSelectedSet, printAllShowFaculty, toast]);
   const facIndexesAllFull = React.useMemo(() => buildIndexes(existing || []), [existing]);
   const facStatsScoped = React.useMemo(() => buildFacultyStats(facOptions || [], scopedCourses || []), [facOptions, scopedCourses]);
   const facLoadCache = React.useRef(new Map());
@@ -6778,8 +6948,9 @@ const prefill = hit ? {
                     size="xs"
                     variant="outline"
                     leftIcon={<FiPrinter />}
-                    onClick={onPrintAllBlocks}
+                    onClick={openPrintAllBlocksModal}
                     isDisabled={blocksLoading || !(Array.isArray(blocks) && blocks.length > 0)}
+                    isLoading={printAllPreparing}
                   >
                     Print All
                   </Button>
@@ -7805,6 +7976,191 @@ const prefill = hit ? {
         semester={settingsLoad?.semester}
         attendanceStats={attendanceStatsMap}
       />
+      <Modal isOpen={printAllModalOpen} onClose={closePrintAllModal} isCentered size="6xl" scrollBehavior="inside">
+        <ModalOverlay />
+        <ModalContent maxW={{ base: '96vw', xl: '1180px' }}>
+          <ModalHeader>
+            <HStack justify="space-between" align="start" pr={10} spacing={3}>
+              <VStack align="start" spacing={1}>
+                <Heading size="md">Print Selected Blocks</Heading>
+                <Text fontSize="sm" color={subtle}>
+                  Only blocks with at least one schedule in the active load are listed. Everything starts selected by default.
+                </Text>
+              </VStack>
+              {!printAllPreparing && printAllEntries.length > 0 && (
+                <Wrap spacing={2} justify="flex-end">
+                  <WrapItem><Badge colorScheme="blue" px={2} py={1}>{printAllEntries.length} printable</Badge></WrapItem>
+                  <WrapItem><Badge colorScheme={printAllSelectedKeys.length ? 'purple' : 'gray'} px={2} py={1}>{printAllSelectedKeys.length} selected</Badge></WrapItem>
+                  <WrapItem><Badge colorScheme="green" px={2} py={1}>{printAllProgramCount} program{printAllProgramCount === 1 ? '' : 's'}</Badge></WrapItem>
+                </Wrap>
+              )}
+            </HStack>
+          </ModalHeader>
+          <ModalCloseButton isDisabled={printingAll} />
+          <ModalBody>
+            {printAllPreparing ? (
+              <VStack spacing={4} py={10}>
+                <Spinner size="lg" color="blue.500" />
+                <Text color={subtle}>Preparing block selections...</Text>
+              </VStack>
+            ) : (
+              <VStack align="stretch" spacing={4}>
+                <Box borderWidth="1px" borderColor={border} rounded="xl" p={4} bg={panelBg}>
+                  <Stack direction={{ base: 'column', lg: 'row' }} spacing={3} align={{ base: 'stretch', lg: 'center' }}>
+                    <Input
+                      value={printAllSearch}
+                      onChange={(e) => setPrintAllSearch(e.target.value)}
+                      placeholder="Search block, program, year, session, or room"
+                    />
+                    <HStack spacing={2} flexWrap="wrap" justify={{ base: 'flex-start', lg: 'flex-end' }}>
+                      <Button size="sm" variant="outline" onClick={() => setPrintAllSelectedKeys(printAllEntries.map((entry) => entry.selectionKey))}>Select all</Button>
+                      <Button size="sm" variant="outline" onClick={() => setPrintAllSelectedKeys([])}>Clear all</Button>
+                      <Button size="sm" variant="ghost" onClick={() => updatePrintAllSelection(printAllVisibleKeys, true)} isDisabled={!printAllVisibleKeys.length}>Select visible</Button>
+                      <Button size="sm" variant="ghost" onClick={() => updatePrintAllSelection(printAllVisibleKeys, false)} isDisabled={!printAllVisibleKeys.length}>Clear visible</Button>
+                    </HStack>
+                  </Stack>
+                  <HStack
+                    mt={4}
+                    pt={4}
+                    borderTopWidth="1px"
+                    borderColor={border}
+                    justify="space-between"
+                    align={{ base: 'flex-start', md: 'center' }}
+                    flexDirection={{ base: 'column', md: 'row' }}
+                    spacing={3}
+                  >
+                    <VStack align="start" spacing={0}>
+                      <Text fontWeight="600">Display faculty names</Text>
+                      <Text fontSize="sm" color={subtle}>
+                        Enabled by default. Turn this off to hide faculty names in the printed blocks.
+                      </Text>
+                    </VStack>
+                    <HStack spacing={3}>
+                      <Text fontSize="sm" color={subtle}>{printAllShowFaculty ? 'Yes' : 'No'}</Text>
+                      <Switch
+                        colorScheme="blue"
+                        isChecked={printAllShowFaculty}
+                        onChange={(e) => setPrintAllShowFaculty(e.target.checked)}
+                      />
+                    </HStack>
+                  </HStack>
+                </Box>
+                <VStack align="stretch" spacing={4} maxH="58vh" overflowY="auto" pr={1}>
+                  {printAllGroups.map((programGroup) => {
+                    const programKeys = programGroup.years.flatMap((yearGroup) => yearGroup.entries.map((entry) => entry.selectionKey));
+                    const selectedInProgram = programKeys.filter((key) => printAllSelectedSet.has(key)).length;
+                    return (
+                      <Box key={programGroup.programKey} borderWidth="1px" borderColor={border} rounded="2xl" p={4} bg={panelBg}>
+                        <HStack justify="space-between" align="start" spacing={3} mb={4}>
+                          <VStack align="start" spacing={1}>
+                            <Heading size="sm">{programGroup.programKey}</Heading>
+                            <Text fontSize="sm" color={subtle}>
+                              {selectedInProgram} of {programKeys.length} block(s) selected
+                            </Text>
+                          </VStack>
+                          <HStack spacing={2}>
+                            <Button size="xs" variant="outline" onClick={() => updatePrintAllSelection(programKeys, true)}>Select program</Button>
+                            <Button size="xs" variant="ghost" onClick={() => updatePrintAllSelection(programKeys, false)}>Clear</Button>
+                          </HStack>
+                        </HStack>
+                        <VStack align="stretch" spacing={4}>
+                          {programGroup.years.map((yearGroup) => {
+                            const yearKeys = yearGroup.entries.map((entry) => entry.selectionKey);
+                            const selectedInYear = yearKeys.filter((key) => printAllSelectedSet.has(key)).length;
+                            return (
+                              <Box key={`${programGroup.programKey}-${yearGroup.yearKey}`} borderWidth="1px" borderColor={border} rounded="xl" p={3}>
+                                <HStack justify="space-between" align="center" mb={3}>
+                                  <VStack align="start" spacing={0}>
+                                    <Text fontWeight="700">
+                                      {yearGroup.yearKey === 'Unspecified' ? 'Unspecified Year' : `Year ${yearGroup.yearKey}`}
+                                    </Text>
+                                    <Text fontSize="xs" color={subtle}>
+                                      {selectedInYear} of {yearGroup.entries.length} selected
+                                    </Text>
+                                  </VStack>
+                                  <HStack spacing={2}>
+                                    <Button size="xs" variant="outline" onClick={() => updatePrintAllSelection(yearKeys, true)}>Select year</Button>
+                                    <Button size="xs" variant="ghost" onClick={() => updatePrintAllSelection(yearKeys, false)}>Clear</Button>
+                                  </HStack>
+                                </HStack>
+                                <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} spacing={3}>
+                                  {yearGroup.entries.map((entry) => {
+                                    const checked = printAllSelectedSet.has(entry.selectionKey);
+                                    return (
+                                      <Box
+                                        key={entry.selectionKey}
+                                        borderWidth="1px"
+                                        borderColor={checked ? 'blue.400' : border}
+                                        bg={checked ? printSelectionCardBg : panelBg}
+                                        rounded="xl"
+                                        p={3}
+                                        cursor="pointer"
+                                        transition="all 0.15s ease"
+                                        _hover={{ borderColor: checked ? 'blue.500' : printSelectionHoverBorder, transform: 'translateY(-1px)' }}
+                                        onClick={() => updatePrintAllSelection(entry.selectionKey, !checked)}
+                                      >
+                                        <HStack align="start" spacing={3}>
+                                          <Checkbox
+                                            mt={1}
+                                            isChecked={checked}
+                                            onChange={(e) => updatePrintAllSelection(entry.selectionKey, e.target.checked)}
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                          <VStack align="start" spacing={2} flex="1" minW={0}>
+                                            <HStack spacing={2} flexWrap="wrap">
+                                              <Text fontWeight="800" noOfLines={1}>{entry.blockCode}</Text>
+                                              {entry.session ? <Badge colorScheme="purple">{entry.session}</Badge> : null}
+                                              {entry.mappedInactive ? <Badge colorScheme="orange" variant="subtle">Mapped inactive</Badge> : null}
+                                            </HStack>
+                                            <Text fontSize="sm" color={subtle} noOfLines={1}>
+                                              {entry.room || 'Room not set'}
+                                            </Text>
+                                            <Wrap spacing={2}>
+                                              <WrapItem><Badge colorScheme="blue" variant="subtle">{entry.courseCount} course{entry.courseCount === 1 ? '' : 's'}</Badge></WrapItem>
+                                              <WrapItem><Badge colorScheme="green" variant="subtle">{formatUnits(entry.totalUnits)} units</Badge></WrapItem>
+                                              {entry.meta?.section ? <WrapItem><Badge variant="subtle">Sec {entry.meta.section}</Badge></WrapItem> : null}
+                                            </Wrap>
+                                          </VStack>
+                                        </HStack>
+                                      </Box>
+                                    );
+                                  })}
+                                </SimpleGrid>
+                              </Box>
+                            );
+                          })}
+                        </VStack>
+                      </Box>
+                    );
+                  })}
+                  {printAllGroups.length === 0 && (
+                    <Box borderWidth="1px" borderColor={border} rounded="xl" p={8} textAlign="center" bg={panelBg}>
+                      <Text fontWeight="700">No blocks match your search.</Text>
+                      <Text fontSize="sm" color={subtle} mt={1}>Try a broader search term or clear the filter.</Text>
+                    </Box>
+                  )}
+                </VStack>
+              </VStack>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            <Text flex="1" fontSize="sm" color={subtle}>
+              {printAllSelectedKeys.length} block(s) ready to print
+            </Text>
+            <Button variant="ghost" onClick={closePrintAllModal} isDisabled={printingAll}>Cancel</Button>
+            <Button
+              ml={3}
+              colorScheme="blue"
+              leftIcon={<FiPrinter />}
+              onClick={handlePrintSelectedBlocks}
+              isDisabled={printAllPreparing || printAllSelectedKeys.length === 0}
+              isLoading={printingAll}
+            >
+              Print Selected
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       {/* Resolve conflict dialog */}
       <AlertDialog isOpen={resolveOpen} onClose={()=>{ if (!resolveBusy) { setResolveOpen(false); setResolveRowIndex(null); setResolveConflictId(null); setResolveLabel(''); } }} leastDestructiveRef={cancelRef}>
