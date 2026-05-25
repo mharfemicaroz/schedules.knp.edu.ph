@@ -33,15 +33,23 @@ import {
   ModalFooter,
   Divider,
   Skeleton,
+  Wrap,
+  WrapItem,
+  InputGroup,
+  InputLeftElement,
+  Stack,
+  ButtonGroup,
+  TableContainer,
 } from '@chakra-ui/react';
-import { FiBarChart2, FiEye } from 'react-icons/fi';
+import { FiBarChart2, FiEye, FiSearch, FiRefreshCw, FiFilter, FiUsers, FiBookOpen, FiClipboard } from 'react-icons/fi';
 import apiService from '../services/apiService';
 import { printEvaluationSummary } from '../utils/printEvaluation';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadProspectusThunk } from '../store/prospectusThunks';
 import { selectProspectusFilterOptions, selectAllProspectus } from '../store/prospectusSlice';
-import { selectAllCourses } from '../store/dataSlice';
 import { selectSettings } from '../store/settingsSlice';
+import { loadFacultiesThunk } from '../store/facultyThunks';
+import { selectAllFaculty } from '../store/facultySlice';
 
 const QUESTIONS = [
   'Lessons are presented in a clear, structured, and organized manner.',
@@ -56,21 +64,60 @@ const QUESTIONS = [
   'The overall classroom atmosphere promotes a positive and supportive learning environment.',
 ];
 
+const normalizeText = (value) => String(value || '').trim().toLowerCase();
+const isFacultyActive = (row) => {
+  const raw = row?.isActive ?? row?.is_active;
+  if (typeof raw === 'boolean') return raw;
+  const value = String(raw || '').trim().toLowerCase();
+  if (!value) return true;
+  return ['true', '1', 'yes', 'active'].includes(value);
+};
+const getFacultyName = (row) => String(
+  row?.faculty ||
+  row?.name ||
+  row?.full_name ||
+  row?.fullName ||
+  row?.instructor ||
+  ''
+).trim();
+const getFacultyDept = (row) => String(
+  row?.dept ||
+  row?.department ||
+  row?.department_name ||
+  row?.departmentName ||
+  ''
+).trim();
+const getFacultyEmployment = (row) => String(row?.employment || '').trim();
+const getFacultyKey = (row, fallback = '') => {
+  const id = row?.faculty_id ?? row?.facultyId ?? row?.id ?? null;
+  if (id != null && String(id).trim() !== '') return `id:${id}`;
+  const name = normalizeText(getFacultyName(row));
+  if (name) return `name:${name}`;
+  return fallback;
+};
+
 export default function AdminEvaluations() {
   const panel = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
   const subtle = useColorModeValue('gray.600', 'gray.400');
   const feedbackBg = useColorModeValue('gray.50','gray.700');
+  const heroBg = useColorModeValue('linear(to-r, blue.50, cyan.50)', 'linear(to-r, gray.800, blue.900)');
+  const tableHeadBg = useColorModeValue('gray.50', 'whiteAlpha.100');
+  const rowHover = useColorModeValue('blue.50', 'whiteAlpha.50');
+  const mutedPanel = useColorModeValue('gray.50', 'gray.900');
 
   const dispatch = useDispatch();
   const authUser = useSelector(s => s.auth.user);
   const roleStr = String(authUser?.role || '').toLowerCase();
   const isOsas = roleStr === 'osas';
   const settings = useSelector(selectSettings);
+  const opts = useSelector(selectProspectusFilterOptions);
+  const allPros = useSelector(selectAllProspectus);
+  const allFaculty = useSelector(selectAllFaculty);
   const defaultFilters = React.useMemo(() => {
     const defaultSy = settings?.evaluations?.school_year || settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || '';
     const defaultSem = settings?.evaluations?.semester || settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || '';
-    return { programcode: '', coursecode: '', faculty: '', dept: '', employment: '', term: '', student: '', sy: defaultSy, sem: defaultSem };
+    return { programcode: '', coursecode: '', faculty: '', dept: '', employment: '', term: '', student: '', sy: defaultSy, sem: defaultSem, q: '' };
   }, [settings]);
   const [view, setView] = React.useState(isOsas ? 'student' : 'course'); // 'course' | 'faculty' | 'student'
   const [filters, setFilters] = React.useState({ programcode: '', coursecode: '', faculty: '', dept: '', employment: '', term: '', student: '', sy: '', sem: '', q: '' });
@@ -148,53 +195,118 @@ export default function AdminEvaluations() {
       sem: prev.sem || defaultFilters.sem,
     }));
   }, [defaultFilters]);
+  React.useEffect(() => { dispatch(loadProspectusThunk({})); }, [dispatch]);
+  React.useEffect(() => { dispatch(loadFacultiesThunk({ limit: 100000 })); }, [dispatch]);
 
   const mergedFacultyRows = React.useMemo(() => {
-    const list = Array.isArray(rows) ? rows : [];
-    const norm = (v) => String(v || '').trim().toLowerCase();
-    const mergedMap = new Map();
-    list.forEach((r, idx) => {
-      const nameKey = norm(r?.faculty?.faculty || r?.faculty?.name || r?.instructor);
-      const key = r.faculty_id != null ? `id:${r.faculty_id}` : nameKey ? `name:${nameKey}` : `row:${idx}`;
-      const existing = mergedMap.get(key);
-      const mergedFaculty = { ...(existing?.faculty || {}), ...(r.faculty || {}) };
-      const merged = existing ? { ...existing } : { ...r };
-      merged.faculty = mergedFaculty;
-      merged.faculty_id = merged.faculty_id ?? r.faculty_id;
-      merged.instructor = merged.instructor || r.instructor;
-      merged.dept = mergedFaculty.dept || mergedFaculty.department || merged.dept || r.dept;
-      merged.employment = mergedFaculty.employment || merged.employment || r.employment;
-      merged.total = (Number(existing?.total) || 0) + (Number(r.total) || 0);
-      merged.schedules = merged.schedules || r.schedules || [];
-      mergedMap.set(key, merged);
+    const aggregateMap = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row, idx) => {
+      const key = getFacultyKey(
+        { faculty_id: row?.faculty_id, facultyId: row?.facultyId, faculty: row?.faculty, instructor: row?.instructor },
+        `aggregate:${idx}`
+      );
+      const existing = aggregateMap.get(key);
+      const mergedFaculty = { ...(existing?.faculty || {}), ...(row?.faculty || {}) };
+      aggregateMap.set(key, {
+        ...(existing || {}),
+        ...row,
+        faculty: mergedFaculty,
+        faculty_id: existing?.faculty_id ?? row?.faculty_id ?? row?.facultyId ?? row?.faculty?.id ?? null,
+        instructor: existing?.instructor || row?.instructor || getFacultyName(mergedFaculty),
+        dept: getFacultyDept(mergedFaculty) || existing?.dept || row?.dept || '',
+        employment: getFacultyEmployment(mergedFaculty) || existing?.employment || row?.employment || '',
+        total: (Number(existing?.total) || 0) + (Number(row?.total) || 0),
+        schedules: existing?.schedules || row?.schedules || [],
+      });
     });
-    return Array.from(mergedMap.values());
-  }, [rows]);
+
+    const consumed = new Set();
+    const masterRows = (Array.isArray(allFaculty) ? allFaculty : []).map((faculty, idx) => {
+      const key = getFacultyKey(faculty, `master:${idx}`);
+      consumed.add(key);
+      const aggregate = aggregateMap.get(key);
+      return {
+        ...(aggregate || {}),
+        faculty: { ...(aggregate?.faculty || {}), ...faculty },
+        faculty_id: aggregate?.faculty_id ?? faculty?.id ?? null,
+        instructor: aggregate?.instructor || getFacultyName(faculty),
+        dept: getFacultyDept(faculty) || aggregate?.dept || '',
+        employment: getFacultyEmployment(faculty) || aggregate?.employment || '',
+        total: Number(aggregate?.total) || 0,
+        schedules: aggregate?.schedules || [],
+        _isActive: isFacultyActive(faculty),
+      };
+    });
+
+    const aggregateOnlyRows = Array.from(aggregateMap.entries())
+      .filter(([key]) => !consumed.has(key))
+      .map(([, row]) => ({
+        ...row,
+        faculty: row?.faculty || {},
+        faculty_id: row?.faculty_id ?? null,
+        instructor: row?.instructor || getFacultyName(row?.faculty),
+        dept: row?.dept || getFacultyDept(row?.faculty),
+        employment: row?.employment || getFacultyEmployment(row?.faculty),
+        total: Number(row?.total) || 0,
+        schedules: row?.schedules || [],
+        _isActive: isFacultyActive(row?.faculty || row),
+      }));
+
+    return [...masterRows, ...aggregateOnlyRows];
+  }, [allFaculty, rows]);
 
   const filteredRows = React.useMemo(() => {
-    const list = Array.isArray(rows) ? rows : [];
-    if (view !== 'faculty') return list;
-    const norm = (v) => String(v || '').trim().toLowerCase();
+    const query = normalizeText(filters.q);
+    let list = view === 'faculty' ? mergedFacultyRows.slice() : (Array.isArray(rows) ? rows.slice() : []);
 
-    let mergedRows = mergedFacultyRows;
-    if (filters.faculty) {
-      const target = norm(filters.faculty);
-      mergedRows = mergedRows.filter(r => {
-        const facName = norm(r?.faculty?.faculty || r?.faculty?.name);
-        const instructorName = norm(r?.instructor);
-        return facName === target || instructorName === target;
-      });
+    if (view === 'faculty') {
+      if (filters.faculty) {
+        const target = normalizeText(filters.faculty);
+        list = list.filter((row) => {
+          const facultyName = normalizeText(getFacultyName(row?.faculty) || row?.instructor);
+          return facultyName === target;
+        });
+      }
+      if (filters.dept) {
+        const target = normalizeText(filters.dept);
+        list = list.filter((row) => normalizeText(getFacultyDept(row?.faculty) || row?.dept) === target);
+      }
+      if (filters.employment) {
+        const target = normalizeText(filters.employment);
+        list = list.filter((row) => normalizeText(getFacultyEmployment(row?.faculty) || row?.employment) === target);
+      }
     }
-    if (filters.dept) {
-      const target = norm(filters.dept);
-      mergedRows = mergedRows.filter(r => norm(r?.faculty?.dept || r?.faculty?.department || r?.dept) === target);
-    }
-    if (filters.employment) {
-      const target = norm(filters.employment);
-      mergedRows = mergedRows.filter(r => norm(r?.faculty?.employment || r?.employment) === target);
-    }
-    return mergedRows;
-  }, [rows, view, filters.faculty, filters.dept, filters.employment, mergedFacultyRows]);
+
+    if (!query) return list;
+
+    return list.filter((row) => {
+      if (view === 'course') {
+        return [
+          row?.schedule?.programcode,
+          row?.schedule?.course_name,
+          row?.schedule?.course_title,
+          row?.schedule?.instructor,
+          row?.faculty?.faculty,
+        ].some((value) => normalizeText(value).includes(query));
+      }
+      if (view === 'faculty') {
+        return [
+          getFacultyName(row?.faculty),
+          row?.instructor,
+          getFacultyDept(row?.faculty) || row?.dept,
+          getFacultyEmployment(row?.faculty) || row?.employment,
+        ].some((value) => normalizeText(value).includes(query));
+      }
+      return [
+        row?.student_name,
+        row?.student?.name,
+        row?.student_id,
+        row?.student?.id,
+        row?.program,
+        row?.programcode,
+      ].some((value) => normalizeText(value).includes(query));
+    });
+  }, [filters.dept, filters.employment, filters.faculty, filters.q, mergedFacultyRows, rows, view]);
 
   const sortedRows = React.useMemo(() => {
     const list = filteredRows.slice();
@@ -249,12 +361,6 @@ export default function AdminEvaluations() {
 
   const pageCount = Math.max(1, Math.ceil((sortedRows?.length || 0) / pageSize));
 
-  // Load prospectus for select options (programs, courses)
-  const opts = useSelector(selectProspectusFilterOptions);
-  const allPros = useSelector(selectAllProspectus);
-  const allCourses = useSelector(selectAllCourses);
-  React.useEffect(() => { dispatch(loadProspectusThunk({})); }, [dispatch]);
-
   const programOptions = React.useMemo(() => (opts?.programs || []).map(v => String(v)).filter(Boolean), [opts]);
   const courseOptions = React.useMemo(() => {
     const list = (allPros || []).filter(p => !filters.programcode || String(p.programcode || p.program || '') === filters.programcode)
@@ -264,28 +370,28 @@ export default function AdminEvaluations() {
   }, [allPros, filters.programcode]);
   const facultyOptions = React.useMemo(() => {
     const names = new Set();
-    (allCourses || []).forEach(c => {
-      const name = String(c.faculty?.faculty || c.facultyName || c.instructor || '').trim();
+    (Array.isArray(allFaculty) ? allFaculty : []).forEach((faculty) => {
+      const name = getFacultyName(faculty);
       if (name) names.add(name);
     });
     return Array.from(names).sort((a,b)=>a.localeCompare(b));
-  }, [allCourses]);
+  }, [allFaculty]);
   const deptOptions = React.useMemo(() => {
     const names = new Set();
-    mergedFacultyRows.forEach(r => {
-      const dept = String(r?.faculty?.dept || r?.faculty?.department || r?.dept || '').trim();
+    (Array.isArray(allFaculty) ? allFaculty : []).forEach((faculty) => {
+      const dept = getFacultyDept(faculty);
       if (dept) names.add(dept);
     });
     return Array.from(names).sort((a,b)=>a.localeCompare(b));
-  }, [mergedFacultyRows]);
+  }, [allFaculty]);
   const employmentOptions = React.useMemo(() => {
     const names = new Set();
-    mergedFacultyRows.forEach(r => {
-      const emp = String(r?.faculty?.employment || r?.employment || '').trim();
+    (Array.isArray(allFaculty) ? allFaculty : []).forEach((faculty) => {
+      const emp = getFacultyEmployment(faculty);
       if (emp) names.add(emp);
     });
     return Array.from(names).sort((a,b)=>a.localeCompare(b));
-  }, [mergedFacultyRows]);
+  }, [allFaculty]);
 
   const termOptions = [
     { value: '', label: 'All terms' },
@@ -315,6 +421,18 @@ export default function AdminEvaluations() {
     if (pick) list.add(pick);
     return Array.from(list).sort();
   }, [settings]);
+  const totalEvaluations = React.useMemo(() => (
+    sortedRows.reduce((sum, row) => sum + (Number(row?.total) || 0), 0)
+  ), [sortedRows]);
+  const zeroEvaluationFacultyCount = React.useMemo(() => (
+    view === 'faculty' ? sortedRows.filter((row) => (Number(row?.total) || 0) === 0).length : 0
+  ), [sortedRows, view]);
+  const activeFacultyCount = React.useMemo(() => (
+    view === 'faculty' ? sortedRows.filter((row) => row?._isActive !== false).length : 0
+  ), [sortedRows, view]);
+  const appliedFilterCount = React.useMemo(() => (
+    Object.entries(filters).filter(([, value]) => String(value || '').trim()).length
+  ), [filters]);
 
   const appendActiveSummaryFilters = React.useCallback((search, mode) => {
     const add = (key, value) => {
@@ -434,7 +552,7 @@ export default function AdminEvaluations() {
   const onPrint = () => {
     if (summaryMode === 'student') {
       printEvaluationSummary({
-        title: 'Student Evaluation — Courses',
+        title: 'Student Evaluation - Courses',
         subtitle: summaryTitle || '',
         context: { ...summaryCtx, courses: Array.isArray(summary?.courses) ? summary.courses : [] },
         mode: 'student',
@@ -454,74 +572,271 @@ export default function AdminEvaluations() {
     });
   };
 
+  const currentViewMeta = React.useMemo(() => {
+    if (view === 'faculty') {
+      return {
+        title: 'Faculty Evaluation Monitoring',
+        description: 'Track evaluation coverage by faculty, including inactive records and faculty with no submitted evaluations yet.',
+        icon: FiUsers,
+        accent: 'orange',
+        searchPlaceholder: 'Search faculty, department, or employment',
+        emptyText: 'No faculty matched the current filters.',
+        countLabel: 'Faculty shown',
+      };
+    }
+    if (view === 'student') {
+      return {
+        title: 'Student Evaluation Activity',
+        description: 'Review which students have submitted evaluations and inspect the courses they evaluated.',
+        icon: FiClipboard,
+        accent: 'teal',
+        searchPlaceholder: 'Search student ID, name, or program',
+        emptyText: 'No student evaluation records matched the current filters.',
+        countLabel: 'Students shown',
+      };
+    }
+    return {
+      title: 'Course Evaluation Coverage',
+      description: 'Review course sections, assigned faculty, and evaluation totals by program and schedule.',
+      icon: FiBookOpen,
+      accent: 'blue',
+      searchPlaceholder: 'Search program, course, or faculty',
+      emptyText: 'No course evaluation records matched the current filters.',
+      countLabel: 'Courses shown',
+    };
+  }, [view]);
+
+  const HeroIcon = currentViewMeta.icon;
+  const showProgramFilter = !isOsas && view !== 'faculty';
+  const showFacultyFilter = !isOsas;
+  const showFacultySpecificFilters = !isOsas && view === 'faculty';
+  const showCourseFilter = !isOsas && view === 'course';
+  const filtersSummary = [
+    filters.sy && `SY ${filters.sy}`,
+    filters.sem && filters.sem,
+    filters.term && `Term ${filters.term}`,
+    filters.programcode && filters.programcode,
+    filters.coursecode && filters.coursecode,
+    filters.faculty && filters.faculty,
+    filters.dept && filters.dept,
+    filters.employment && filters.employment,
+  ].filter(Boolean);
+
   const viewSwitch = isOsas ? (
-    <HStack spacing={2}>
-      <Button size="sm" variant="solid" colorScheme="blue" isDisabled>By Students</Button>
-    </HStack>
+    <Button size="sm" variant="solid" colorScheme="blue" leftIcon={<FiClipboard />} isDisabled>
+      Students
+    </Button>
   ) : (
-    <HStack spacing={2}>
-      <Button size="sm" variant={view==='course'?'solid':'outline'} colorScheme="blue" onClick={()=>changeView('course')}>By Course</Button>
-      <Button size="sm" variant={view==='faculty'?'solid':'outline'} colorScheme="blue" onClick={()=>changeView('faculty')}>By Faculty</Button>
-      <Button size="sm" variant={view==='student'?'solid':'outline'} colorScheme="blue" onClick={()=>changeView('student')}>By Students</Button>
-    </HStack>
+    <ButtonGroup size="sm" isAttached variant="outline">
+      <Button leftIcon={<FiBookOpen />} variant={view==='course'?'solid':'outline'} colorScheme="blue" onClick={()=>changeView('course')}>Courses</Button>
+      <Button leftIcon={<FiUsers />} variant={view==='faculty'?'solid':'outline'} colorScheme="blue" onClick={()=>changeView('faculty')}>Faculty</Button>
+      <Button leftIcon={<FiClipboard />} variant={view==='student'?'solid':'outline'} colorScheme="blue" onClick={()=>changeView('student')}>Students</Button>
+    </ButtonGroup>
   );
 
   return (
-    <VStack align="stretch" spacing={6}>
-      <HStack justify="space-between" align="center">
-        <Heading size="md">Admin Evaluations</Heading>
-        {viewSwitch}
-      </HStack>
+    <VStack align="stretch" spacing={5}>
+      <Box
+        bgGradient={heroBg}
+        borderWidth="1px"
+        borderColor={border}
+        rounded="2xl"
+        p={{ base: 5, md: 6 }}
+        boxShadow="sm"
+      >
+        <Stack
+          direction={{ base: 'column', lg: 'row' }}
+          justify="space-between"
+          align={{ base: 'stretch', lg: 'center' }}
+          spacing={5}
+        >
+          <HStack align="start" spacing={4}>
+            <Box
+              bg="whiteAlpha.700"
+              color={`${currentViewMeta.accent}.600`}
+              rounded="2xl"
+              p={3}
+              borderWidth="1px"
+              borderColor="whiteAlpha.500"
+            >
+              <HeroIcon size={24} />
+            </Box>
+            <VStack align="start" spacing={1}>
+              <Heading size="lg">{currentViewMeta.title}</Heading>
+              <Text color={subtle} maxW="3xl">
+                {currentViewMeta.description}
+              </Text>
+              {filtersSummary.length > 0 && (
+                <Wrap spacing={2} pt={1}>
+                  {filtersSummary.map((item) => (
+                    <WrapItem key={item}>
+                      <Badge variant="subtle" colorScheme="gray" px={2} py={1} rounded="full">
+                        {item}
+                      </Badge>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+              )}
+            </VStack>
+          </HStack>
 
-      <Box bg={panel} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
-        <HStack spacing={3} flexWrap="wrap">
-          <Select value={filters.sy} onChange={(e)=>setFilters(s=>({...s, sy: e.target.value }))} maxW="160px" placeholder="School year" isDisabled={isOsas}>
-            {schoolYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-          </Select>
-          <Select value={filters.sem} onChange={(e)=>setFilters(s=>({...s, sem: e.target.value }))} maxW="180px" isDisabled={isOsas}>
-            {semOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </Select>
-          <Select value={filters.term} onChange={(e)=>setFilters(s=>({...s, term: e.target.value }))} maxW="160px">
-            {termOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </Select>
-          {!isOsas && view!=='faculty' && (
-            <Select value={filters.programcode} onChange={(e)=>setFilters(s=>({...s, programcode: e.target.value, coursecode: '' }))} maxW="220px">
-              <option value="">All programs</option>
-              {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
-            </Select>
-          )}
-          {!isOsas && view==='faculty' && (
-            <>
-              <Select value={filters.dept} onChange={(e)=>setFilters(s=>({...s, dept: e.target.value }))} maxW="220px" placeholder="All departments" isDisabled={deptOptions.length===0}>
-                {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
-              </Select>
-              <Select value={filters.employment} onChange={(e)=>setFilters(s=>({...s, employment: e.target.value }))} maxW="200px" placeholder="All employment" isDisabled={employmentOptions.length===0}>
-                {employmentOptions.map(emp => <option key={emp} value={emp}>{emp}</option>)}
-              </Select>
-            </>
-          )}
-          {view==='course' && !isOsas && (
-            <Select value={filters.coursecode} onChange={(e)=>setFilters(s=>({...s, coursecode: e.target.value }))} maxW="260px" isDisabled={courseOptions.length===0} placeholder={courseOptions.length? 'Select course' : 'No courses'}>
-              {courseOptions.map(c => <option key={c} value={c}>{c}</option>)}
-            </Select>
-          )}
-          {!isOsas && (
-            <Select value={filters.faculty} onChange={(e)=>setFilters(s=>({...s, faculty: e.target.value }))} maxW="260px" placeholder="All faculty">
-              {facultyOptions.map(f => <option key={f} value={f}>{f}</option>)}
-            </Select>
-          )}
-          {view==='student' && (
-            <>
-              <Input value={filters.q} onChange={(e)=>setFilters(s=>({...s, q: e.target.value }))} maxW="260px" placeholder="Search student (ID or name)" />
-            </>
-          )}
-          <Button leftIcon={<FiBarChart2 />} onClick={fetchData} colorScheme="blue" variant="solid">Apply</Button>
-        </HStack>
+          <VStack align={{ base: 'stretch', lg: 'end' }} spacing={3}>
+            {viewSwitch}
+            <Button
+              leftIcon={<FiRefreshCw />}
+              onClick={fetchData}
+              colorScheme={currentViewMeta.accent}
+              variant="solid"
+            >
+              Refresh Data
+            </Button>
+          </VStack>
+        </Stack>
       </Box>
 
-      <Box bg={panel} borderWidth="1px" borderColor={border} rounded="xl" overflowX="auto">
+      <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4}>
+        <Box bg={panel} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
+          <Stat>
+            <StatLabel>{currentViewMeta.countLabel}</StatLabel>
+            <StatNumber>{sortedRows.length}</StatNumber>
+            <StatHelpText>Current result set</StatHelpText>
+          </Stat>
+        </Box>
+        <Box bg={panel} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
+          <Stat>
+            <StatLabel>Total evaluations</StatLabel>
+            <StatNumber>{totalEvaluations}</StatNumber>
+            <StatHelpText>Across visible rows</StatHelpText>
+          </Stat>
+        </Box>
+        <Box bg={panel} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
+          <Stat>
+            <StatLabel>{view === 'faculty' ? 'Zero evaluation faculty' : 'Active filters'}</StatLabel>
+            <StatNumber>{view === 'faculty' ? zeroEvaluationFacultyCount : appliedFilterCount}</StatNumber>
+            <StatHelpText>
+              {view === 'faculty' ? 'Included in the list' : 'Filters currently applied'}
+            </StatHelpText>
+          </Stat>
+        </Box>
+        <Box bg={panel} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
+          <Stat>
+            <StatLabel>{view === 'faculty' ? 'Active faculty' : 'Pages'}</StatLabel>
+            <StatNumber>{view === 'faculty' ? activeFacultyCount : pageCount}</StatNumber>
+            <StatHelpText>
+              {view === 'faculty' ? 'Inactive faculty are still shown' : `${pageSize} rows per page`}
+            </StatHelpText>
+          </Stat>
+        </Box>
+      </SimpleGrid>
+
+      <Box bg={panel} borderWidth="1px" borderColor={border} rounded="2xl" p={{ base: 4, md: 5 }}>
+        <VStack align="stretch" spacing={4}>
+          <HStack justify="space-between" align="start" flexWrap="wrap" spacing={3}>
+            <VStack align="start" spacing={1}>
+              <HStack spacing={2}>
+                <FiFilter />
+                <Heading size="sm">Filters</Heading>
+              </HStack>
+              <Text color={subtle} fontSize="sm">
+                Narrow the view quickly, then refresh to pull the latest evaluation aggregates.
+              </Text>
+            </VStack>
+            <HStack spacing={2}>
+              <Button
+                leftIcon={<FiRefreshCw />}
+                variant="outline"
+                onClick={() => {
+                  setFilters(defaultFilters);
+                  setPage(1);
+                }}
+              >
+                Reset
+              </Button>
+              <Button leftIcon={<FiBarChart2 />} colorScheme="blue" onClick={fetchData}>
+                Apply
+              </Button>
+            </HStack>
+          </HStack>
+
+          <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={3}>
+            <Select value={filters.sy} onChange={(e)=>setFilters(s=>({...s, sy: e.target.value }))} placeholder="School year" isDisabled={isOsas}>
+              {schoolYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+            </Select>
+            <Select value={filters.sem} onChange={(e)=>setFilters(s=>({...s, sem: e.target.value }))} isDisabled={isOsas}>
+              {semOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+            <Select value={filters.term} onChange={(e)=>setFilters(s=>({...s, term: e.target.value }))}>
+              {termOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+            {showProgramFilter ? (
+              <Select value={filters.programcode} onChange={(e)=>setFilters(s=>({...s, programcode: e.target.value, coursecode: '' }))}>
+                <option value="">All programs</option>
+                {programOptions.map(p => <option key={p} value={p}>{p}</option>)}
+              </Select>
+            ) : (
+              <InputGroup>
+                <InputLeftElement pointerEvents="none">
+                  <FiSearch color="currentColor" />
+                </InputLeftElement>
+                <Input value={filters.q} onChange={(e)=>setFilters(s=>({...s, q: e.target.value }))} placeholder={currentViewMeta.searchPlaceholder} pl={10} />
+              </InputGroup>
+            )}
+
+            {showCourseFilter && (
+              <Select value={filters.coursecode} onChange={(e)=>setFilters(s=>({...s, coursecode: e.target.value }))} isDisabled={courseOptions.length===0}>
+                <option value="">{courseOptions.length ? 'All courses' : 'No courses available'}</option>
+                {courseOptions.map(c => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            )}
+
+            {showFacultyFilter && (
+              <Select value={filters.faculty} onChange={(e)=>setFilters(s=>({...s, faculty: e.target.value }))}>
+                <option value="">All faculty</option>
+                {facultyOptions.map(f => <option key={f} value={f}>{f}</option>)}
+              </Select>
+            )}
+
+            {showFacultySpecificFilters && (
+              <Select value={filters.dept} onChange={(e)=>setFilters(s=>({...s, dept: e.target.value }))} isDisabled={deptOptions.length===0}>
+                <option value="">All departments</option>
+                {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+              </Select>
+            )}
+
+            {showFacultySpecificFilters && (
+              <Select value={filters.employment} onChange={(e)=>setFilters(s=>({...s, employment: e.target.value }))} isDisabled={employmentOptions.length===0}>
+                <option value="">All employment types</option>
+                {employmentOptions.map(emp => <option key={emp} value={emp}>{emp}</option>)}
+              </Select>
+            )}
+
+            {showProgramFilter && (
+              <InputGroup>
+                <InputLeftElement pointerEvents="none">
+                  <FiSearch color="currentColor" />
+                </InputLeftElement>
+                <Input value={filters.q} onChange={(e)=>setFilters(s=>({...s, q: e.target.value }))} placeholder={currentViewMeta.searchPlaceholder} pl={10} />
+              </InputGroup>
+            )}
+          </SimpleGrid>
+        </VStack>
+      </Box>
+
+      <Box bg={panel} borderWidth="1px" borderColor={border} rounded="2xl" overflow="hidden">
+        <HStack justify="space-between" align="center" px={{ base: 4, md: 5 }} py={4} bg={mutedPanel} borderBottomWidth="1px" borderColor={border} flexWrap="wrap" spacing={3}>
+          <VStack align="start" spacing={0}>
+            <Heading size="sm">{currentViewMeta.title}</Heading>
+            <Text color={subtle} fontSize="sm">
+              {sortedRows.length} result{sortedRows.length === 1 ? '' : 's'} across {pageCount} page{pageCount === 1 ? '' : 's'}
+            </Text>
+          </VStack>
+          <Badge colorScheme={currentViewMeta.accent} variant="subtle" px={3} py={1} rounded="full">
+            {totalEvaluations} evaluations
+          </Badge>
+        </HStack>
+        <TableContainer>
         <Table size={{ base: 'sm', md: 'md' }}>
-          <Thead>
+          <Thead bg={tableHeadBg}>
             <Tr>
               {view==='course' ? (
                 <>
@@ -535,7 +850,7 @@ export default function AdminEvaluations() {
               ) : view==='faculty' ? (
                 <>
                   <Th>Faculty</Th>
-                  <Th>Department</Th>
+                  <Th>Details</Th>
                   <Th isNumeric>Evaluations</Th>
                   <Th>Action</Th>
                 </>
@@ -555,52 +870,101 @@ export default function AdminEvaluations() {
                 <Tr key={i}><Td colSpan={6}><Skeleton height="20px" /></Td></Tr>
               ))
             ) : sortedRows.length === 0 ? (
-              <Tr><Td colSpan={6}><Text color={subtle} p={4}>No evaluations found.</Text></Td></Tr>
+              <Tr><Td colSpan={6}><Text color={subtle} p={5}>{currentViewMeta.emptyText}</Text></Td></Tr>
             ) : view==='course' ? (
               pagedRows.map((r) => (
-                <Tr key={`${r.schedule_id}-${r.accesscode}`}>
+                <Tr key={`${r.schedule_id}-${r.accesscode}`} _hover={{ bg: rowHover }}>
                   <Td><Tag colorScheme="blue" variant="subtle"><TagLabel>{r.schedule?.programcode || '-'}</TagLabel></Tag></Td>
                   <Td>
                     <VStack align="start" spacing={0}>
-                      <Text fontWeight="600">{r.schedule?.course_name || '-'}</Text>
+                      <Text fontWeight="700">{r.schedule?.course_name || '-'}</Text>
                       <Text fontSize="sm" color={subtle} noOfLines={1}>{r.schedule?.course_title || ''}</Text>
                     </VStack>
                   </Td>
-                  <Td><Text>{r.faculty?.faculty || r.schedule?.instructor || '-'}</Text></Td>
-                  <Td><Text>{r.schedule?.term || '-'}{r.schedule?.sy ? ` • SY ${r.schedule.sy}` : ''}{r.schedule?.sem ? ` • ${r.schedule.sem}` : ''}</Text></Td>
+                  <Td>
+                    <VStack align="start" spacing={1}>
+                      <Text fontWeight="600">{r.faculty?.faculty || r.schedule?.instructor || '-'}</Text>
+                      {r.schedule?.dept && <Badge variant="subtle">{r.schedule.dept}</Badge>}
+                    </VStack>
+                  </Td>
+                  <Td><Text>{[r.schedule?.term, r.schedule?.sy && `SY ${r.schedule.sy}`, r.schedule?.sem].filter(Boolean).join(' | ') || '-'}</Text></Td>
                   <Td isNumeric><Text fontWeight="700">{r.total}</Text></Td>
                   <Td>
-                    <Button size="sm" leftIcon={<FiEye />} onClick={()=>openSummary('schedule', r.schedule_id, `${r.schedule?.course_name} • ${r.schedule?.instructor || ''}`,
+                    <Button size="sm" leftIcon={<FiEye />} onClick={()=>openSummary('schedule', r.schedule_id, `${r.schedule?.course_name} | ${r.schedule?.instructor || ''}`,
                       { programcode: r.schedule?.programcode, course_name: r.schedule?.course_name, course_title: r.schedule?.course_title, instructor: r.schedule?.instructor, term: r.schedule?.term, sy: r.schedule?.sy, sem: r.schedule?.sem, dept: r.schedule?.dept, faculty_id: r.schedule?.faculty_id }
                     )}>View</Button>
                   </Td>
                 </Tr>
               ))
             ) : view==='faculty' ? (
-              pagedRows.map((r, idx) => (
-                <Tr key={`${r.faculty_id || 'x'}-${idx}`}>
-                  <Td><Text fontWeight="600">{r.faculty?.faculty || r.instructor || 'Unassigned'}</Text></Td>
-                  <Td><Text>{r.faculty?.dept || r.dept || '-'}</Text></Td>
-                  <Td isNumeric><Text fontWeight="700">{r.total}</Text></Td>
-                  <Td>
-                    <Button size="sm" leftIcon={<FiEye />} isDisabled={!r.faculty_id} onClick={()=>openSummary('faculty', r.faculty_id, (r.faculty?.faculty || r.instructor || 'Faculty'), { instructor: r.faculty?.faculty || r.instructor, dept: r.faculty?.dept || r.dept, faculty: r.faculty?.faculty, designation: r.faculty?.designation, employment: r.faculty?.employment, load_release_units: r.faculty?.loadReleaseUnits, email: r.faculty?.email, rank: r.faculty?.rank })}>View</Button>
-                  </Td>
-                </Tr>
-              ))
+              pagedRows.map((r, idx) => {
+                const facultyName = r.faculty?.faculty || r.instructor || 'Unassigned';
+                const facultyDept = r.faculty?.dept || r.dept || '-';
+                const facultyEmployment = r.faculty?.employment || r.employment || '';
+                const facultyDesignation = r.faculty?.designation || '';
+                const isActive = r?._isActive !== false;
+
+                return (
+                  <Tr key={`${r.faculty_id || 'x'}-${idx}`} _hover={{ bg: rowHover }}>
+                    <Td>
+                      <VStack align="start" spacing={1}>
+                        <Text fontWeight="700">{facultyName}</Text>
+                        <HStack spacing={2} flexWrap="wrap">
+                          <Badge colorScheme={isActive ? 'green' : 'red'} variant="subtle">
+                            {isActive ? 'Active' : 'Inactive'}
+                          </Badge>
+                          {r.faculty_id && (
+                            <Badge variant="subtle" colorScheme="blue">
+                              ID #{r.faculty_id}
+                            </Badge>
+                          )}
+                        </HStack>
+                      </VStack>
+                    </Td>
+                    <Td>
+                      <VStack align="start" spacing={1}>
+                        <Text>{facultyDept}</Text>
+                        <HStack spacing={2} flexWrap="wrap">
+                          {facultyEmployment && <Badge variant="subtle" colorScheme="green">{facultyEmployment}</Badge>}
+                          {facultyDesignation && <Badge variant="subtle" colorScheme="purple">{facultyDesignation}</Badge>}
+                        </HStack>
+                      </VStack>
+                    </Td>
+                    <Td isNumeric>
+                      <VStack align="end" spacing={0}>
+                        <Text fontWeight="700">{r.total}</Text>
+                        <Text fontSize="xs" color={subtle}>
+                          {(Number(r.total) || 0) === 0 ? 'No evaluations yet' : 'Submitted'}
+                        </Text>
+                      </VStack>
+                    </Td>
+                    <Td>
+                      <Button
+                        size="sm"
+                        leftIcon={<FiEye />}
+                        isDisabled={!r.faculty_id}
+                        onClick={()=>openSummary('faculty', r.faculty_id, facultyName, { instructor: facultyName, dept: facultyDept, faculty: r.faculty?.faculty, designation: r.faculty?.designation, employment: r.faculty?.employment, load_release_units: r.faculty?.loadReleaseUnits, email: r.faculty?.email, rank: r.faculty?.rank })}
+                      >
+                        View
+                      </Button>
+                    </Td>
+                  </Tr>
+                );
+              })
             ) : view==='student' ? (
               pagedRows.map((r, idx) => {
                 const sid = r.student_id || r.student?.id || r.id || idx;
                 const sname = r.student_name || r.student?.name || r.name || 'Student';
                 const program = r.program || r.student?.program || r.programcode || '-';
                 return (
-                  <Tr key={`stu-${sid}`}>
+                  <Tr key={`stu-${sid}`} _hover={{ bg: rowHover }}>
                     <Td>
                       <VStack align="start" spacing={0}>
-                        <Text fontWeight="600">{sname}</Text>
+                        <Text fontWeight="700">{sname}</Text>
                         <Text fontSize="sm" color={subtle}>{sid ? `ID #${sid}` : ''}</Text>
                       </VStack>
                     </Td>
-                    <Td><Tag variant="subtle"><TagLabel>{program}</TagLabel></Tag></Td>
+                    <Td><Tag variant="subtle" colorScheme="teal"><TagLabel>{program}</TagLabel></Tag></Td>
                     <Td isNumeric><Text fontWeight="700">{r.total}</Text></Td>
                     <Td>
                       <Button size="sm" leftIcon={<FiEye />} onClick={()=>openSummary('student', sid, sname, { program })}>View</Button>
@@ -611,11 +975,12 @@ export default function AdminEvaluations() {
             ) : null}
           </Tbody>
         </Table>
+        </TableContainer>
       </Box>
 
-      <HStack justify="space-between" align="center">
-        <Text fontSize="sm" color={subtle}>Page {page} / {pageCount}</Text>
-        <HStack spacing={2}>
+      <HStack justify="space-between" align={{ base: 'start', md: 'center' }} flexDirection={{ base: 'column', md: 'row' }} spacing={3} bg={panel} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
+        <Text fontSize="sm" color={subtle}>Page {page} of {pageCount}</Text>
+        <HStack spacing={2} flexWrap="wrap">
           <Select size="sm" value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value) || 10); setPage(1); }} maxW="110px">
             {[10, 20, 30, 50].map(n => <option key={n} value={n}>{n}/page</option>)}
           </Select>
@@ -666,7 +1031,7 @@ export default function AdminEvaluations() {
                       <Badge variant="subtle" colorScheme="orange">LRU: {summaryCtx.load_release_units}</Badge>
                     )}
                     {(summaryCtx.sy || summaryCtx.sem) && (
-                      <Badge variant="subtle" colorScheme="gray">{[summaryCtx.sy && `SY ${summaryCtx.sy}`, summaryCtx.sem].filter(Boolean).join(' • ')}</Badge>
+                      <Badge variant="subtle" colorScheme="gray">{[summaryCtx.sy && `SY ${summaryCtx.sy}`, summaryCtx.sem].filter(Boolean).join(' | ')}</Badge>
                     )}
                   </HStack>
                   {summaryCtx.email && (
@@ -737,7 +1102,7 @@ export default function AdminEvaluations() {
                         <Stat key={key} p={2} borderWidth="1px" borderColor={border} rounded="md">
                           <StatLabel noOfLines={2}>{idx+1}. {q}</StatLabel>
                           <StatNumber fontSize="lg">{avg}</StatNumber>
-                          <StatHelpText>Scale 1–5</StatHelpText>
+                          <StatHelpText>Scale 1-5</StatHelpText>
                         </Stat>
                       );
                     })}
