@@ -66,8 +66,8 @@ export default function FacultyDetail() {
   const shareSyNorm = normalizeShareSy(shareSy);
   const shareSemNorm = normalizeShareSem(shareMeta.sem || '');
   const shareFilterActive = isPublic && (shareSy || shareSemNorm);
-  const activeSy = String(settings?.schedulesView?.school_year || settings?.schedulesLoad?.school_year || '').trim();
-  const activeSem = String(settings?.schedulesView?.semester || settings?.schedulesLoad?.semester || '').trim();
+  const activeSy = String(settings?.schedulesView?.school_year || '').trim();
+  const activeSem = String(settings?.schedulesView?.semester || '').trim();
   const activeSemNorm = normalizeShareSem(activeSem);
   const [shareCourses, setShareCourses] = useState(null);
   let f = null;

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Box, useColorModeValue } from '@chakra-ui/react';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -49,24 +49,64 @@ import EvaluationView from './pages/EvaluationView';
 import { useDispatch, useSelector } from 'react-redux';
 import { loadAllSchedules, loadAcademicCalendar, loadHolidaysThunk } from './store/dataThunks';
 import { loadSettingsThunk } from './store/settingsThunks';
+import { selectSettings } from './store/settingsSlice';
 // import { checkRoleThunk } from './store/authThunks';
 import GlobalToaster from './components/GlobalToaster';
+
+function usesCourseLoadingDefaults(pathname = '') {
+  return /^\/admin\/course-loading$/.test(String(pathname || ''));
+}
+
+function usesScheduleViewDefaults(pathname = '') {
+  const path = String(pathname || '');
+  return (
+    path === '/' ||
+    path === '/login' ||
+    path === '/reports/faculty-summary' ||
+    /^\/faculty\/[^/]+$/i.test(path) ||
+    /^\/views\/(faculty|courses|departments|rooms|session)(?:\/|$)/.test(path) ||
+    /^\/share\/(faculty|courses|departments|rooms|session|visual-map|room-attendance)(?:\/|$)/.test(path)
+  );
+}
 
 function App() {
   const bg = useColorModeValue('gray.50', 'gray.900');
   const dispatch = useDispatch();
+  const location = useLocation();
   const accessToken = useSelector(s => s.auth.accessToken);
+  const settings = useSelector(selectSettings);
+  const viewSchoolYear = String(settings?.schedulesView?.school_year || '').trim();
+  const viewSemester = String(settings?.schedulesView?.semester || '').trim();
+  const loadSchoolYear = String(settings?.schedulesLoad?.school_year || '').trim();
+  const loadSemester = String(settings?.schedulesLoad?.semester || '').trim();
 
   useEffect(() => {
     // Only fetch settings when authenticated to avoid 401 pre-login
     if (accessToken) {
       dispatch(loadSettingsThunk());
     }
-    dispatch(loadAllSchedules());
     dispatch(loadAcademicCalendar());
     dispatch(loadHolidaysThunk(2025));
     // Per requirement: check role only on login (handled in loginThunk)
   }, [dispatch, accessToken]);
+
+  useEffect(() => {
+    const pathname = String(location?.pathname || '');
+    if (usesCourseLoadingDefaults(pathname)) {
+      dispatch(loadAllSchedules({ settingsSource: 'load' }));
+      return;
+    }
+    if (usesScheduleViewDefaults(pathname)) {
+      dispatch(loadAllSchedules());
+    }
+  }, [
+    dispatch,
+    location?.pathname,
+    viewSchoolYear,
+    viewSemester,
+    loadSchoolYear,
+    loadSemester,
+  ]);
   return (
         <Box bg={bg} minH="100vh">
           <Layout>

@@ -1715,6 +1715,7 @@ export default function CourseLoading() {
   }), [defaultLoadSchoolYear, defaultLoadSemester, hasLoadOverride, resolvedLoadSchoolYear, resolvedLoadSemester]);
   const reloadSchedulesForLoad = React.useCallback(async () => {
     return dispatch(loadAllSchedules({
+      settingsSource: 'load',
       school_year: settingsLoad?.school_year || undefined,
       semester: settingsLoad?.semester || undefined,
     }));

@@ -188,8 +188,12 @@ function transformSchedulesToFacultyDataset(schedules) {
 }
 
 export const loadAllSchedules = createAsyncThunk("data/loadAll", async (opts = {}, { getState, dispatch }) => {
-  // View mode must respect System Settings: Schedules View Defaults (schedulesView)
+  // View pages use schedulesView; Course Loading uses schedulesLoad.
   let sy, sem;
+  const settingsSource = String(
+    opts?.settingsSource || opts?.useSettings || opts?.defaultsSource || "view"
+  ).trim().toLowerCase();
+  const settingsKey = settingsSource === "load" ? "schedulesLoad" : "schedulesView";
   const overrideSy = opts?.school_year || opts?.schoolyear || opts?.sy;
   const overrideSem = opts?.semester || opts?.sem;
   if (overrideSy || overrideSem) {
@@ -197,17 +201,30 @@ export const loadAllSchedules = createAsyncThunk("data/loadAll", async (opts = {
     sem = overrideSem || undefined;
   } else {
     try {
-      const st = getState()?.settings?.data?.schedulesView || {};
+      const st = getState()?.settings?.data?.[settingsKey] || {};
       sy = st.school_year || undefined;
       sem = st.semester || undefined;
       if (!sy || !sem) {
-        // Fallback: fetch settings directly if store not yet populated
-        const s = await apiService.getSettings();
-        sy = s?.schedulesView?.school_year || sy;
-        sem = s?.schedulesView?.semester || sem;
-        // Persist fetched settings so shared/public views can reuse the values
-        if (s) {
-          try { dispatch(setSettings(s)); } catch {}
+        // Private settings are preferred when available.
+        let fetched = null;
+        try {
+          fetched = await apiService.getSettings();
+        } catch {}
+        if (fetched) {
+          sy = fetched?.[settingsKey]?.school_year || sy;
+          sem = fetched?.[settingsKey]?.semester || sem;
+          try { dispatch(setSettings(fetched)); } catch {}
+        }
+        if ((!sy || !sem) && settingsKey === "schedulesView") {
+          // Public/shared pages can still bootstrap schedulesView without auth.
+          try {
+            const publicSettings = await apiService.getPublicSettings();
+            sy = publicSettings?.schedulesView?.school_year || sy;
+            sem = publicSettings?.schedulesView?.semester || sem;
+            if (publicSettings) {
+              try { dispatch(setSettings(publicSettings)); } catch {}
+            }
+          } catch {}
         }
       }
     } catch {}
