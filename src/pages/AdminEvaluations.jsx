@@ -189,6 +189,27 @@ export default function AdminEvaluations() {
   const [summaryId, setSummaryId] = React.useState(null);
   const [summaryCtx, setSummaryCtx] = React.useState({});
   const requestSeq = React.useRef(0);
+  const serverFilters = React.useMemo(() => ({
+    programcode: filters.programcode,
+    coursecode: filters.coursecode,
+    faculty: filters.faculty,
+    dept: filters.dept,
+    employment: filters.employment,
+    term: filters.term,
+    student: filters.student,
+    sy: filters.sy,
+    sem: filters.sem,
+  }), [
+    filters.coursecode,
+    filters.dept,
+    filters.employment,
+    filters.faculty,
+    filters.programcode,
+    filters.sem,
+    filters.student,
+    filters.sy,
+    filters.term,
+  ]);
   const changeView = (next) => {
     setFilters(defaultFilters);
     setRows([]);
@@ -201,7 +222,7 @@ export default function AdminEvaluations() {
     setLoading(true);
     try {
       const search = new URLSearchParams();
-      Object.entries(filters).forEach(([k, v]) => {
+      Object.entries(serverFilters).forEach(([k, v]) => {
         if (v === undefined || v === null) return;
         const val = String(v).trim();
         if (!val) return;
@@ -225,7 +246,7 @@ export default function AdminEvaluations() {
         setLoading(false);
       }
     }
-  }, [view, filters]);
+  }, [serverFilters, view]);
 
   React.useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -590,7 +611,6 @@ export default function AdminEvaluations() {
       if (mode === 'student') {
         const studentName = String(ctx?.student || ctx?.student_name || title || '').trim();
         if (studentName) search.set('student', studentName);
-        if (filters?.q) search.set('q', filters.q);
       } else {
         search.set('id', String(id));
       }

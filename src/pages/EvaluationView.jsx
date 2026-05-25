@@ -60,6 +60,9 @@ const QUESTIONS = [
   'The overall classroom atmosphere promotes a positive and supportive learning environment.',
 ];
 
+const FEEDBACK_MIN_LENGTH = 60;
+const FEEDBACK_MAX_LENGTH = 3000;
+
 function EvaluationView() {
   const { token } = useParams();
   const navigate = useNavigate();
@@ -75,6 +78,7 @@ function EvaluationView() {
   const paper = useColorModeValue('white', 'gray.800');
   const border = useColorModeValue('gray.200', 'gray.700');
   const subtle = useColorModeValue('gray.600', 'gray.400');
+  const feedbackLength = String(feedback || '').trim().length;
 
   const decoded = React.useMemo(() => decodeToken(String(token || '').trim()), [token]);
   const malformed = React.useMemo(() => !/^[A-Za-z0-9]{6}$/.test(decoded), [decoded]);
@@ -124,9 +128,38 @@ function EvaluationView() {
   const allAnswered = React.useMemo(() => {
     const qOk = QUESTIONS.every((_, idx) => answers[idx] != null);
     const sOk = !!student; // student verification required
-    const fOk = String(feedback).trim().length > 0; // feedback required
+    const fOk = feedbackLength >= FEEDBACK_MIN_LENGTH && feedbackLength <= FEEDBACK_MAX_LENGTH;
     return qOk && sOk && fOk;
-  }, [answers, student, feedback]);
+  }, [answers, feedbackLength, student]);
+
+  const blockClipboardAction = React.useCallback((event, message) => {
+    event.preventDefault();
+    event.stopPropagation();
+    toast({
+      title: message,
+      status: 'warning',
+      duration: 1800,
+    });
+  }, [toast]);
+
+  const handleFeedbackKeyDown = React.useCallback((event) => {
+    if ((event.ctrlKey || event.metaKey) && ['v', 'c', 'x', 'insert'].includes(String(event.key || '').toLowerCase())) {
+      const title = String(event.key || '').toLowerCase() === 'v'
+        ? 'Pasting is not allowed in Overall Feedback.'
+        : 'Copy and cut are not allowed in Overall Feedback.';
+      blockClipboardAction(event, title);
+    }
+    if (event.shiftKey && String(event.key || '').toLowerCase() === 'insert') {
+      blockClipboardAction(event, 'Pasting is not allowed in Overall Feedback.');
+    }
+  }, [blockClipboardAction]);
+
+  const handleFeedbackBeforeInput = React.useCallback((event) => {
+    const inputType = String(event?.nativeEvent?.inputType || '');
+    if (inputType.includes('insertFromPaste') || inputType.includes('insertFromDrop')) {
+      blockClipboardAction(event, 'Pasting is not allowed in Overall Feedback.');
+    }
+  }, [blockClipboardAction]);
 
   const submitEval = async () => {
     if (!student) {
@@ -137,8 +170,12 @@ function EvaluationView() {
       toast({ title: 'Please answer all questions.', status: 'warning', duration: 1800 });
       return;
     }
-    if (!String(feedback).trim()) {
-      toast({ title: 'Please provide your overall feedback.', status: 'warning', duration: 1600 });
+    if (feedbackLength < FEEDBACK_MIN_LENGTH) {
+      toast({ title: `Overall feedback must be at least ${FEEDBACK_MIN_LENGTH} characters.`, status: 'warning', duration: 2200 });
+      return;
+    }
+    if (feedbackLength > FEEDBACK_MAX_LENGTH) {
+      toast({ title: `Overall feedback must not exceed ${FEEDBACK_MAX_LENGTH} characters.`, status: 'warning', duration: 2200 });
       return;
     }
     try {
@@ -358,14 +395,30 @@ function EvaluationView() {
                     <Textarea
                       placeholder="Share comments or suggestions to help improve the course and instruction."
                       value={feedback}
-                      onChange={(e)=>setFeedback(e.target.value)}
+                      onChange={(e)=>setFeedback(e.target.value.slice(0, FEEDBACK_MAX_LENGTH))}
+                      onPaste={(e) => blockClipboardAction(e, 'Pasting is not allowed in Overall Feedback.')}
+                      onDrop={(e) => blockClipboardAction(e, 'Dropping text is not allowed in Overall Feedback.')}
+                      onCopy={(e) => blockClipboardAction(e, 'Copying is not allowed in Overall Feedback.')}
+                      onCut={(e) => blockClipboardAction(e, 'Cutting is not allowed in Overall Feedback.')}
+                      onBeforeInput={handleFeedbackBeforeInput}
+                      onKeyDown={handleFeedbackKeyDown}
+                      onContextMenu={(e) => e.preventDefault()}
                       rows={4}
                       resize="vertical"
                       rounded="md"
-                      maxLength={1000}
+                      maxLength={FEEDBACK_MAX_LENGTH}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      sx={{ WebkitTouchCallout: 'none' }}
                     />
-                    <HStack justify="flex-end">
-                      <Text fontSize="xs" color={subtle}>{feedback.length}/1000</Text>
+                    <HStack justify="space-between" align="center" pt={2}>
+                      <Text fontSize="xs" color={subtle}>
+                        Overall feedback must be at least {FEEDBACK_MIN_LENGTH} characters and must not exceed {FEEDBACK_MAX_LENGTH} characters.
+                      </Text>
+                      <Text fontSize="xs" color={feedbackLength < FEEDBACK_MIN_LENGTH ? 'orange.400' : subtle}>
+                        {feedbackLength}/{FEEDBACK_MAX_LENGTH}
+                      </Text>
                     </HStack>
                   </FormControl>
                 </Box>
