@@ -226,6 +226,84 @@ const getFacultyKey = (row, fallback = '') => {
   if (name) return `name:${name}`;
   return fallback;
 };
+const normalizeSchoolYear = (value) => String(value || '').trim().toLowerCase();
+const normalizeSemesterValue = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (/summer|mid\s*year|midyear/.test(normalized)) return 'summer';
+  if (normalized.startsWith('1')) return '1st';
+  if (normalized.startsWith('2')) return '2nd';
+  return normalized;
+};
+const normalizeTermValue = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (/summer|mid\s*year|midyear/.test(normalized)) return 'summer';
+  if (normalized.startsWith('1')) return '1st';
+  if (normalized.startsWith('2')) return '2nd';
+  if (normalized.startsWith('s')) return 'sem';
+  return normalized;
+};
+const getCourseRowMeta = (row) => {
+  const schedule = row?.schedule || row || {};
+  const faculty = row?.faculty || {};
+
+  return {
+    programcode: String(schedule?.programcode || row?.programcode || row?.program || '').trim(),
+    coursecode: String(
+      schedule?.course_name ||
+      schedule?.courseName ||
+      row?.course_name ||
+      row?.courseName ||
+      row?.coursecode ||
+      row?.course ||
+      ''
+    ).trim(),
+    faculty: String(
+      faculty?.faculty ||
+      faculty?.name ||
+      schedule?.instructor ||
+      row?.instructor ||
+      row?.faculty ||
+      ''
+    ).trim(),
+    sy: String(
+      schedule?.sy ||
+      schedule?.school_year ||
+      schedule?.schoolyear ||
+      row?.sy ||
+      row?.school_year ||
+      row?.schoolyear ||
+      ''
+    ).trim(),
+    sem: String(schedule?.sem || schedule?.semester || row?.sem || row?.semester || '').trim(),
+    term: String(schedule?.term || row?.term || schedule?.semester || row?.semester || '').trim(),
+  };
+};
+const matchesCourseRowFilters = (row, activeFilters) => {
+  const meta = getCourseRowMeta(row);
+
+  if (activeFilters.programcode && normalizeText(meta.programcode) !== normalizeText(activeFilters.programcode)) {
+    return false;
+  }
+  if (activeFilters.coursecode && normalizeText(meta.coursecode) !== normalizeText(activeFilters.coursecode)) {
+    return false;
+  }
+  if (activeFilters.faculty && normalizeText(meta.faculty) !== normalizeText(activeFilters.faculty)) {
+    return false;
+  }
+  if (activeFilters.sy && normalizeSchoolYear(meta.sy) !== normalizeSchoolYear(activeFilters.sy)) {
+    return false;
+  }
+  if (activeFilters.sem && normalizeSemesterValue(meta.sem) !== normalizeSemesterValue(activeFilters.sem)) {
+    return false;
+  }
+  if (activeFilters.term && normalizeTermValue(meta.term) !== normalizeTermValue(activeFilters.term)) {
+    return false;
+  }
+
+  return true;
+};
 
 export default function AdminEvaluations() {
   const panel = useColorModeValue('white', 'gray.800');
@@ -411,6 +489,11 @@ export default function AdminEvaluations() {
     const query = String(filters.q || '').trim();
     let list = view === 'faculty' ? mergedFacultyRows.slice() : (Array.isArray(rows) ? rows.slice() : []);
 
+    // Guard against aggregate endpoints returning a broader academic period than requested.
+    if (view === 'course') {
+      list = list.filter((row) => matchesCourseRowFilters(row, filters));
+    }
+
     if (view === 'faculty') {
       if (filters.faculty) {
         const target = normalizeText(filters.faculty);
@@ -451,7 +534,7 @@ export default function AdminEvaluations() {
       }
       return matchesStudentSearch(row, query);
     });
-  }, [filters.dept, filters.employment, filters.faculty, filters.q, mergedFacultyRows, rows, view]);
+  }, [filters, mergedFacultyRows, rows, view]);
 
   const sortedRows = React.useMemo(() => {
     const list = filteredRows.slice();
@@ -569,6 +652,14 @@ export default function AdminEvaluations() {
   const totalEvaluations = React.useMemo(() => (
     sortedRows.reduce((sum, row) => sum + (Number(row?.total) || 0), 0)
   ), [sortedRows]);
+  const totalEvaluationsHelpText = React.useMemo(() => {
+    if (view === 'course') return 'After current SY/semester filters';
+    if (view === 'faculty') return 'Across visible rows';
+    return 'Across visible rows';
+  }, [view]);
+  const resultSetHelpText = React.useMemo(() => (
+    view === 'course' ? 'After current filters' : 'Current result set'
+  ), [view]);
   const zeroEvaluationFacultyCount = React.useMemo(() => (
     view === 'faculty' ? sortedRows.filter((row) => (Number(row?.total) || 0) === 0).length : 0
   ), [sortedRows, view]);
@@ -843,14 +934,14 @@ export default function AdminEvaluations() {
           <Stat>
             <StatLabel>{currentViewMeta.countLabel}</StatLabel>
             <StatNumber>{sortedRows.length}</StatNumber>
-            <StatHelpText>Current result set</StatHelpText>
+            <StatHelpText>{resultSetHelpText}</StatHelpText>
           </Stat>
         </Box>
         <Box bg={panel} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
           <Stat>
             <StatLabel>Total evaluations</StatLabel>
             <StatNumber>{totalEvaluations}</StatNumber>
-            <StatHelpText>Across visible rows</StatHelpText>
+            <StatHelpText>{totalEvaluationsHelpText}</StatHelpText>
           </Stat>
         </Box>
         <Box bg={panel} borderWidth="1px" borderColor={border} rounded="xl" p={4}>
