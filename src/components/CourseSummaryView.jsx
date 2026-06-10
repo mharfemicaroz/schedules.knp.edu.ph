@@ -28,9 +28,11 @@ import { FiRefreshCw } from 'react-icons/fi';
 import { useSelector } from 'react-redux';
 import { selectSettings } from '../store/settingsSlice';
 import { selectBlocks } from '../store/blockSlice';
+import { selectAllCourses } from '../store/dataSlice';
 import apiService from '../services/apiService';
 
 const normalizeProgramCode = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+const normalizeProgramKey = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const parseBlockProgram = (blockCode) => {
   const s = String(blockCode || '').trim();
   if (!s) return '';
@@ -48,6 +50,92 @@ const normalizeSemesterLabel = (v) => {
   if (s.startsWith('s')) return 'Summer';
   if (s.includes('summer')) return 'Summer';
   return v;
+};
+const normalizeSemShort = (s) => {
+  const v = String(s || '').trim().toLowerCase();
+  if (!v) return '';
+  if (/summer|mid\s*year|midyear/.test(v)) return 'Summer';
+  if (v.startsWith('1')) return '1st';
+  if (v.startsWith('2')) return '2nd';
+  if (v.startsWith('s')) return 'Sem';
+  return s;
+};
+const extractYearDigits = (val) => {
+  const m = String(val ?? '').match(/(\d+)/);
+  return m ? m[1] : '';
+};
+const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const normCode = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+const parseBlockMeta = (blockCode) => {
+  const s = String(blockCode || '').trim();
+  if (!s) return { programcode: '', yearlevel: '', section: '' };
+  let m = s.match(/^([A-Z0-9-]+)\s+(\d+)(?:[^\d]*)/i);
+  if (m) {
+    const programcode = (m[1] || '').toUpperCase();
+    const yearlevel = m[2] || '';
+    const secM = s.substring(m[0].length - (m[2]?.length || 0)).match(/\d+[-\s]*([A-Z0-9]+)$/i);
+    const section = secM ? (secM[1] || '') : '';
+    return { programcode, yearlevel, section };
+  }
+  const [head, rest] = s.split('-');
+  if (rest) {
+    const m2 = rest.match(/(\d+)(.*)/);
+    const programcode = (head || '').toUpperCase();
+    const yearlevel = m2 ? (m2[1] || '') : '';
+    const section = m2 ? (m2[2] || '').trim() : '';
+    return { programcode, yearlevel, section };
+  }
+  const m3 = s.match(/^(\D+?)(\d+)/);
+  if (m3) {
+    return { programcode: (m3[1] || '').replace(/[-\s]+$/,'').toUpperCase(), yearlevel: m3[2] || '', section: '' };
+  }
+  return { programcode: s.toUpperCase(), yearlevel: '', section: '' };
+};
+const courseIsActive = (row) => {
+  const raw = row?.isActive ?? row?.is_active;
+  if (typeof raw === 'boolean') return raw;
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return true;
+  return ['true', '1', 'yes', 'active'].includes(s);
+};
+const blockIsActive = (row) => {
+  const raw = row?.isActive ?? row?.is_active;
+  if (typeof raw === 'boolean') return raw;
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return true;
+  return ['true', '1', 'yes', 'active'].includes(s);
+};
+const choosePreferredProspectusRow = (current, candidate) => {
+  if (!current) return candidate;
+  const currentCode = String(current?.courseName || current?.course_name || current?.code || '').trim();
+  const candidateCode = String(candidate?.courseName || candidate?.course_name || candidate?.code || '').trim();
+  const currentHasDash = currentCode.includes('-');
+  const candidateHasDash = candidateCode.includes('-');
+  if (currentHasDash !== candidateHasDash) return candidateHasDash ? candidate : current;
+  const currentId = Number(current?.id);
+  const candidateId = Number(candidate?.id);
+  if (Number.isFinite(currentId) && Number.isFinite(candidateId) && currentId !== candidateId) {
+    return candidateId < currentId ? candidate : current;
+  }
+  return current;
+};
+const isPlaceholderAssignment = (v) => {
+  const s = String(v ?? '').trim().toUpperCase();
+  return s === 'TBA' || s === 'TBD' || s === 'N/A' || s === 'NA' || s === 'NONE' || s === 'NULL' || s === '-';
+};
+const hasRealFacultyAssignment = (row) => {
+  const facultyName = String(
+    row?.facultyName ??
+    row?.faculty ??
+    row?.instructor ??
+    row?.instructorName ??
+    row?.full_name ??
+    row?.name ??
+    ''
+  ).trim();
+  if (facultyName) return !isPlaceholderAssignment(facultyName);
+  const facultyId = row?.facultyId ?? row?.faculty_id ?? null;
+  return facultyId != null && String(facultyId).trim() !== '';
 };
 
 function RadialGauge({ value = 0, total = 0, label, accent }) {
@@ -243,6 +331,7 @@ function ProgramStatCard({ programcode, assigned, total }) {
 export default function CourseSummaryView({ viewOnly = false, settingsLoadOverride = null }) {
   const settings = useSelector(selectSettings);
   const blocks = useSelector(selectBlocks);
+  const existing = useSelector(selectAllCourses);
   const faculties = useSelector((s) => s.data?.faculties || []);
   const donutSize = useBreakpointValue({ base: 140, sm: 160, md: 180, lg: 200 });
   const surface = useColorModeValue('white', 'gray.800');
@@ -258,14 +347,191 @@ export default function CourseSummaryView({ viewOnly = false, settingsLoadOverri
   const [program, setProgram] = React.useState('');
   const [facultyThreshold, setFacultyThreshold] = React.useState(24);
   const [stats, setStats] = React.useState(null);
+  const [allProspectus, setAllProspectus] = React.useState(null);
   const [loadingStats, setLoadingStats] = React.useState(false);
   const [loadingFaculty, setLoadingFaculty] = React.useState(false);
   const [error, setError] = React.useState('');
   const lastParamsRef = React.useRef(null);
   const lastFacultyParamsRef = React.useRef(null);
 
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiService.getProspectus({});
+        const items = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : (res?.items || []);
+        if (alive) setAllProspectus(items);
+      } catch {
+        if (alive) setAllProspectus([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const loadingCoverage = allProspectus === null;
+  const scopedCourses = React.useMemo(() => {
+    const sy = String(schoolYear || '').trim();
+    const semShort = normalizeSemShort(semester || '');
+    let out = Array.isArray(existing) ? existing : [];
+    if (sy) out = out.filter((c) => String(c.schoolyear || c.schoolYear || c.school_year || '') === sy);
+    if (semShort) out = out.filter((c) => normalizeSemShort(c.semester || c.term || c.sem || '') === semShort);
+    return out;
+  }, [existing, schoolYear, semester]);
+
+  const activeBlocks = React.useMemo(() => {
+    return (Array.isArray(blocks) ? blocks : []).filter((block) => blockIsActive(block));
+  }, [blocks]);
+
+  const coverageStats = React.useMemo(() => {
+    if (!Array.isArray(allProspectus)) {
+      return {
+        total: 0,
+        assigned: 0,
+        unassigned: 0,
+        totalBlocks: 0,
+        byProgram: [],
+        byYearlevel: [],
+        byTerm: [],
+      };
+    }
+
+    const wantedSem = normalizeSemShort(semester || '');
+    const wantedProgram = normalizeProgramKey(program || '');
+    const courseMap = new Map();
+
+    (allProspectus || []).forEach((p) => {
+      if (!courseIsActive(p)) return;
+      const progRaw = String(p.programcode || p.program || '').trim();
+      const progKey = normalizeProgramKey(progRaw);
+      const yearKey = extractYearDigits(p.yearlevel || p.year || '');
+      const semKey = normalizeSemShort(p.semester || p.sem || p.term || '');
+      if (wantedProgram && progKey !== wantedProgram) return;
+      if (wantedSem && semKey !== wantedSem) return;
+      const codeKey = normCode(p.courseName || p.course_name || p.code);
+      const titleKey = norm(p.courseTitle || p.course_title || p.title);
+      const key = [progKey, yearKey, codeKey, titleKey].join('|');
+      const nextRow = {
+        ...p,
+        _programKey: progKey,
+        _programLabel: progRaw || 'N/A',
+        _yearKey: yearKey || 'Unspecified',
+        _termKey: semKey || 'Unspecified',
+        _codeKey: codeKey,
+        _titleKey: titleKey,
+      };
+      courseMap.set(key, choosePreferredProspectusRow(courseMap.get(key), nextRow));
+    });
+
+    const coursesByProgramYear = new Map();
+    Array.from(courseMap.values()).forEach((course) => {
+      const key = `${course._programKey}|${course._yearKey}`;
+      if (!coursesByProgramYear.has(key)) coursesByProgramYear.set(key, []);
+      coursesByProgramYear.get(key).push(course);
+    });
+
+    const assignedByBlock = new Map();
+    (scopedCourses || []).forEach((row) => {
+      if (!hasRealFacultyAssignment(row)) return;
+      const blockCode = String(row.blockCode || row.block || row.block_code || row.section || '').trim();
+      if (!blockCode) return;
+      const key = blockCode.toLowerCase();
+      const entry = assignedByBlock.get(key) || { codes: new Set(), titles: new Set() };
+      entry.codes.add(normCode(row.courseName || row.code));
+      entry.titles.add(norm(row.title || row.courseTitle));
+      assignedByBlock.set(key, entry);
+    });
+
+    const byProgramMap = new Map();
+    const byYearMap = new Map();
+    const byTermMap = new Map();
+    let total = 0;
+    let assigned = 0;
+    let totalBlocks = 0;
+
+    (activeBlocks || []).forEach((block) => {
+      const blockCode = String(block.blockCode || block.block_code || block.section || '').trim();
+      if (!blockCode) return;
+      const meta = parseBlockMeta(blockCode);
+      const progKey = normalizeProgramKey(meta.programcode || '');
+      const yearKey = extractYearDigits(meta.yearlevel || meta.year || '') || 'Unspecified';
+      if (wantedProgram && progKey !== wantedProgram) return;
+
+      const courseList = coursesByProgramYear.get(`${progKey}|${yearKey}`) || [];
+      if (!courseList.length) return;
+
+      totalBlocks += 1;
+      const blockAssigned = assignedByBlock.get(blockCode.toLowerCase());
+      let assignedForBlock = 0;
+
+      courseList.forEach((course) => {
+        const matched = !!blockAssigned && (
+          blockAssigned.codes.has(course._codeKey) ||
+          blockAssigned.titles.has(course._titleKey)
+        );
+        total += 1;
+        byTermMap.set(course._termKey, (byTermMap.get(course._termKey) || 0) + 1);
+        if (matched) {
+          assigned += 1;
+          assignedForBlock += 1;
+        }
+      });
+
+      const programLabel = courseList[0]?._programLabel || meta.programcode || 'N/A';
+      const programMapKey = progKey || programLabel;
+      const programEntry = byProgramMap.get(programMapKey) || {
+        programcode: programLabel,
+        count: 0,
+        assigned: 0,
+        unassigned: 0,
+      };
+      programEntry.count += courseList.length;
+      programEntry.assigned += assignedForBlock;
+      byProgramMap.set(programMapKey, programEntry);
+
+      const yearEntry = byYearMap.get(yearKey) || {
+        yearlevel: yearKey,
+        count: 0,
+        assigned: 0,
+        unassigned: 0,
+        totalBlocks: 0,
+        blocks: [],
+      };
+      yearEntry.count += courseList.length;
+      yearEntry.assigned += assignedForBlock;
+      yearEntry.totalBlocks += 1;
+      yearEntry.blocks.push({
+        block: blockCode,
+        count: courseList.length,
+        assigned: assignedForBlock,
+        unassigned: Math.max(courseList.length - assignedForBlock, 0),
+      });
+      byYearMap.set(yearKey, yearEntry);
+    });
+
+    const finalize = (row) => ({
+      ...row,
+      unassigned: Math.max((Number(row.count) || 0) - (Number(row.assigned) || 0), 0),
+    });
+    const sortYear = (a, b) => {
+      const na = parseInt(a.yearlevel, 10);
+      const nb = parseInt(b.yearlevel, 10);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      return String(a.yearlevel || '').localeCompare(String(b.yearlevel || ''));
+    };
+
+    return {
+      total,
+      assigned,
+      unassigned: Math.max(total - assigned, 0),
+      totalBlocks,
+      byProgram: Array.from(byProgramMap.values()).map(finalize).sort((a, b) => b.count - a.count || a.programcode.localeCompare(b.programcode)),
+      byYearlevel: Array.from(byYearMap.values()).map(finalize).sort(sortYear),
+      byTerm: Array.from(byTermMap.entries()).map(([term, count]) => ({ term, count })),
+    };
+  }, [allProspectus, semester, program, scopedCourses, activeBlocks]);
+
   const programRows = React.useMemo(() => {
-    const list = Array.isArray(stats?.byProgram) ? stats.byProgram : [];
+    const list = Array.isArray(coverageStats?.byProgram) ? coverageStats.byProgram : [];
     return list
       .map((p) => ({
         programcode: p.programcode || 'N/A',
@@ -277,7 +543,7 @@ export default function CourseSummaryView({ viewOnly = false, settingsLoadOverri
         pct: p.count > 0 ? p.assigned / p.count : 0,
       }))
       .sort((a, b) => (b.pct - a.pct) || (b.assigned - a.assigned) || (b.count - a.count) || a.programcode.localeCompare(b.programcode));
-  }, [stats]);
+  }, [coverageStats]);
 
   const fetchStats = React.useCallback(
     async ({ sy, sem, prog, threshold }, { updateFacultyOnly = false } = {}) => {
@@ -349,11 +615,11 @@ export default function CourseSummaryView({ viewOnly = false, settingsLoadOverri
   }, [activeSettingsLoad?.school_year, settings?.schedulesLoad?.school_year]);
 
   const programOptions = React.useMemo(() => {
-    const fromBlocks = Array.isArray(blocks)
-      ? Array.from(new Set(blocks.map((b) => parseBlockProgram(b.blockCode || b.block_code)).filter(Boolean)))
+    const fromBlocks = Array.isArray(activeBlocks)
+      ? Array.from(new Set(activeBlocks.map((b) => parseBlockProgram(b.blockCode || b.block_code)).filter(Boolean)))
       : [];
     return [''].concat(fromBlocks);
-  }, [blocks]);
+  }, [activeBlocks]);
 
   const handleThresholdChange = React.useCallback((val) => {
     const n = Number(val);
@@ -477,22 +743,22 @@ export default function CourseSummaryView({ viewOnly = false, settingsLoadOverri
       </Box>
 
       <SimpleGrid columns={{ base: 1, md: 4 }} gap={4}>
-        <StatCard label="Total Required Schedules" value={stats?.total ?? 0} tone="blue" helper="block-adjusted" />
-        <StatCard label="Assigned Schedules" value={stats?.assigned ?? 0} tone="green" helper="schedules mapped" />
-        <StatCard label="Unassigned Schedules" value={stats?.unassigned ?? 0} tone="orange" helper="remaining slots" />
-        <StatCard label="Total Blocks" value={stats?.totalBlocks ?? 0} tone="purple" helper="in this slice" />
+        <StatCard label="Total Required Schedules" value={coverageStats?.total ?? 0} tone="blue" helper="active course-block pairs" />
+        <StatCard label="Assigned Schedules" value={coverageStats?.assigned ?? 0} tone="green" helper="with real faculty assignment" />
+        <StatCard label="Unassigned Schedules" value={coverageStats?.unassigned ?? 0} tone="orange" helper="remaining active slots" />
+        <StatCard label="Total Blocks" value={coverageStats?.totalBlocks ?? 0} tone="purple" helper="active blocks in this slice" />
       </SimpleGrid>
 
       <Grid templateColumns={{ base: '1fr', md: 'repeat(4, minmax(0, 1fr))' }} gap={4} alignItems="stretch">
         <GridItem colSpan={{ base: 1, md: 1 }}>
           <Box borderWidth="1px" borderColor={border} bg={surface} rounded="xl" p={4} boxShadow="sm" h="100%">
             <Heading size="sm" mb={3}>Assignment Split</Heading>
-            {loadingStats ? (
+            {loadingStats || loadingCoverage ? (
               <SkeletonText noOfLines={3} spacing="3" />
             ) : (
               <Donut
-                assigned={stats?.assigned ?? 0}
-                unassigned={stats?.unassigned ?? 0}
+                assigned={coverageStats?.assigned ?? 0}
+                unassigned={coverageStats?.unassigned ?? 0}
                 size={donutSize || 160}
               />
             )}
@@ -501,11 +767,11 @@ export default function CourseSummaryView({ viewOnly = false, settingsLoadOverri
         <GridItem colSpan={{ base: 1, md: 3 }}>
           <Box borderWidth="1px" borderColor={border} bg={surface} rounded="xl" p={4} boxShadow="sm" h="100%">
             <Heading size="sm" mb={3}>Programs</Heading>
-            {loadingStats && <SkeletonText noOfLines={4} spacing="3" />}
-            {!loadingStats && programRows.length === 0 && (
+            {(loadingStats || loadingCoverage) && <SkeletonText noOfLines={4} spacing="3" />}
+            {!(loadingStats || loadingCoverage) && programRows.length === 0 && (
               <Text fontSize="sm" color="gray.500">No program data for this slice.</Text>
             )}
-            {!loadingStats && programRows.length > 0 && (
+            {!(loadingStats || loadingCoverage) && programRows.length > 0 && (
               <>
                 <HStack justify="space-between" align="center" mb={3} spacing={2}>
                   <ChakraText fontSize="xs" color="gray.500">Sorted by completion, compact grid to fit more on screen.</ChakraText>
@@ -646,17 +912,17 @@ export default function CourseSummaryView({ viewOnly = false, settingsLoadOverri
         <HStack justify="space-between" align="center" mb={3}>
           <Heading size="sm">Year Level Coverage</Heading>
           <Tag colorScheme="blue" variant="subtle" size="sm">
-            {(stats?.byYearlevel || []).length} levels
+            {(coverageStats?.byYearlevel || []).length} levels
           </Tag>
         </HStack>
-        {loadingStats && <SkeletonText noOfLines={5} spacing="3" />}
-        {!loadingStats && (
+        {(loadingStats || loadingCoverage) && <SkeletonText noOfLines={5} spacing="3" />}
+        {!(loadingStats || loadingCoverage) && (
           <>
-            {(!stats?.byYearlevel || stats.byYearlevel.length === 0) && (
+            {(!coverageStats?.byYearlevel || coverageStats.byYearlevel.length === 0) && (
               <Text fontSize="sm" color="gray.500">No year-level data for this slice.</Text>
             )}
             <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={3}>
-              {(stats?.byYearlevel || []).map((y) => {
+              {(coverageStats?.byYearlevel || []).map((y) => {
                 const total = Math.max(Number(y.count) || 0, 1);
                 const assignedPct = Math.min(100, Math.max(0, ((Number(y.assigned) || 0) / total) * 100));
                 const unassigned = Math.max(0, Number(y.unassigned) || 0);
