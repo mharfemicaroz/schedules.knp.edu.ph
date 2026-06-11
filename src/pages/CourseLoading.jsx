@@ -2915,17 +2915,19 @@ export default function CourseLoading() {
         });
         if (!alive) return;
         setFacBulkStats(map);
-        let changed = false;
+        // Replace the cache for the active SY/semester so stale units from a
+        // previous filter do not survive when a faculty has no load now.
+        const nextCache = new Map();
         map.forEach((val, fid) => {
-          const cur = facLoadCache.current.get(fid);
-          if (cur !== val.units) {
-            facLoadCache.current.set(fid, val.units);
-            changed = true;
-          }
+          nextCache.set(fid, val.units);
         });
-        if (changed) forceFacLoad((v) => v + 1);
+        facLoadCache.current = nextCache;
+        forceFacLoad((v) => v + 1);
       } catch (e) {
-        if (alive) setFacBulkStats(new Map());
+        if (!alive) return;
+        setFacBulkStats(new Map());
+        facLoadCache.current = new Map();
+        forceFacLoad((v) => v + 1);
       }
     })();
     return () => { alive = false; };
