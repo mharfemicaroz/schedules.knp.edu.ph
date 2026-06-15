@@ -2584,7 +2584,7 @@ export default function CourseLoading() {
     // const startDateText = startOfClasses
     //   ? startOfClasses.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
     //   : 'TBD';
-    const startDateText = 'January 19, 2026'
+    const startDateText = 'June 15, 2026'
     const tentativeNoteHtml = `
       <div class="prt-banner">
         <div class="prt-banner-title">Notice of Teaching Load</div>
