@@ -239,6 +239,30 @@ function pickBestAssignment(arr = []) {
       return 0;
     })[0] || null;
 }
+function resolveDominantFacultyProgramCode(rows = []) {
+  const counts = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const blockProgram = parseBlockMeta(row?.blockCode || row?.section || row?.block || row?.block_code || '').programcode;
+    const fallbackProgram = String(row?.programcode || row?.program || '').trim().toUpperCase();
+    const key = String(blockProgram || fallbackProgram || '').trim().toUpperCase();
+    if (!key) return;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  if (counts.size === 0) return '';
+  let bestCode = '';
+  let bestCount = 0;
+  let tied = false;
+  counts.forEach((count, code) => {
+    if (count > bestCount) {
+      bestCode = code;
+      bestCount = count;
+      tied = false;
+      return;
+    }
+    if (count === bestCount) tied = true;
+  });
+  return tied ? '' : bestCode;
+}
 function extractUserName(row = {}) {
   const cand = [
     `${row?.first_name || ''} ${row?.last_name || ''}`,
@@ -1374,7 +1398,7 @@ export default function CourseLoading() {
       return '';
     }
   }, []);
-  const resolvePrintSignatories = React.useCallback(async (rawDept) => {
+  const resolvePrintSignatories = React.useCallback(async (rawDept, options = {}) => {
     const basePreparedBy = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim()
       || authUser?.username
       || authUser?.email
@@ -1399,8 +1423,13 @@ export default function CourseLoading() {
         notedRole: '',
       };
     }
-    const assignments = await getDeptAssignmentsForDept(rawDept);
-    const coordinator = pickBestAssignment(assignments.filter((r) => rankAcademicPosition(r?.position) === 1));
+    const dominantProgram = resolveDominantFacultyProgramCode(options?.scheduleRows || []);
+    const coordinatorAssignments = dominantProgram ? await getDeptAssignmentsForDept(dominantProgram) : [];
+    const headDeanDept = dominantProgram || rawDept;
+    const assignments = await getDeptAssignmentsForDept(headDeanDept);
+    const coordinator = dominantProgram
+      ? pickBestAssignment(coordinatorAssignments.filter((r) => rankAcademicPosition(r?.position) === 1))
+      : null;
     const head = pickBestAssignment(assignments.filter((r) => rankAcademicPosition(r?.position) === 2));
     const dean = pickBestAssignment(assignments.filter((r) => rankAcademicPosition(r?.position) === 3));
     const preparedRow = coordinator || head || dean || pickBestAssignment(assignments) || null;
@@ -2621,7 +2650,7 @@ export default function CourseLoading() {
     const bodyHtml = [introHtml, tentativeNoteHtml, buildTable(headers, bodyRows), termSummaryHtmlF, overloadHtml].join('');
     // FacultyDetail-style layout triggers conforme signature block (based on title prefix)
     const rawDept = f.department || f.dept || f.programcode || f.program || '';
-    const signatories = await resolvePrintSignatories(rawDept);
+    const signatories = await resolvePrintSignatories(rawDept, { scheduleRows: list });
     printContent(
       { title, subtitle: '', bodyHtml },
       {
