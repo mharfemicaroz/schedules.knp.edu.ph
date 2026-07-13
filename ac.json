@@ -110,7 +110,7 @@
             },
             "second_semester": {
                 "semester_period": {
-                    "start": "June 15, 2026",
+                    "start": "July 20, 2026",
                     "end": "May 31, 2026"
                 },
                 "pre_semester_activities": [
@@ -170,12 +170,12 @@
                     }
                 ],
                 "first_term": {
-                    "start": "June 15, 2026",
+                    "start": "July 20, 2026",
                     "end": "March 23, 2026",
                     "activities": [
                         {
                             "event": "Start of Classes",
-                            "date": "June 15, 2026"
+                            "date": "July 20, 2026"
                         },
                         {
                             "event": "Checking of TQS/TOS (Preliminary)",

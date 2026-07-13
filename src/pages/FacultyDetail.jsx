@@ -611,7 +611,7 @@ export default function FacultyDetail() {
     const noticeHtml = `
       <div class="prt-notice">
         <div class="prt-notice-title">Notice of Teaching Load</div>
-        <p>Classes for 2nd sem, SY ${syStr || 'TBD'} begin on June 15, 2026.</p>
+        <p>Classes for 2nd sem, SY ${syStr || 'TBD'} begin on July 20, 2026.</p>
         <p>Admit only officially enrolled students; verify COR and class codes.</p>
         <p>This load is tentative; we’ll notify you of any changes.</p>
       </div>`;
