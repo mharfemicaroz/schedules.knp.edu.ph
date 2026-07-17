@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { ChakraProvider, ColorModeScript } from '@chakra-ui/react';
-import { HashRouter } from 'react-router-dom';
+import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import theme from './theme';
 import './index.css';
@@ -10,6 +10,14 @@ import { Provider } from 'react-redux';
 import store from './store/store';
 import { setTokens as setTokensAction, setUser as setUserAction, logout as logoutAction } from './store/authSlice';
 import apiService from './services/apiService';
+
+// Upgrade old hash-based bookmarks (/#/route) to clean browser-history URLs.
+try {
+  const legacyRoute = String(window.location.hash || '').replace(/^#/, '');
+  if (legacyRoute.startsWith('/')) {
+    window.history.replaceState(null, '', legacyRoute);
+  }
+} catch {}
 
 const root = createRoot(document.getElementById('root'));
 
@@ -44,9 +52,9 @@ root.render(
     <ChakraProvider theme={theme}>
       <ColorModeScript initialColorMode={theme.config.initialColorMode} />
       <Provider store={store}>
-          <HashRouter>
+          <BrowserRouter>
             <App />
-          </HashRouter>
+          </BrowserRouter>
       </Provider>
     </ChakraProvider>
   </React.StrictMode>

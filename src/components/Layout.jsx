@@ -166,7 +166,7 @@ export default function Layout({ children }) {
       const qs = String(loc?.search || '');
       return `${path}${qs}`;
     } catch {
-      try { return String(window?.location?.hash || '').replace(/^#/, '') || '/'; } catch { return '/'; }
+      try { return `${window?.location?.pathname || '/'}${window?.location?.search || ''}`; } catch { return '/'; }
     }
   }, [loc.pathname, loc.search]);
   const [routeBusy, setRouteBusy] = React.useState(false);
@@ -175,8 +175,7 @@ export default function Layout({ children }) {
   const isEvaluationPublic = /^\/evaluation(\/|$)/.test(loc.pathname || '');
   const isPublicFacultyCode = /^\/faculty\/[a-z0-9]{6}$/i.test(loc.pathname || '');
   const isSharePublic = /^\/share\//.test(loc.pathname || '') || isPublicFacultyCode;
-  const currentPath = `${loc.pathname || ''}${loc.hash || ''}`;
-  const isUnauthorizedRoute = /(?:^|#)\/unauthorized$/.test(currentPath);
+  const isUnauthorizedRoute = /^\/unauthorized$/.test(loc.pathname || '');
   const isShareVisualMap = isSharePublic && /^\/share\/visual-map/.test(loc.pathname || '');
   const isShareRoomAttendance = isSharePublic && /^\/share\/room-attendance$/.test(loc.pathname || '');
   // Hoist color values used by shared/public branch to keep hook order stable

@@ -157,7 +157,7 @@ export default function Attendance() {
     if (filters.facultyId) q.set('facultyId', filters.facultyId);
     if (filters.faculty) q.set('faculty', filters.faculty);
     q.set('type', 'all');
-    const href = `${window.location.origin}${window.location.pathname}#/admin/attendance/print?${q.toString()}`;
+    const href = `${window.location.origin}/admin/attendance/print?${q.toString()}`;
     window.open(href, '_blank');
   }, [filters]);
 
@@ -231,7 +231,7 @@ export default function Attendance() {
     if (filters.facultyId) q.set('facultyId', filters.facultyId);
     if (filters.faculty) q.set('faculty', filters.faculty);
     q.set('type', status || 'all');
-    const href = `${window.location.origin}${window.location.pathname}#/admin/attendance/print?${q.toString()}`;
+    const href = `${window.location.origin}/admin/attendance/print?${q.toString()}`;
     window.open(href, '_blank');
   }, [buildSummaryGroups, filters]);
 

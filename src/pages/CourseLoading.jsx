@@ -2625,9 +2625,9 @@ export default function CourseLoading() {
       try {
         const token = encodeShareFacultyName(f.name || f.faculty || '', { schoolyear: settingsLoad?.school_year, semester: settingsLoad?.semester });
         const origin = (typeof window !== 'undefined' && window.location)
-          ? `${window.location.origin}${window.location.pathname}`
+          ? window.location.origin
           : '';
-        const shareUrl = `${origin}#/share/faculty/${encodeURIComponent(token)}`;
+        const shareUrl = `${origin}/share/faculty/${encodeURIComponent(token)}`;
         const qrData = encodeURIComponent(shareUrl);
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${qrData}`;
         return `

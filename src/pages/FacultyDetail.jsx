@@ -629,8 +629,8 @@ export default function FacultyDetail() {
       const syForShare = shareFilterActive ? shareSy : (shareSySem.sy || activeSy);
       const semForShare = shareFilterActive ? (shareMeta.sem || shareSemNorm) : (shareSySem.sem || activeSem);
       const token = encodeShareFacultyName(f?.name || '', { schoolyear: syForShare, semester: semForShare });
-      const origin = (window && window.location) ? `${window.location.origin}${window.location.pathname}` : '';
-      const shareUrl = `${origin}#/share/faculty/${encodeURIComponent(token)}`;
+      const origin = (window && window.location) ? window.location.origin : '';
+      const shareUrl = `${origin}/share/faculty/${encodeURIComponent(token)}`;
       const qrData = encodeURIComponent(shareUrl);
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${qrData}`;
       const intro = `
