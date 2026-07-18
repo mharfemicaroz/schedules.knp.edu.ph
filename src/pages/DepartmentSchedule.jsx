@@ -109,6 +109,17 @@ function termDescription(term) {
   return 'Additional schedule grouping';
 }
 
+function getF2fSchedule(course) {
+  const day = String(course?.day || '').trim();
+  const savedF2f = course?.f2fSched
+    || course?.f2fsched
+    || (Array.isArray(course?.f2fDays) ? course.f2fDays.join(', ') : '');
+  const isWeekend = /\b(?:sat(?:urday)?|sun(?:day)?)\b/i.test(day);
+
+  if (normalizeTerm(course?.term) === 'sem' && isWeekend) return day;
+  return savedF2f;
+}
+
 export default function DepartmentSchedule() {
   const { dept: deptParam } = useParams();
   const isPublic = usePublicView();
@@ -442,7 +453,7 @@ export default function DepartmentSchedule() {
                               <Text>
                                 {viewMode === 'examination'
                                   ? [c.examDay, c.examSession].filter(Boolean).join(' · ') || 'Exam schedule not set'
-                                  : [c.day, c.f2fSched || c.f2fsched || (Array.isArray(c.f2fDays) ? c.f2fDays.join(', ') : '')].filter(Boolean).join(' · ') || 'Day not set'}
+                                  : [c.day, getF2fSchedule(c) ? `F2F: ${getF2fSchedule(c)}` : ''].filter(Boolean).join(' · ') || 'Day not set'}
                               </Text>
                               <Icon as={FiMapPin} mt="2px" /><Text>{(viewMode === 'examination' ? c.examRoom : c.room) || 'Room not set'}</Text>
                               <Icon as={FiUser} mt="2px" /><Text>{c.facultyName || 'Faculty not assigned'}</Text>
@@ -500,7 +511,7 @@ export default function DepartmentSchedule() {
                           <>
                             <Td>{c.day || ''}</Td>
                             <Td>
-                              {c.f2fSched || c.f2fsched || (Array.isArray(c.f2fDays) ? c.f2fDays.join(',') : '')}
+                              {getF2fSchedule(c)}
                             </Td>
                           </>
                         )}
