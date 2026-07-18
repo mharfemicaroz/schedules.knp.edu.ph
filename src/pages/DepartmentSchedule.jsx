@@ -41,6 +41,34 @@ import { useLocalStorage, getInitialToggleState } from '../utils/scheduleUtils';
 import { usePublicView } from '../utils/uiFlags';
 import { encodeShareDepartment, decodeShareDepartment } from '../utils/share';
 import useEvaluationEnabled from '../hooks/useEvaluationEnabled';
+import { getProgramColor } from '../utils/programColors';
+
+const PROGRAM_HEADER_THEMES = {
+  green: {
+    gradient: 'linear(to-br, green.800, green.600, green.500)',
+    text: 'white', muted: 'whiteAlpha.800', chipBg: 'whiteAlpha.200', outline: 'whiteAlpha.600', buttonText: 'green.700', buttonHover: 'green.50',
+  },
+  red: {
+    gradient: 'linear(to-br, red.800, red.600, red.500)',
+    text: 'white', muted: 'whiteAlpha.800', chipBg: 'whiteAlpha.200', outline: 'whiteAlpha.600', buttonText: 'red.700', buttonHover: 'red.50',
+  },
+  blue: {
+    gradient: 'linear(to-br, blue.800, blue.600, blue.500)',
+    text: 'white', muted: 'whiteAlpha.800', chipBg: 'whiteAlpha.200', outline: 'whiteAlpha.600', buttonText: 'blue.700', buttonHover: 'blue.50',
+  },
+  yellow: {
+    gradient: 'linear(to-br, yellow.400, yellow.300, orange.200)',
+    text: 'gray.900', muted: 'blackAlpha.700', chipBg: 'blackAlpha.100', outline: 'blackAlpha.400', buttonText: 'yellow.800', buttonHover: 'yellow.50',
+  },
+  orange: {
+    gradient: 'linear(to-br, orange.800, orange.600, orange.500)',
+    text: 'white', muted: 'whiteAlpha.800', chipBg: 'whiteAlpha.200', outline: 'whiteAlpha.600', buttonText: 'orange.700', buttonHover: 'orange.50',
+  },
+  purple: {
+    gradient: 'linear(to-br, purple.800, purple.600, purple.500)',
+    text: 'white', muted: 'whiteAlpha.800', chipBg: 'whiteAlpha.200', outline: 'whiteAlpha.600', buttonText: 'purple.700', buttonHover: 'purple.50',
+  },
+};
 
 function yearOrder(y) {
   const s = String(y || '').toLowerCase();
@@ -93,6 +121,8 @@ export default function DepartmentSchedule() {
   const acadData = useSelector((s) => s.data.acadData);
   const authUser = useSelector((s) => s.auth.user);
   const isAdmin = !!authUser && (String(authUser.role).toLowerCase() === 'admin' || String(authUser.role).toLowerCase() === 'manager');
+  const programAccent = getProgramColor(dept);
+  const headerTheme = PROGRAM_HEADER_THEMES[programAccent.scheme] || PROGRAM_HEADER_THEMES.blue;
 
   const [viewMode, setViewMode] = useLocalStorage(
     'departmentScheduleViewMode',
@@ -284,8 +314,8 @@ export default function DepartmentSchedule() {
   return (
     <VStack align="stretch" spacing={{ base: 4, md: 6 }} bg={pageBg} mx={{ base: -1, md: 0 }}>
       <Box
-        bgGradient="linear(to-br, blue.700, blue.600, teal.500)"
-        color="white"
+        bgGradient={headerTheme.gradient}
+        color={headerTheme.text}
         rounded={{ base: 'xl', md: '2xl' }}
         px={{ base: 4, sm: 5, md: 7 }}
         py={{ base: 5, md: 7 }}
@@ -293,37 +323,37 @@ export default function DepartmentSchedule() {
       >
         <HStack justify="space-between" align={{ base: 'stretch', md: 'center' }} flexDir={{ base: 'column', md: 'row' }} gap={5}>
           <Box minW={0}>
-            <Text fontSize="xs" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color="whiteAlpha.800">
+            <Text fontSize="xs" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase" color={headerTheme.muted}>
               Department class schedule
             </Text>
             <Heading mt={1} size={{ base: 'lg', md: 'xl' }} lineHeight="1.15" wordBreak="break-word">
               {dept}
             </Heading>
             <Wrap mt={4} spacing={2}>
-              <WrapItem><Badge px={2.5} py={1} rounded="full" bg="whiteAlpha.200" color="white">{summary.yearLevels} year levels</Badge></WrapItem>
-              <WrapItem><Badge px={2.5} py={1} rounded="full" bg="whiteAlpha.200" color="white">{summary.blocks} blocks</Badge></WrapItem>
-              <WrapItem><Badge px={2.5} py={1} rounded="full" bg="whiteAlpha.200" color="white">{summary.courses} classes</Badge></WrapItem>
+              <WrapItem><Badge px={2.5} py={1} rounded="full" bg={headerTheme.chipBg} color={headerTheme.text}>{summary.yearLevels} year levels</Badge></WrapItem>
+              <WrapItem><Badge px={2.5} py={1} rounded="full" bg={headerTheme.chipBg} color={headerTheme.text}>{summary.blocks} blocks</Badge></WrapItem>
+              <WrapItem><Badge px={2.5} py={1} rounded="full" bg={headerTheme.chipBg} color={headerTheme.text}>{summary.courses} classes</Badge></WrapItem>
             </Wrap>
           </Box>
           <HStack spacing={2} flexWrap="wrap">
           {!isPublic && (
-            <FormControl display="flex" alignItems="center" w="auto" bg="blackAlpha.200" rounded="lg" px={3} py={2}>
-              <FormLabel htmlFor="schedule-mode" mb="0" fontSize="xs" fontWeight="700" color="white">
+            <FormControl display="flex" alignItems="center" w="auto" bg={headerTheme.chipBg} rounded="lg" px={3} py={2}>
+              <FormLabel htmlFor="schedule-mode" mb="0" fontSize="xs" fontWeight="700" color={headerTheme.text}>
                 Regular F2F
               </FormLabel>
               <Switch
                 id="schedule-mode"
-                colorScheme="blue"
+                colorScheme={programAccent.scheme}
                 size="lg"
                 isChecked={viewMode === 'examination'}
                 onChange={(e) => setViewMode(e.target.checked ? 'examination' : 'regular')}
               />
-              <FormLabel htmlFor="schedule-mode" mb="0" fontSize="xs" fontWeight="700" ml={2} color="white">
+              <FormLabel htmlFor="schedule-mode" mb="0" fontSize="xs" fontWeight="700" ml={2} color={headerTheme.text}>
                 Examination
               </FormLabel>
             </FormControl>
           )}
-          <Button leftIcon={<FiPrinter />} onClick={onPrint} size="sm" bg="white" color="blue.700" _hover={{ bg: 'blue.50' }}>
+          <Button leftIcon={<FiPrinter />} onClick={onPrint} size="sm" bg="white" color={headerTheme.buttonText} _hover={{ bg: headerTheme.buttonHover }}>
             Print
           </Button>
           {isAdmin && !isPublic && (
@@ -332,7 +362,7 @@ export default function DepartmentSchedule() {
               to={`/share/departments/${encodeURIComponent(encodeShareDepartment(dept))}`}
               leftIcon={<FiShare2 />}
               bg="white"
-              color="blue.700"
+              color={headerTheme.buttonText}
               size="sm"
             >
               Share
@@ -343,11 +373,11 @@ export default function DepartmentSchedule() {
               as={RouterLink}
               to="/views/departments"
               variant="outline"
-              borderColor="whiteAlpha.600"
-              color="white"
+              borderColor={headerTheme.outline}
+              color={headerTheme.text}
               leftIcon={<FiArrowLeft />}
               w="fit-content"
-              _hover={{ bg: 'whiteAlpha.200' }}
+              _hover={{ bg: headerTheme.chipBg }}
             >
               Back
             </Button>
