@@ -43,7 +43,6 @@ import { selectSettings } from '../store/settingsSlice';
 import { loadAllSchedules, loadAcademicCalendar } from '../store/dataThunks';
 import { getCurrentWeekDays, DAY_CODES, formatDayLabel } from '../utils/week';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
-import { buildTable, printContent } from '../utils/printDesign';
 import { getAcademicCalendarForSchoolYear, resolveAcademicCalendarTerm } from '../utils/scheduleUtils';
 import apiService from '../services/apiService';
 import ExcelJS from 'exceljs';
@@ -729,209 +728,186 @@ export default function RoomAttendance() {
 
   async function onDownloadXlsx() {
     const label = formatDayLabel(new Date(selectedDate));
-    const timeSlots = slots;
-    const groups = worksheetExportGroups;
+    const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(selectedDate).getDay()];
+    const termLabel = (() => {
+      const value = String(effectiveTermFilter || 'all').toLowerCase();
+      if (value.startsWith('1')) return '1st Term';
+      if (value.startsWith('2')) return '2nd Term';
+      if (value.startsWith('sum')) return 'Summer';
+      if (value.startsWith('s')) return 'Semestral';
+      return 'All Terms';
+    })();
+    const checkerName = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim()
+      || authUser?.username
+      || authUser?.email
+      || '';
 
-    const programFill = (prog) => {
-      const p = String(prog || '').toUpperCase();
-      if (p.includes('BSAB')) return 'FFE6F7ED';
-      if (p.includes('BSBA')) return 'FFFFF7D6';
-      if (p.includes('BSCRIM')) return 'FFFDE2E0';
-      if (p.includes('BSED') || p.includes('BTLED')) return 'FFE6EFFF';
-      if (p.includes('BSTM')) return 'FFEEE6FF';
-      if (p.includes('BSENTREP')) return 'FFFFE9D9';
-      return 'FFEDF2F7';
-    };
+    const exportRows = [];
+    const seen = new Set();
+    (filteredSchedules || []).forEach((record) => {
+      if (!termMatches(record.term)) return;
+      const dayRooms = getRoomsForDay(record, selectedDayCode);
+      if (!dayRooms.length) return;
+
+      const parsed = parseTimeBlockToMinutes(String(record.time || record.scheduleKey || record.schedule || ''));
+      const start = Number.isFinite(record.timeStartMinutes) ? record.timeStartMinutes : parsed.start;
+      const scheduleId = Number(record.id);
+
+      dayRooms.forEach((roomName) => {
+        const room = String(roomName || '').trim();
+        if (!room) return;
+        const key = `${scheduleId || 'schedule'}::${normRoom(room)}::${record.time || ''}::${record.section || record.blockCode || ''}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+
+        const rawStatus = String(bySched[scheduleId] || '').trim();
+        exportRows.push({
+          start: Number.isFinite(start) ? start : Number.MAX_SAFE_INTEGER,
+          time: record.time || record.schedule || '-',
+          room,
+          block: record.section || record.blockCode || record.block_code || '',
+          course: record.code || record.courseName || '',
+          title: record.courseTitle || record.course_name || '',
+          faculty: record.faculty || record.facultyName || record.instructor || '',
+          remarks: rawStatus ? rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase() : ''
+        });
+      });
+    });
+
+    exportRows.sort((a, b) => (
+      a.start - b.start
+      || compareRoomNames(a.room, b.room)
+      || String(a.block).localeCompare(String(b.block), undefined, { numeric: true, sensitivity: 'base' })
+      || String(a.course).localeCompare(String(b.course), undefined, { numeric: true, sensitivity: 'base' })
+    ));
 
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Kolehiyo ng Pantukan';
     wb.created = new Date();
+    wb.modified = new Date();
 
-    for (let gi = 0; gi < groups.length; gi++) {
-      const group = groups[gi];
-      const grp = group.rooms;
-      const ws = wb.addWorksheet(group.label.slice(0, 31));
-      ws.pageSetup = {
-        paperSize: 9,
-        orientation: 'landscape',
-        fitToPage: true,
-        fitToWidth: 1,
-        fitToHeight: 0,
-        horizontalCentered: true,
-        margins: {
-          left: 0.2,
-          right: 0.2,
-          top: 0.25,
-          bottom: 0.25,
-          header: 0.12,
-          footer: 0.12
-        }
-      };
+    const ws = wb.addWorksheet(`${selectedDayCode} ${selectedIso}`.slice(0, 31), {
+      views: [{ state: 'frozen', ySplit: 5, activeCell: 'A6', showGridLines: false }]
+    });
+    ws.pageSetup = {
+      paperSize: 9,
+      orientation: 'landscape',
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      horizontalCentered: true,
+      verticalCentered: false,
+      printTitlesRow: '1:5',
+      printArea: `A1:J${Math.max(5, exportRows.length + 5)}`,
+      margins: {
+        left: 0.2,
+        right: 0.2,
+        top: 0.25,
+        bottom: 0.25,
+        header: 0.1,
+        footer: 0.1
+      }
+    };
+    ws.headerFooter.oddFooter = '&LGenerated by KNP Smart Academic Scheduler&CPage &P of &N&R' + selectedIso;
 
-      const title = `Attendance Sheet - ${group.label} - Day: ${label}`;
-      ws.addRow([title]);
-      const header = ['Time', ...grp];
-      ws.addRow(header);
+    ws.addRow([`FACULTY ATTENDANCE TRACKER - ${termLabel.toUpperCase()} - ${dayName.toUpperCase()}`]);
+    ws.mergeCells('A1:J1');
+    ws.addRow([
+      `SY ${prefSy || '-'}`,
+      `Semester: ${prefSem || '-'}`,
+      `Term: ${termLabel}`,
+      `Day: ${dayName}`,
+      `Date: ${label}`,
+      '',
+      `Checker: ${checkerName}`,
+      '',
+      'Route Type:',
+      'IN / OUT'
+    ]);
+    ws.addRow([`Schedule scope: ${dayName} classes`, `Generated from the room-attendance schedule for ${label}.`, '', '', '', '', '', '', '', '']);
+    ws.addRow([]);
+    ws.addRow(['No.', 'Time', 'Room', 'Block', 'Course', 'Title', 'Faculty', 'IN', 'OUT', 'Remarks']);
 
-      timeSlots.forEach((sl, slotIdx) => {
-        const rowVals = [sl.label];
-        grp.forEach((r) => {
-          const info = exportCellMap.get(`${normRoom(r)}::${slotIdx}`);
-          if (!info) {
-            rowVals.push('');
-            return;
-          }
-          const parts = [];
-          const faculty = info.faculty || info.instructor || '';
-          const course = info.course || info.courseName || '';
-          const titleC = info.title || info.courseTitle || '';
+    exportRows.forEach((item, index) => {
+      ws.addRow([
+        index + 1,
+        item.time,
+        item.room,
+        item.block,
+        item.course,
+        item.title,
+        item.faculty,
+        '',
+        '',
+        item.remarks
+      ]);
+    });
 
-          if (faculty) parts.push(faculty);
-          if (course || titleC) parts.push(`${course || ''}${titleC ? ' - ' + titleC : ''}`);
-          const meta = [];
-          if (info.term) meta.push(`Term: ${info.term}`);
-          if (info.time) meta.push(info.time);
-          if (meta.length) parts.push(meta.join('  '));
-          if (info.status) parts.push(`Status: ${String(info.status).toUpperCase()}`);
-          while (parts.length < 4) parts.push('');
-          parts.push('Signature: ____________________');
-          rowVals.push(parts.join('\n'));
-        });
-        ws.addRow(rowVals);
+    const titleRow = ws.getRow(1);
+    titleRow.height = 26;
+    titleRow.font = { name: 'Carlito', bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+    titleRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    titleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } };
+
+    [2, 3].forEach((rowNumber) => {
+      const row = ws.getRow(rowNumber);
+      row.height = rowNumber === 2 ? 30 : 24;
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        cell.font = { name: 'Carlito', size: 9, color: { argb: 'FF111827' } };
+        cell.alignment = { vertical: 'middle', wrapText: true, shrinkToFit: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0F2F1' } };
       });
+    });
+    ws.getRow(4).height = 8;
 
-      const totalCols = grp.length + 1;
-      ws.mergeCells(1, 1, 1, totalCols);
-
-      const titleCell = ws.getCell(1, 1);
-      titleCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
-      titleCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0B5394' } };
-
-      const headerRow = ws.getRow(2);
-      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-      headerRow.height = 22;
-
-      for (let c = 1; c <= totalCols; c++) {
-        const cell = headerRow.getCell(c);
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFB0B0B0' } },
-          left: { style: 'thin', color: { argb: 'FFB0B0B0' } },
-          bottom: { style: 'thin', color: { argb: 'FFB0B0B0' } },
-          right: { style: 'thin', color: { argb: 'FFB0B0B0' } }
-        };
-      }
-
-      for (let r = 3; r <= ws.rowCount; r++) {
-        const row = ws.getRow(r);
-        row.alignment = { vertical: 'top', wrapText: true };
-        const isEven = r % 2 === 0;
-
-        for (let c = 1; c <= totalCols; c++) {
-          const cell = row.getCell(c);
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
-            left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
-            bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
-            right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
-          };
-
-          if (c === 1) {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isEven ? 'FFF5F7FA' : 'FFF8FAFC' } };
-            cell.font = { bold: true, size: 9, color: { argb: 'FF333333' } };
-            cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-          } else {
-            const text = String(cell.value || '');
-            let progColor = null;
-            if (text) {
-              const slIdx = r - 3;
-              const roomName = grp[c - 2];
-              const info = exportCellMap.get(`${normRoom(roomName)}::${slIdx}`);
-              if (info) progColor = programFill(info.program);
-            }
-            const bg = progColor || (isEven ? 'FFFFFFFF' : 'FFFAFAFA');
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-          }
-        }
-      }
-
-      for (let c = 1; c <= totalCols; c++) {
-        const cell = headerRow.getCell(c);
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFB0B0B0' } },
-          left: { style: 'thin', color: { argb: 'FFB0B0B0' } },
-          bottom: { style: 'medium', color: { argb: 'FF7A7A7A' } },
-          right: { style: 'thin', color: { argb: 'FFB0B0B0' } }
-        };
-      }
-
-      const maxRow = ws.rowCount;
-      for (let r = 1; r <= maxRow; r++) {
-        for (let c = 1; c <= totalCols; c++) {
-          const cell = ws.getRow(r).getCell(c);
-          const edgeTop = r === 1;
-          const edgeBottom = r === maxRow;
-          const edgeLeft = c === 1;
-          const edgeRight = c === totalCols;
-          if (edgeTop || edgeBottom || edgeLeft || edgeRight) {
-            const b = cell.border || {};
-            cell.border = {
-              top: edgeTop ? { style: 'medium', color: { argb: 'FF7A7A7A' } } : b.top || { style: 'thin', color: { argb: 'FFE0E0E0' } },
-              left: edgeLeft ? { style: 'medium', color: { argb: 'FF7A7A7A' } } : b.left || { style: 'thin', color: { argb: 'FFE0E0E0' } },
-              bottom: edgeBottom ? { style: 'medium', color: { argb: 'FF7A7A7A' } } : b.bottom || { style: 'thin', color: { argb: 'FFE0E0E0' } },
-              right: edgeRight ? { style: 'medium', color: { argb: 'FF7A7A7A' } } : b.right || { style: 'thin', color: { argb: 'FFE0E0E0' } }
-            };
-          }
-        }
-      }
-
-      ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 2 }];
-      ws.pageSetup.printTitlesRow = '1:2';
-
-      const printableWidth = 110;
-      const timeColWidth = 11;
-      const roomColWidth = Math.max(8, Math.min(18, Math.floor((printableWidth - timeColWidth) / Math.max(1, grp.length))));
-      ws.getColumn(1).width = timeColWidth;
-      for (let c = 2; c <= totalCols; c++) {
-        ws.getColumn(c).width = roomColWidth;
-      }
-
-      const baseFontSize = grp.length >= 14 ? 7 : grp.length >= 10 ? 8 : 9;
-      const fitFontSize = (text, colWidth) => {
-        const lines = String(text || '').split('\n');
-        const longest = lines.reduce((m, line) => Math.max(m, line.length), 0);
-        const density = Math.max(lines.length, longest / Math.max(1, colWidth));
-        if (density > 5.5) return Math.max(6, baseFontSize - 2);
-        if (density > 4) return Math.max(7, baseFontSize - 1);
-        return baseFontSize;
+    const headerRow = ws.getRow(5);
+    headerRow.height = 24;
+    headerRow.eachCell((cell) => {
+      cell.font = { name: 'Carlito', bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF134E4A' } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF0F3D3A' } },
+        left: { style: 'thin', color: { argb: 'FF0F3D3A' } },
+        bottom: { style: 'thin', color: { argb: 'FF0F3D3A' } },
+        right: { style: 'thin', color: { argb: 'FF0F3D3A' } }
       };
+    });
 
-      const ptsPerLine = 12;
-      const extraPad = 6;
-      for (let r = 3; r <= ws.rowCount; r++) {
-        let maxLinesInRow = 1;
-        for (let c = 1; c <= totalCols; c++) {
-          const cell = ws.getRow(r).getCell(c);
-          const colWidth = ws.getColumn(c).width || 10;
-          const usable = Math.max(1, Math.floor(colWidth - 1));
-          const text = cell.value == null ? '' : String(cell.value);
-          const wrappedLines = text.split('\n').reduce((sum, line) => {
-            const len = line.length || 1;
-            return sum + Math.max(1, Math.ceil(len / usable));
-          }, 0);
-          if (wrappedLines > maxLinesInRow) maxLinesInRow = wrappedLines;
-          if (c > 1) {
-            cell.font = { ...(cell.font || {}), size: fitFontSize(text, colWidth), color: { argb: 'FF111111' } };
-            cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true, shrinkToFit: true };
-          }
+    const thinBorder = {
+      top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+    };
+    for (let rowNumber = 6; rowNumber <= ws.rowCount; rowNumber++) {
+      const row = ws.getRow(rowNumber);
+      row.height = 30;
+      row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+        cell.font = { name: 'Carlito', size: 8 };
+        cell.alignment = {
+          horizontal: [1, 2, 3, 8, 9].includes(columnNumber) ? 'center' : 'left',
+          vertical: 'middle',
+          wrapText: true,
+          shrinkToFit: true
+        };
+        cell.border = thinBorder;
+        if (rowNumber % 2 === 1) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
         }
-        ws.getRow(r).height = Math.min(90, maxLinesInRow * ptsPerLine + extraPad);
-      }
+      });
+      row.getCell(10).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['"Present,Late,Absent,Excused,No Class,Substitution,Transferred Room"']
+      };
     }
 
-    const fn = `Room_Attendance_${new Date().toISOString().slice(0, 10)}_${label.replace(/\s+/g, '_')}.xlsx`;
+    const widths = [5, 11, 12, 18, 14, 34, 28, 9, 9, 18];
+    widths.forEach((width, index) => { ws.getColumn(index + 1).width = width; });
+    if (exportRows.length) ws.autoFilter = `A5:J${ws.rowCount}`;
+
+    const fn = `Faculty_Attendance_${selectedIso}_${selectedDayCode}_${termLabel.replace(/\s+/g, '_')}.xlsx`;
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -1002,23 +978,6 @@ export default function RoomAttendance() {
 
     return ordered;
   }, [rooms]);
-  const worksheetExportGroups = React.useMemo(() => {
-    const takeRooms = (...keys) => keys.flatMap((key) => roomExportGroups.find((group) => group.key === key)?.rooms || []);
-    const grouped = [];
-
-    const bpNbRooms = takeRooms('BP', 'NB');
-    if (bpNbRooms.length) grouped.push({ key: 'BP_NB', label: 'BP + NB Rooms', rooms: bpNbRooms });
-
-    const obEbRooms = takeRooms('OB', 'EB');
-    if (obEbRooms.length) grouped.push({ key: 'OB_EB', label: 'OB + EB Rooms', rooms: obEbRooms });
-
-    const otherRooms = roomExportGroups
-      .filter((group) => !ROOM_EXPORT_ORDER.includes(group.key))
-      .flatMap((group) => group.rooms || []);
-    if (otherRooms.length) grouped.push({ key: 'OTHER', label: 'Other Rooms', rooms: otherRooms });
-
-    return grouped;
-  }, [roomExportGroups]);
   const exportCellMap = React.useMemo(() => {
     const map = new Map();
     (filteredSchedules || []).forEach((record) => {
