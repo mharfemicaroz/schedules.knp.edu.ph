@@ -267,7 +267,10 @@ export default function RoomScheduleAuto() {
     ]);
     const table = buildTable(headers, data);
     const subtitle = `Room: ${room} – ${day}`;
-    printContent({ title: 'Room Schedule (Today)', subtitle, bodyHtml: table });
+    printContent(
+      { title: 'Room Schedule (Today)', subtitle, bodyHtml: table },
+      { hideFooter: true }
+    );
   }
 
   async function onLoginSubmit({ username, password }) {
@@ -325,14 +328,36 @@ export default function RoomScheduleAuto() {
   return (
     <Box minH="100vh" bg={useColorModeValue('gray.50','gray.900')}>
       {/* Public Header */}
-      <Box bg={useColorModeValue('white','gray.800')} borderBottomWidth="1px" borderColor={border} px={{ base: 4, md: 8 }} py={4}>
+      <Box
+        bg={useColorModeValue('white','gray.800')}
+        borderBottomWidth="1px"
+        borderColor={border}
+        px={{ base: 4, md: 8 }}
+        py={{ base: 5, md: 6 }}
+      >
         <HStack justify="space-between" align="center" wrap="wrap" spacing={3}>
-          <VStack align="start" spacing={0}>
-            <HStack>
-              <Icon as={FiCalendar} color={accent} />
-              <Heading size="md">Room Schedule</Heading>
+          <VStack align="start" spacing={1}>
+            <HStack spacing={2} color={accent}>
+              <Icon as={FiCalendar} boxSize={4} />
+              <Text fontSize="xs" fontWeight="800" letterSpacing="0.14em" textTransform="uppercase">
+                Room Schedule
+              </Text>
             </HStack>
-            <Text fontSize="sm" color={subtle}>Room: <Text as="span" fontWeight="700">{room}</Text> · {day}</Text>
+            <Heading
+              as="h1"
+              fontSize={{ base: '4xl', md: '6xl' }}
+              lineHeight="0.95"
+              letterSpacing="-0.03em"
+              color={useColorModeValue('gray.800','white')}
+            >
+              {room}
+            </Heading>
+            <HStack spacing={2} pt={1}>
+              <Badge colorScheme="blue" variant="subtle" px={2} py={0.5} rounded="full">
+                Today
+              </Badge>
+              <Text fontSize="sm" color={subtle} fontWeight="600">{day}</Text>
+            </HStack>
           </VStack>
           <HStack spacing={2}>
             {canAttend && (
