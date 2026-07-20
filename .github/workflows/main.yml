@@ -1,26 +1,88 @@
-name: FTP Deploy to cPanel
+name: Deploy schedules.knp.edu.ph
 
 on:
   push:
     branches:
-      - main # Change this branch if needed
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: schedules-production-deployment
+  cancel-in-progress: true
 
 jobs:
-  ftp-deploy:
+  deploy:
+    name: Deploy via SSH
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      # Checkout the repository
       - name: Checkout Repository
-        uses: actions/checkout@v2
-
-      # Deploy files via FTP to cPanel
-      - name: FTP Deploy
-        uses: SamKirkland/FTP-Deploy-Action@4.1.0
+        uses: actions/checkout@v6
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          port: ${{ secrets.FTP_PORT }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: './dist/'
-          server-dir: '/'
+          fetch-depth: 1
+
+      - name: Verify dist Directory
+        run: |
+          if [ ! -d "./dist/" ]; then
+            echo "Error: ./dist/ directory does not exist."
+            exit 1
+          fi
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          ssh-keyscan \
+            -p "$SSH_PORT" \
+            -H "$SSH_HOST" \
+            >> ~/.ssh/known_hosts
+
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Verify SSH and Target Directory
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_TARGET: ${{ secrets.SSH_TARGET }}
+        run: |
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -p "$SSH_PORT" \
+            "$SSH_USERNAME@$SSH_HOST" \
+            "test -d '$SSH_TARGET' && echo 'Target directory confirmed: $SSH_TARGET'"
+
+      - name: Deploy Files
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_TARGET: ${{ secrets.SSH_TARGET }}
+        run: |
+          rsync \
+            --archive \
+            --compress \
+            --partial \
+            --delete-delay \
+            --human-readable \
+            --stats \
+            --exclude=".well-known/" \
+            --exclude=".git/" \
+            --exclude=".github/" \
+            --exclude="node_modules/" \
+            -e "ssh -i ~/.ssh/id_ed25519 -p $SSH_PORT" \
+            ./dist/ \
+            "$SSH_USERNAME@$SSH_HOST:$SSH_TARGET/"
