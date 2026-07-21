@@ -68,7 +68,14 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
   const muted = useColorModeValue('gray.600', 'gray.400');
 
   const dispatch = useDispatch();
-  const blocks = useSelector(selectBlocks);
+  const storedBlocks = useSelector(selectBlocks);
+  const blocks = React.useMemo(() => (Array.isArray(storedBlocks) ? storedBlocks : []).filter((block) => {
+    const raw = block?.isActive ?? block?.is_active ?? block?.active ?? block?.status;
+    if (typeof raw === 'boolean') return raw;
+    if (typeof raw === 'number') return raw !== 0;
+    const value = String(raw ?? '').trim().toLowerCase();
+    return !['inactive', 'false', '0', 'no', 'n', 'deactivated', 'disabled'].includes(value);
+  }), [storedBlocks]);
   const acadData = useSelector(s => s.data.acadData);
   const holidays = useSelector(s => s.data.holidays);
 
@@ -129,7 +136,7 @@ export default function WeeklyRoomMap_LandscapeZoom_Split({ weekStartISO }) {
 
   const handleReload = async () => {
     setIsLoading(true);
-    try { await dispatch(loadBlocksThunk({})); } finally { setIsLoading(false); }
+    try { await dispatch(loadBlocksThunk({ active: true })); } finally { setIsLoading(false); }
   };
 
   React.useEffect(() => { handleReload(); }, []);

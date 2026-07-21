@@ -117,7 +117,14 @@ function roomAccent(room) {
 
 export default function VisualMap() {
   const dispatch = useDispatch();
-  const blocks = useSelector(selectBlocks);
+  const storedBlocks = useSelector(selectBlocks);
+  const blocks = useMemo(() => (Array.isArray(storedBlocks) ? storedBlocks : []).filter((block) => {
+    const raw = block?.isActive ?? block?.is_active ?? block?.active ?? block?.status;
+    if (typeof raw === 'boolean') return raw;
+    if (typeof raw === 'number') return raw !== 0;
+    const value = String(raw ?? '').trim().toLowerCase();
+    return !['inactive', 'false', '0', 'no', 'n', 'deactivated', 'disabled'].includes(value);
+  }), [storedBlocks]);
   const allCourses = useSelector(selectAllCourses);
   const acadData = useSelector(s => s.data.acadData);
   const holidays = useSelector(s => s.data.holidays);
@@ -147,8 +154,8 @@ export default function VisualMap() {
   const labelByCode = useMemo(() => Object.fromEntries(weekDays.map(d => [d.code, d.label])), [weekDays]);
 
   React.useEffect(() => {
-    // Ensure blocks are loaded for mapping
-    dispatch(loadBlocksThunk({}));
+    // Classroom assignment only maps blocks that are still active.
+    dispatch(loadBlocksThunk({ active: true }));
   }, [dispatch]);
 
   // Attendance map for current week (dateISO -> block -> status)
