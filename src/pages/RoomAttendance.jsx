@@ -983,6 +983,31 @@ export default function RoomAttendance() {
       label: `${dayName} Schedule`,
       rooms
     }];
+    const tbaCellMap = new Map();
+    (filteredSchedules || []).forEach((record) => {
+      if (!termMatches(record.term)) return;
+      const timeValue = String(record.time || record.scheduleKey || record.schedule || '').trim();
+      if (!/\bTBA\b/i.test(timeValue)) return;
+
+      getRoomsForDay(record, selectedDayCode).forEach((room) => {
+        const roomKey = normRoom(room);
+        if (!roomKey || tbaCellMap.has(roomKey)) return;
+        const scheduleId = Number(record.id);
+        tbaCellMap.set(roomKey, {
+          faculty: record.faculty || record.facultyName || record.instructor || '',
+          status: String(bySched[scheduleId] || '').trim()
+        });
+      });
+    });
+    const timeRows = [
+      ...slots.map((slot, slotIndex) => ({ label: slot.label, slotIndex, isTba: false })),
+      { label: 'TBA', slotIndex: null, isTba: true }
+    ];
+    const getTimeRoomInfo = (room, timeRow) => (
+      timeRow.isTba
+        ? tbaCellMap.get(normRoom(room))
+        : exportCellMap.get(`${normRoom(room)}::${timeRow.slotIndex}`)
+    );
     const statusFills = {
       present: 'FFE2F0D9',
       late: 'FFFFE699',
@@ -1014,7 +1039,7 @@ export default function RoomAttendance() {
         horizontalCentered: true,
         verticalCentered: false,
         printTitlesRow: '1:3',
-        printArea: `A1:${lastColumnLetter}${slots.length + 3}`,
+        printArea: `A1:${lastColumnLetter}${timeRows.length + 3}`,
         margins: {
           left: 0.2,
           right: 0.2,
@@ -1034,11 +1059,11 @@ export default function RoomAttendance() {
       ws.mergeCells(`A2:${lastColumnLetter}2`);
       ws.addRow(['TIME', ...roomList.map((room) => String(room || '').toUpperCase())]);
 
-      slots.forEach((slot, slotIndex) => {
+      timeRows.forEach((timeRow) => {
         const row = ws.addRow([
-          slot.label.replace(/\s+/g, ''),
+          timeRow.label.replace(/\s+/g, ''),
           ...roomList.map((room) => {
-            const info = exportCellMap.get(`${normRoom(room)}::${slotIndex}`);
+            const info = getTimeRoomInfo(room, timeRow);
             if (!info?.faculty) return '';
             const status = String(info.status || '').trim();
             return status
@@ -1063,7 +1088,7 @@ export default function RoomAttendance() {
 
           if (columnNumber > 1) {
             const room = roomList[columnNumber - 2];
-            const info = exportCellMap.get(`${normRoom(room)}::${slotIndex}`);
+            const info = getTimeRoomInfo(room, timeRow);
             const fillColor = statusFills[String(info?.status || '').toLowerCase()];
             if (fillColor) {
               cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillColor } };
