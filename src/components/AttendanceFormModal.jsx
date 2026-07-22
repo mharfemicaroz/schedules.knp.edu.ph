@@ -14,9 +14,10 @@ const STATUS_OPTIONS = [
   { value: 'excused', label: 'Excused' },
 ];
 
-export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved, lockSchedule = false }) {
+export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved, onDeleted, lockSchedule = false, allowDelete = false }) {
   const toast = useToast();
   const [saving, setSaving] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
   const [form, setForm] = React.useState(() => ({
     scheduleId: initial?.scheduleId || initial?.schedule_id || '',
     status: initial?.status || 'present',
@@ -80,6 +81,22 @@ export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved,
       toast({ title: 'Failed', description: e.message, status: 'error' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!initial?.id) return;
+    if (!window.confirm('Delete this attendance record?')) return;
+
+    setDeleting(true);
+    try {
+      await apiService.deleteAttendance(initial.id);
+      onDeleted && onDeleted(initial);
+      onClose && onClose();
+    } catch (e) {
+      toast({ title: 'Failed to delete', description: e.message, status: 'error' });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -168,8 +185,20 @@ export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved,
           </SimpleGrid>
         </ModalBody>
         <ModalFooter>
+          {allowDelete && initial?.id ? (
+            <Button
+              mr="auto"
+              colorScheme="red"
+              variant="outline"
+              onClick={handleDelete}
+              isLoading={deleting}
+              isDisabled={saving}
+            >
+              Delete
+            </Button>
+          ) : null}
           <Button mr={3} onClick={onClose} variant="ghost">Cancel</Button>
-          <Button colorScheme="blue" onClick={handleSubmit} isLoading={saving}>{initial?.id ? 'Update' : 'Create'}</Button>
+          <Button colorScheme="blue" onClick={handleSubmit} isLoading={saving} isDisabled={deleting}>{initial?.id ? 'Update' : 'Create'}</Button>
         </ModalFooter>
       </ModalContent>
     </Modal>

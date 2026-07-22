@@ -140,7 +140,7 @@ export default function RoomAttendance() {
 
   const roleStr = String(authUser?.role || '').toLowerCase();
   const canAttend = !!authUser && (roleStr === 'admin' || roleStr === 'manager' || roleStr === 'checker' || roleStr === 'sa');
-  const isAdmin = !!authUser && (roleStr === 'admin' || roleStr === 'sa');
+  const canManageAttendance = !!authUser && (roleStr === 'admin' || roleStr === 'checker' || roleStr === 'sa');
 
   // Public users should still be able to VIEW attendance.
   const canViewAttendance = isPublic || canAttend || !!authUser;
@@ -314,6 +314,7 @@ export default function RoomAttendance() {
   }
 
   const [bySched, setBySched] = React.useState({});
+  const [attendanceRecordsBySched, setAttendanceRecordsBySched] = React.useState({});
   const attendanceScheduleIds = React.useMemo(() => {
     return new Set(
       Object.keys(bySched || {})
@@ -419,7 +420,8 @@ export default function RoomAttendance() {
 
     const normalizeAttendancePayload = (list) => {
       const arr = Array.isArray(list) ? list : list?.data || list?.rows || list?.results || [];
-      const m = {};
+      const statuses = {};
+      const records = {};
       arr.forEach((r) => {
         const scheduleId = Number(
           r.scheduleId ||
@@ -431,9 +433,12 @@ export default function RoomAttendance() {
           r.schedule?.schedule_id
         );
         const status = String(r.status || r.attendance || r.attendance_status || '').toLowerCase();
-        if (scheduleId) m[scheduleId] = status;
+        if (scheduleId) {
+          statuses[scheduleId] = status;
+          records[scheduleId] = r;
+        }
       });
-      return m;
+      return { statuses, records };
     };
 
     try {
@@ -486,14 +491,17 @@ export default function RoomAttendance() {
         try {
           const result = await attempt();
           const mapped = normalizeAttendancePayload(result);
-          setBySched(mapped);
+          setBySched(mapped.statuses);
+          setAttendanceRecordsBySched(mapped.records);
           return;
         } catch {}
       }
 
       setBySched({});
+      setAttendanceRecordsBySched({});
     } catch {
       setBySched({});
+      setAttendanceRecordsBySched({});
     }
   }, [selectedIso, isPublic, authUser]);
 
@@ -508,10 +516,13 @@ export default function RoomAttendance() {
   const openAttendanceModal = React.useCallback(
     (scheduleId, status) => {
       if (!scheduleId) return;
-      setAttendanceInitial({ scheduleId, status: status || 'present', date: selectedIso });
+      const existing = attendanceRecordsBySched[Number(scheduleId)];
+      setAttendanceInitial(existing
+        ? { ...existing, scheduleId, status: existing.status || status || 'present', date: selectedIso }
+        : { scheduleId, status: status || 'present', date: selectedIso });
       attendModal.onOpen();
     },
-    [selectedIso, attendModal]
+    [selectedIso, attendModal, attendanceRecordsBySched]
   );
 
   const [rtEnabled, setRtEnabled] = React.useState(false);
@@ -1363,7 +1374,7 @@ export default function RoomAttendance() {
                                 : undefined;
 
                             const anim = canViewAttendance && statusVal === 'present' ? `${presentPulse} 1.8s ease-out infinite` : undefined;
-                            const canClick = !!scheduleId && isAdmin;
+                            const canClick = !!scheduleId && canManageAttendance;
 
                             const tagSx = {
                               ...(anim ? { animation: anim } : {}),
@@ -1524,7 +1535,7 @@ export default function RoomAttendance() {
                                         : undefined;
 
                                     const anim = canViewAttendance && statusVal === 'present' ? `${presentPulse} 1.8s ease-out infinite` : undefined;
-                                    const canClick = !!scheduleId && isAdmin;
+                                    const canClick = !!scheduleId && canManageAttendance;
 
                                     const tagSx = {
                                       ...(anim ? { animation: anim } : {}),
@@ -1665,8 +1676,15 @@ export default function RoomAttendance() {
         }}
         initial={attendanceInitial}
         lockSchedule
+        allowDelete={canManageAttendance}
         onSaved={() => {
           toast({ title: 'Attendance saved', status: 'success' });
+          loadAttendance();
+          attendModal.onClose();
+          setAttendanceInitial(null);
+        }}
+        onDeleted={() => {
+          toast({ title: 'Attendance deleted', status: 'success' });
           loadAttendance();
           attendModal.onClose();
           setAttendanceInitial(null);
