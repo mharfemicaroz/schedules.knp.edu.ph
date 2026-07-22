@@ -95,6 +95,17 @@ function compareRoomNames(a, b) {
   });
 }
 
+function wsColumnLetter(columnNumber) {
+  let value = Math.max(1, Number(columnNumber) || 1);
+  let result = '';
+  while (value > 0) {
+    value -= 1;
+    result = String.fromCharCode(65 + (value % 26)) + result;
+    value = Math.floor(value / 26);
+  }
+  return result;
+}
+
 const ROOM_SPLIT_THRESHOLD = 10;
 const ROOM_EXPORT_ORDER = ['BP', 'NB', 'OB', 'EB'];
 
@@ -225,16 +236,25 @@ export default function RoomAttendance() {
   const [slotIndex, setSlotIndex] = React.useState(defaultSlotIndex);
 
   const prefSy = React.useMemo(() => {
-    return String(settings?.attendance?.school_year || settings?.schedulesView?.school_year || '').trim();
+    return String(settings?.schedulesView?.school_year || settings?.attendance?.school_year || '').trim();
   }, [settings]);
 
   const prefSem = React.useMemo(() => {
-    const raw = settings?.attendance?.semester || settings?.schedulesView?.semester || '';
+    const raw = settings?.schedulesView?.semester || settings?.attendance?.semester || '';
     return normalizeSem(raw);
   }, [settings]);
 
   React.useEffect(() => {
     let active = true;
+
+    // Settings load asynchronously. Do not issue an unfiltered schedules request
+    // while the configured schedulesView scope is not available yet.
+    if (!prefSy && !prefSem) {
+      setScheduleRows([]);
+      return () => {
+        active = false;
+      };
+    }
 
     const mapScheduleRecord = (raw) => {
       const prospectus = raw?.prospectus || {};
@@ -266,7 +286,11 @@ export default function RoomAttendance() {
 
     (async () => {
       try {
-        const response = await apiService.getAllSchedules({});
+        const response = await apiService.getAllSchedules({
+          ...(prefSy ? { schoolyear: prefSy } : {}),
+          ...(prefSem ? { semester: prefSem } : {}),
+          limit: 100000
+        });
         const list = response?.data || response;
         if (!active) return;
         setScheduleRows(Array.isArray(list) ? list.map(mapScheduleRecord) : []);
@@ -279,7 +303,7 @@ export default function RoomAttendance() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [prefSy, prefSem]);
 
   const scheduleSource = React.useMemo(() => {
     if (Array.isArray(scheduleRows) && scheduleRows.length) return scheduleRows;
@@ -933,6 +957,166 @@ export default function RoomAttendance() {
     URL.revokeObjectURL(url);
   }
 
+  async function onDownloadXlsxV2() {
+    const label = formatDayLabel(new Date(selectedDate));
+    const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(selectedDate).getDay()];
+    const termLabel = (() => {
+      const value = String(effectiveTermFilter || 'all').toLowerCase();
+      if (value.startsWith('1')) return '1st Term';
+      if (value.startsWith('2')) return '2nd Term';
+      if (value.startsWith('sum')) return 'Summer';
+      if (value.startsWith('s')) return 'Semestral';
+      return 'All Terms';
+    })();
+    const checkerName = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ').trim()
+      || authUser?.username
+      || authUser?.email
+      || '';
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Kolehiyo ng Pantukan';
+    wb.created = new Date();
+    wb.modified = new Date();
+
+    const groups = [{
+      key: selectedDayCode,
+      label: `${dayName} Schedule`,
+      rooms
+    }];
+    const statusFills = {
+      present: 'FFE2F0D9',
+      late: 'FFFFE699',
+      absent: 'FFF4CCCC',
+      excused: 'FFD9EAF7'
+    };
+    const border = {
+      top: { style: 'thin', color: { argb: 'FF808080' } },
+      left: { style: 'thin', color: { argb: 'FF808080' } },
+      bottom: { style: 'thin', color: { argb: 'FF808080' } },
+      right: { style: 'thin', color: { argb: 'FF808080' } }
+    };
+
+    groups.forEach((group, groupIndex) => {
+      const roomList = group.rooms || [];
+      const lastColumn = Math.max(2, roomList.length + 1);
+      const lastColumnLetter = wsColumnLetter(lastColumn);
+      const sheetName = String(group.label || `Rooms ${groupIndex + 1}`).slice(0, 31);
+      const ws = wb.addWorksheet(sheetName, {
+        views: [{ state: 'frozen', xSplit: 1, ySplit: 3, activeCell: 'B4', showGridLines: false }]
+      });
+
+      ws.pageSetup = {
+        paperSize: 9,
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 1,
+        horizontalCentered: true,
+        verticalCentered: false,
+        printTitlesRow: '1:3',
+        printArea: `A1:${lastColumnLetter}${slots.length + 3}`,
+        margins: {
+          left: 0.2,
+          right: 0.2,
+          top: 0.25,
+          bottom: 0.25,
+          header: 0.1,
+          footer: 0.1
+        }
+      };
+      ws.headerFooter.oddFooter = `&LKNP Room Attendance - ${selectedIso}&CPage &P of &N&R${group.label}`;
+
+      ws.addRow([`KNP ROOM ATTENDANCE - ${dayName.toUpperCase()} - ${group.label.toUpperCase()}`]);
+      ws.mergeCells(`A1:${lastColumnLetter}1`);
+      ws.addRow([
+        `DATE: ${label}   |   SY: ${prefSy || '-'}   |   SEMESTER: ${prefSem || '-'}   |   TERM: ${termLabel}   |   CHECKER: ${checkerName || '-'}`
+      ]);
+      ws.mergeCells(`A2:${lastColumnLetter}2`);
+      ws.addRow(['TIME', ...roomList.map((room) => String(room || '').toUpperCase())]);
+
+      slots.forEach((slot, slotIndex) => {
+        const row = ws.addRow([
+          slot.label.replace(/\s+/g, ''),
+          ...roomList.map((room) => {
+            const info = exportCellMap.get(`${normRoom(room)}::${slotIndex}`);
+            if (!info?.faculty) return '';
+            const status = String(info.status || '').trim();
+            return status
+              ? `${info.faculty}\n${status.toUpperCase()}`
+              : info.faculty;
+          })
+        ]);
+        row.height = 32;
+        row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+          cell.font = {
+            name: 'Arial',
+            size: columnNumber === 1 ? 8 : 7,
+            bold: columnNumber === 1
+          };
+          cell.alignment = {
+            horizontal: 'center',
+            vertical: 'middle',
+            wrapText: true,
+            shrinkToFit: true
+          };
+          cell.border = border;
+
+          if (columnNumber > 1) {
+            const room = roomList[columnNumber - 2];
+            const info = exportCellMap.get(`${normRoom(room)}::${slotIndex}`);
+            const fillColor = statusFills[String(info?.status || '').toLowerCase()];
+            if (fillColor) {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillColor } };
+            }
+          }
+        });
+      });
+
+      const titleRow = ws.getRow(1);
+      titleRow.height = 24;
+      titleRow.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleRow.alignment = { horizontal: 'center', vertical: 'middle' };
+      titleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
+
+      const metaRow = ws.getRow(2);
+      metaRow.height = 22;
+      metaRow.eachCell({ includeEmpty: true }, (cell) => {
+        cell.font = { name: 'Arial', size: 8, bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true, shrinkToFit: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9EAF7' } };
+        cell.border = border;
+      });
+
+      const headerRow = ws.getRow(3);
+      headerRow.height = 24;
+      headerRow.eachCell({ includeEmpty: true }, (cell) => {
+        cell.font = { name: 'Arial', size: 8, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true, shrinkToFit: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
+        cell.border = border;
+      });
+
+      ws.getColumn(1).width = 10;
+      for (let columnNumber = 2; columnNumber <= lastColumn; columnNumber++) {
+        ws.getColumn(columnNumber).width = roomList.length >= 12 ? 11 : 13;
+      }
+    });
+
+    const fn = `Room_Attendance_V2_${selectedIso}_${selectedDayCode}_${termLabel.replace(/\s+/g, '_')}.xlsx`;
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fn;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function onLoginSubmit({ username, password }) {
     try {
       await dispatch(loginThunk({ identifier: username, password })).unwrap();
@@ -1148,6 +1332,9 @@ export default function RoomAttendance() {
 
                 <Button leftIcon={<FiDownload />} onClick={onDownloadXlsx} colorScheme="blue" variant="outline" size="sm">
                   Download XLSX
+                </Button>
+                <Button leftIcon={<FiDownload />} onClick={onDownloadXlsxV2} colorScheme="teal" variant="outline" size="sm">
+                  Download XLSX V2
                 </Button>
                 <Button as={RouterLink} to="/share/room-attendance" target="_blank" leftIcon={<FiShare2 />} colorScheme="brand" variant="solid" size="sm">
                   Share
