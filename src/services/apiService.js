@@ -1016,6 +1016,17 @@ class ApiService {
     return await res.json();
   }
 
+  async playBell(eventId) {
+    const url = `${this.baseURL}/settings/bell-play`;
+    const res = await this._fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) },
+      body: JSON.stringify({ eventId }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
+  }
+
   async uploadBellSound(file, kind = 'on') {
     const qs = kind ? `?kind=${encodeURIComponent(kind)}` : '';
     const url = `${this.baseURL}/settings/bell-sound${qs}`;
