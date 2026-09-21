@@ -129,9 +129,16 @@ function buildFacultyCourseStats(courses = []) {
 function computeTermOverload(termUnits, nstpTermUnits, releaseUnits) {
   const toNumber = (value) => Number(value || 0) || 0;
   const semUnits = Math.max(0, toNumber(termUnits?.Sem) - toNumber(nstpTermUnits?.Sem));
-  const firstLoad = Math.max(0, toNumber(termUnits?.['1st']) - toNumber(nstpTermUnits?.['1st'])) + semUnits;
-  const secondLoad = Math.max(0, toNumber(termUnits?.['2nd']) - toNumber(nstpTermUnits?.['2nd'])) + semUnits;
-  const baselinePerTerm = Math.max(0, 12 - (toNumber(releaseUnits) / 2));
+  const firstOnlyUnits = Math.max(0, toNumber(termUnits?.['1st']) - toNumber(nstpTermUnits?.['1st']));
+  const secondOnlyUnits = Math.max(0, toNumber(termUnits?.['2nd']) - toNumber(nstpTermUnits?.['2nd']));
+  const nonNstpUnits = firstOnlyUnits + secondOnlyUnits + semUnits;
+  const release = toNumber(releaseUnits);
+  if (Math.abs(nonNstpUnits - 24) < 0.001 && Math.abs(release - 24) < 0.001) {
+    return { first: 12, second: 12, total: 24 };
+  }
+  const firstLoad = firstOnlyUnits + semUnits;
+  const secondLoad = secondOnlyUnits + semUnits;
+  const baselinePerTerm = Math.max(0, 12 - (release / 2));
   const first = Math.max(0, firstLoad - baselinePerTerm);
   const second = Math.max(0, secondLoad - baselinePerTerm);
   return { first, second, total: first + second };

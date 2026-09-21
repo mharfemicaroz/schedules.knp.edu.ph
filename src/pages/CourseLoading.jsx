@@ -2545,8 +2545,9 @@ export default function CourseLoading() {
     const firstTermLoad = Math.max(0, termSumsF['1st'] - nstpTermSums['1st']) + semNonNstpUnits;
     const secondTermLoad = Math.max(0, termSumsF['2nd'] - nstpTermSums['2nd']) + semNonNstpUnits;
     const baselinePerTerm = Math.max(0, 12 - (releaseUnits / 2));
-    const overloadFirstUnits = Math.max(0, firstTermLoad - baselinePerTerm);
-    const overloadSecondUnits = Math.max(0, secondTermLoad - baselinePerTerm);
+    const applyFullReleaseBalance = Math.abs(nonNstpUnits - 24) < 0.001 && Math.abs(releaseUnits - 24) < 0.001;
+    const overloadFirstUnits = applyFullReleaseBalance ? 12 : Math.max(0, firstTermLoad - baselinePerTerm);
+    const overloadSecondUnits = applyFullReleaseBalance ? 12 : Math.max(0, secondTermLoad - baselinePerTerm);
     const overloadUnits = overloadFirstUnits + overloadSecondUnits;
     const fmtHours = (u, perUnit = 1 / 3) => {
       const hrs = Number(u) * perUnit;
