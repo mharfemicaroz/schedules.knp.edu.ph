@@ -2539,33 +2539,15 @@ export default function CourseLoading() {
       summaryRowsHtmlF.push(`<tr><th>${esc(l1)}</th><td>${esc(String(v1))}</td><th>${esc(l2)}</th><td>${v2 === '' ? '' : esc(String(v2))}</td></tr>`);
     }
     const termSummaryHtmlF = `<table class=\"prt-table\"><tbody>${summaryRowsHtmlF.join('')}</tbody></table>`;
-    // Overload breakdown by term (auto-split, prioritize 1st term if odd)
+    // Each term has its own 12-unit baseline. Semester-long subjects apply to both terms.
     const releaseUnits = Number(f.loadReleaseUnits ?? f.load_release_units ?? 0) || 0;
-    const baselineUnits = Math.max(0, 24 - releaseUnits);
-    const overloadUnits = Math.max(0, nonNstpUnits - baselineUnits);
-    const isFullTime = /full\s*-?\s*time/i.test(String(f.employment || ''));
-    const isPartTime = !isFullTime && /part\s*-?\s*time/i.test(String(f.employment || ''));
-    const splitOverload = (total) => {
-      if (!Number.isFinite(total) || total <= 0) return { first: 0, second: 0 };
-      const candidates = [];
-      for (let a = 0; a <= total; a += 1) {
-        if (a % 3 !== 0) continue; // first term must be divisible by 3
-        const b = total - a;
-        const bothDiv3 = b % 3 === 0;
-        const gap = Math.abs(a - b);
-        candidates.push({ a, b, bothDiv3, gap });
-      }
-      if (!candidates.length) return { first: total, second: 0 };
-      candidates.sort((x, y) => {
-        if (x.bothDiv3 !== y.bothDiv3) return y.bothDiv3 - x.bothDiv3; // prefer both divisible by 3
-        if (x.gap !== y.gap) return x.gap - y.gap; // minimal gap
-        if (x.a !== y.a) return y.a - x.a; // favor larger 1st term
-        return 0;
-      });
-      return { first: candidates[0].a, second: candidates[0].b };
-    };
-    const baseUnitsForSplit = overloadUnits > 0 ? overloadUnits : (isPartTime ? nonNstpUnits : 0);
-    const { first: overloadFirstUnits, second: overloadSecondUnits } = splitOverload(baseUnitsForSplit);
+    const semNonNstpUnits = Math.max(0, termSumsF.Sem - nstpTermSums.Sem);
+    const firstTermLoad = Math.max(0, termSumsF['1st'] - nstpTermSums['1st']) + semNonNstpUnits;
+    const secondTermLoad = Math.max(0, termSumsF['2nd'] - nstpTermSums['2nd']) + semNonNstpUnits;
+    const baselinePerTerm = Math.max(0, 12 - (releaseUnits / 2));
+    const overloadFirstUnits = Math.max(0, firstTermLoad - baselinePerTerm);
+    const overloadSecondUnits = Math.max(0, secondTermLoad - baselinePerTerm);
+    const overloadUnits = overloadFirstUnits + overloadSecondUnits;
     const fmtHours = (u, perUnit = 1 / 3) => {
       const hrs = Number(u) * perUnit;
       if (!Number.isFinite(hrs)) return '0';
@@ -2577,7 +2559,7 @@ export default function CourseLoading() {
     const labelFirst = overloadUnits > 0 ? 'Overload 1st Term' : 'Load 1st Term';
     const labelSecond = overloadUnits > 0 ? 'Overload 2nd Term' : 'Load 2nd Term';
     const overloadRows = [];
-    if (baseUnitsForSplit > 0) {
+    if (overloadFirstUnits > 0 || overloadSecondUnits > 0) {
       overloadRows.push(`<tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(fmtLoadHours(overloadFirstUnits))} hrs)</td>
           <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(fmtLoadHours(overloadSecondUnits))} hrs)</td></tr>`);
     }

@@ -126,25 +126,15 @@ function buildFacultyCourseStats(courses = []) {
   return out;
 }
 
-// Same overload split logic as CourseLoading faculty print utils
-function splitOverload(total) {
-  if (!Number.isFinite(total) || total <= 0) return { first: 0, second: 0 };
-  const candidates = [];
-  for (let a = 0; a <= total; a += 1) {
-    if (a % 3 !== 0) continue; // first term must be divisible by 3
-    const b = total - a;
-    const bothDiv3 = b % 3 === 0;
-    const gap = Math.abs(a - b);
-    candidates.push({ a, b, bothDiv3, gap });
-  }
-  if (!candidates.length) return { first: total, second: 0 };
-  candidates.sort((x, y) => {
-    if (x.bothDiv3 !== y.bothDiv3) return (y.bothDiv3 ? 1 : 0) - (x.bothDiv3 ? 1 : 0);
-    if (x.gap !== y.gap) return x.gap - y.gap;
-    if (x.a !== y.a) return y.a - x.a;
-    return 0;
-  });
-  return { first: candidates[0].a, second: candidates[0].b };
+function computeTermOverload(termUnits, nstpTermUnits, releaseUnits) {
+  const toNumber = (value) => Number(value || 0) || 0;
+  const semUnits = Math.max(0, toNumber(termUnits?.Sem) - toNumber(nstpTermUnits?.Sem));
+  const firstLoad = Math.max(0, toNumber(termUnits?.['1st']) - toNumber(nstpTermUnits?.['1st'])) + semUnits;
+  const secondLoad = Math.max(0, toNumber(termUnits?.['2nd']) - toNumber(nstpTermUnits?.['2nd'])) + semUnits;
+  const baselinePerTerm = Math.max(0, 12 - (toNumber(releaseUnits) / 2));
+  const first = Math.max(0, firstLoad - baselinePerTerm);
+  const second = Math.max(0, secondLoad - baselinePerTerm);
+  return { first, second, total: first + second };
 }
 
 function fmtHours(hours) {
@@ -303,8 +293,6 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
       const deptVal = f.department || f.dept || '';
       const empVal = f.employment || '';
       const releaseUnits = Number(f.load_release_units ?? f.loadReleaseUnits ?? f.loadRelease ?? 0) || 0;
-      const isFullTime = /full\s*-?\s*time/i.test(String(empVal || ''));
-      const isPartTime = !isFullTime && /part\s*-?\s*time/i.test(String(empVal || ''));
 
       const stats = (() => {
         if (fid) {
@@ -321,12 +309,10 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
       const nstpUnits = Number(stats?.nstpUnits ?? 0) || 0;
       const nstpTermUnits = stats?.nstpTermUnits ? { ...stats.nstpTermUnits } : emptyTermUnits();
       const courseCount = Number(stats?.courseCount ?? 0) || 0;
-      const nonNstpUnits = Math.max(0, units - nstpUnits);
-
       const baseline = Math.max(0, 24 - releaseUnits);
-      const overloadUnits = Math.max(0, nonNstpUnits - baseline);
-      const baseUnitsForSplit = overloadUnits > 0 ? overloadUnits : (isPartTime ? nonNstpUnits : 0);
-      const { first: overloadFirst, second: overloadSecond } = splitOverload(baseUnitsForSplit);
+      const termOverload = computeTermOverload(termUnits, nstpTermUnits, releaseUnits);
+      const overloadUnits = termOverload.total;
+      const { first: overloadFirst, second: overloadSecond } = termOverload;
 
       const nstpFirstUnits = nstpTermUnits['1st'] + nstpTermUnits['Sem'];
       const nstpSecondUnits = nstpTermUnits['2nd'] + nstpTermUnits['Sem'];
@@ -381,8 +367,6 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
       const loadUnits = Number(r.loadUnits ?? 0) || 0;
       const releaseUnits = Number(r.releaseUnits ?? 0) || 0;
       const empVal = r.employment || '';
-      const isFullTime = /full\s*-?\s*time/i.test(String(empVal || ''));
-      const isPartTime = !isFullTime && /part\s*-?\s*time/i.test(String(empVal || ''));
 
       const termUnits = (r.termUnits && (r.termUnits['1st'] || r.termUnits['2nd'] || r.termUnits.Sem))
         ? r.termUnits
@@ -397,13 +381,10 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
       let overloadSecondHours = r.overloadSecondHours ?? unitsToHours(overloadSecond);
 
       if (hasStats) {
-        const nonNstpUnits = Math.max(0, loadUnits - nstpUnits);
-        const baseline = Math.max(0, 24 - releaseUnits);
-        overloadUnits = Math.max(0, nonNstpUnits - baseline);
-        const baseUnitsForSplit = overloadUnits > 0 ? overloadUnits : (isPartTime ? nonNstpUnits : 0);
-        const split = splitOverload(baseUnitsForSplit);
-        overloadFirst = split.first;
-        overloadSecond = split.second;
+        const termOverload = computeTermOverload(termUnits, nstpTermUnits, releaseUnits);
+        overloadUnits = termOverload.total;
+        overloadFirst = termOverload.first;
+        overloadSecond = termOverload.second;
         overloadFirstHours = unitsToHours(overloadFirst);
         overloadSecondHours = unitsToHours(overloadSecond);
       }
