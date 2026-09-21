@@ -530,7 +530,6 @@ const rows = React.useMemo(() => {
       'Faculty',
       'Department',
       'Employment',
-      'Load Units',
       'Overload',
       '1st Term (units/hrs)',
       '2nd Term (units/hrs)'
@@ -552,7 +551,6 @@ const rows = React.useMemo(() => {
         r.faculty,
         r.department,
         r.employment,
-        String(r.loadUnits),
         String(r.overloadUnits ?? r.overload),
         formatTermPrint(r.overloadFirst, r.overloadFirstHours, r.nstpFirstUnits, r.nstpFirstHours),
         formatTermPrint(r.overloadSecond, r.overloadSecondHours, r.nstpSecondUnits, r.nstpSecondHours)
@@ -562,8 +560,32 @@ const rows = React.useMemo(() => {
       settingsLoad?.school_year ? `SY ${settingsLoad.school_year}` : '',
       settingsLoad?.semester ? `Sem ${settingsLoad.semester}` : ''
     ].filter(Boolean).join('  |  ');
-    const bodyHtml = buildTable(headers, data);
-    printContent({ title: 'Faculty Overload Summary', subtitle, bodyHtml }, { orientation: 'portrait' });
+    const certificationHtml = `
+      <div style="margin-top:22px;font-size:12px;line-height:1.6;text-align:justify;">
+        This is to certify that the faculty loading reflected herein is correct and valid.
+      </div>
+      <div class="prt-footer" style="margin-top:38px;">
+        <div class="prt-block">
+          <div class="prt-verify">Certified by:</div>
+          <div class="prt-sign">JOWEEL Y. GADOR, LPT</div>
+          <div class="prt-role">College Registrar</div>
+        </div>
+        <div class="prt-block">
+          <div class="prt-verify">Certified by:</div>
+          <div class="prt-sign">Dr. Mharfe M. Micaroz</div>
+          <div class="prt-role">Vice President of Academic Affairs</div>
+        </div>
+        <div class="prt-block">
+          <div class="prt-verify">Certified by:</div>
+          <div class="prt-sign">Dr. Mary Ann R. Araula</div>
+          <div class="prt-role">Acting College President</div>
+        </div>
+      </div>`;
+    const bodyHtml = `${buildTable(headers, data)}${certificationHtml}`;
+    printContent(
+      { title: 'Faculty Overload Summary', subtitle, bodyHtml },
+      { orientation: 'portrait', hideFooter: true }
+    );
   };
 
   const toggleSort = (key) => {
