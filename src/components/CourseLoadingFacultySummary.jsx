@@ -126,13 +126,19 @@ function buildFacultyCourseStats(courses = []) {
   return out;
 }
 
-function computeTermOverload(termUnits, nstpTermUnits, releaseUnits) {
+function computeTermOverload(termUnits, nstpTermUnits, releaseUnits, employment) {
   const toNumber = (value) => Number(value || 0) || 0;
   const semUnits = Math.max(0, toNumber(termUnits?.Sem) - toNumber(nstpTermUnits?.Sem));
   const firstOnlyUnits = Math.max(0, toNumber(termUnits?.['1st']) - toNumber(nstpTermUnits?.['1st']));
   const secondOnlyUnits = Math.max(0, toNumber(termUnits?.['2nd']) - toNumber(nstpTermUnits?.['2nd']));
   const nonNstpUnits = firstOnlyUnits + secondOnlyUnits + semUnits;
   const release = toNumber(releaseUnits);
+  const isPartTime = /part\s*-?\s*time/i.test(String(employment || ''));
+  if (isPartTime) {
+    const first = firstOnlyUnits + semUnits;
+    const second = secondOnlyUnits + semUnits;
+    return { first, second, total: first + second };
+  }
   if (Math.abs(nonNstpUnits - 24) < 0.001 && Math.abs(release - 24) < 0.001) {
     return { first: 12, second: 12, total: 24 };
   }
@@ -317,7 +323,7 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
       const nstpTermUnits = stats?.nstpTermUnits ? { ...stats.nstpTermUnits } : emptyTermUnits();
       const courseCount = Number(stats?.courseCount ?? 0) || 0;
       const baseline = Math.max(0, 24 - releaseUnits);
-      const termOverload = computeTermOverload(termUnits, nstpTermUnits, releaseUnits);
+      const termOverload = computeTermOverload(termUnits, nstpTermUnits, releaseUnits, empVal);
       const overloadUnits = termOverload.total;
       const { first: overloadFirst, second: overloadSecond } = termOverload;
 
@@ -388,7 +394,7 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
       let overloadSecondHours = r.overloadSecondHours ?? unitsToHours(overloadSecond);
 
       if (hasStats) {
-        const termOverload = computeTermOverload(termUnits, nstpTermUnits, releaseUnits);
+        const termOverload = computeTermOverload(termUnits, nstpTermUnits, releaseUnits, empVal);
         overloadUnits = termOverload.total;
         overloadFirst = termOverload.first;
         overloadSecond = termOverload.second;
