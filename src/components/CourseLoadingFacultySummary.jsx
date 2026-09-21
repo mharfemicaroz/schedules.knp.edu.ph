@@ -137,7 +137,7 @@ function computeTermOverload(termUnits, nstpTermUnits, releaseUnits, employment)
   if (isPartTime) {
     const first = firstOnlyUnits + semUnits;
     const second = secondOnlyUnits + semUnits;
-    return { first, second, total: first + second };
+    return balanceTermOverload(first, second);
   }
   if (Math.abs(nonNstpUnits - 24) < 0.001 && Math.abs(release - 24) < 0.001) {
     return { first: 12, second: 12, total: 24 };
@@ -147,7 +147,45 @@ function computeTermOverload(termUnits, nstpTermUnits, releaseUnits, employment)
   const baselinePerTerm = Math.max(0, 12 - (release / 2));
   const first = Math.max(0, firstLoad - baselinePerTerm);
   const second = Math.max(0, secondLoad - baselinePerTerm);
-  return { first, second, total: first + second };
+  return balanceTermOverload(first, second);
+}
+
+function balanceTermOverload(firstUnits, secondUnits) {
+  let first = Math.max(0, Number(firstUnits) || 0);
+  let second = Math.max(0, Number(secondUnits) || 0);
+  const total = first + second;
+  const normalTermMaximum = 12; // 4 overload hours
+
+  if (first > normalTermMaximum && second < normalTermMaximum) {
+    const moved = Math.min(first - normalTermMaximum, normalTermMaximum - second);
+    first -= moved;
+    second += moved;
+  } else if (second > normalTermMaximum && first < normalTermMaximum) {
+    const moved = Math.min(second - normalTermMaximum, normalTermMaximum - first);
+    second -= moved;
+    first += moved;
+  }
+
+  if (first > normalTermMaximum || second > normalTermMaximum) {
+    const candidates = [];
+    for (let candidateFirst = 0; candidateFirst <= total; candidateFirst += 3) {
+      const candidateSecond = total - candidateFirst;
+      candidates.push({
+        first: candidateFirst,
+        second: candidateSecond,
+        bothThreeUnit: Math.abs(candidateSecond % 3) < 0.001,
+        gap: Math.abs(candidateFirst - candidateSecond)
+      });
+    }
+    candidates.sort((a, b) =>
+      Number(b.bothThreeUnit) - Number(a.bothThreeUnit) ||
+      a.gap - b.gap ||
+      b.first - a.first
+    );
+    if (candidates.length) ({ first, second } = candidates[0]);
+  }
+
+  return { first, second, total };
 }
 
 function fmtHours(hours) {

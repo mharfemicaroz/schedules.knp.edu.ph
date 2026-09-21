@@ -2547,8 +2547,37 @@ export default function CourseLoading() {
     const baselinePerTerm = Math.max(0, 12 - (releaseUnits / 2));
     const isPartTime = /part\s*-?\s*time/i.test(String(f.employment || ''));
     const applyFullReleaseBalance = Math.abs(nonNstpUnits - 24) < 0.001 && Math.abs(releaseUnits - 24) < 0.001;
-    const overloadFirstUnits = isPartTime ? firstTermLoad : (applyFullReleaseBalance ? 12 : Math.max(0, firstTermLoad - baselinePerTerm));
-    const overloadSecondUnits = isPartTime ? secondTermLoad : (applyFullReleaseBalance ? 12 : Math.max(0, secondTermLoad - baselinePerTerm));
+    let overloadFirstUnits = isPartTime ? firstTermLoad : (applyFullReleaseBalance ? 12 : Math.max(0, firstTermLoad - baselinePerTerm));
+    let overloadSecondUnits = isPartTime ? secondTermLoad : (applyFullReleaseBalance ? 12 : Math.max(0, secondTermLoad - baselinePerTerm));
+    const rawOverloadTotal = overloadFirstUnits + overloadSecondUnits;
+    if (overloadFirstUnits > 12 && overloadSecondUnits < 12) {
+      const moved = Math.min(overloadFirstUnits - 12, 12 - overloadSecondUnits);
+      overloadFirstUnits -= moved;
+      overloadSecondUnits += moved;
+    } else if (overloadSecondUnits > 12 && overloadFirstUnits < 12) {
+      const moved = Math.min(overloadSecondUnits - 12, 12 - overloadFirstUnits);
+      overloadSecondUnits -= moved;
+      overloadFirstUnits += moved;
+    }
+    if (overloadFirstUnits > 12 || overloadSecondUnits > 12) {
+      const candidates = [];
+      for (let candidateFirst = 0; candidateFirst <= rawOverloadTotal; candidateFirst += 3) {
+        const candidateSecond = rawOverloadTotal - candidateFirst;
+        candidates.push({
+          first: candidateFirst,
+          second: candidateSecond,
+          bothThreeUnit: Math.abs(candidateSecond % 3) < 0.001,
+          gap: Math.abs(candidateFirst - candidateSecond)
+        });
+      }
+      candidates.sort((a, b) =>
+        Number(b.bothThreeUnit) - Number(a.bothThreeUnit) || a.gap - b.gap || b.first - a.first
+      );
+      if (candidates.length) {
+        overloadFirstUnits = candidates[0].first;
+        overloadSecondUnits = candidates[0].second;
+      }
+    }
     const overloadUnits = overloadFirstUnits + overloadSecondUnits;
     const fmtHours = (u, perUnit = 1 / 3) => {
       const hrs = Number(u) * perUnit;
