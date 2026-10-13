@@ -140,7 +140,7 @@ export default function DepartmentSchedule() {
     getInitialToggleState(acadData, 'departmentScheduleViewMode', 'regular')
   );
   const { enabled: evaluationsEnabled } = useEvaluationEnabled();
-  const effectiveShowAccessCodes = !!evaluationsEnabled;
+  const effectiveShowAccessCodes = isAdmin && !!evaluationsEnabled;
   const termAllowsAccess = React.useCallback((t) => {
     if (!evaluationsEnabled) return false;
     const v = String(t || '').trim().toLowerCase();
