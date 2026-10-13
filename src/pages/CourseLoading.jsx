@@ -1487,7 +1487,7 @@ export default function CourseLoading() {
   }, []);
 
   const allowedViews = React.useMemo(() => {
-    if (registrarViewOnly) return ['blocks', 'summary'];
+    if (registrarViewOnly) return ['blocks', 'faculty', 'courses', 'summary'];
     const list = ['blocks', 'faculty', 'courses', 'summary'];
     if (isAdmin) list.push('facultySummary');
     return list;
@@ -1893,7 +1893,7 @@ export default function CourseLoading() {
     const title = `Block: ${selectedBlock.blockCode || ''}`;
     const subtitle = [`School Year: ${settingsLoad?.school_year || ''}`, `Semester: ${settingsLoad?.semester || ''}`].filter(Boolean).join('  |  ');
     const headers = ['#','Course','Title','Units','Term','Time','Day','Room','Faculty'];
-    const hideFacultyNames = registrarViewOnly;
+    const hideFacultyNames = false;
     const sorted = (rows || []).slice().sort((a,b) => {
       // Sort by explicit term only; do not fall back to semester
       const ta = termOrder(a._term || a.term);
@@ -2367,7 +2367,7 @@ export default function CourseLoading() {
       .filter(Boolean)
       .join('  |  ');
     const headers = ['Code', 'Title', 'Units', 'Term', 'Time', 'Day', 'Room', 'Faculty'];
-    const hideFacultyNames = registrarViewOnly;
+    const hideFacultyNames = false;
     const list = Array.isArray(rows) ? rows.slice() : [];
     // Focus only on the currently viewed program
     const normProgram = (p) => String(p || '').trim().toLowerCase();
@@ -7059,7 +7059,7 @@ const prefill = hit ? {
                   <option value="desc">Desc</option>
                 </Select>
               </HStack>
-              <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
+              {!registrarViewOnly && <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
                 <Stack spacing={2}>
                   {/* Line for A */}
                   <HStack spacing={2} flexWrap="wrap">
@@ -7098,7 +7098,7 @@ const prefill = hit ? {
                   </HStack>
                 </Stack>
 
-              </Box>
+              </Box>}
               <VStack align="stretch" spacing={1} maxH="calc(100vh - 300px)" overflowY="auto">
                 {sortedFaculty.map(f => {
                     const isSel = selectedFaculty && String(selectedFaculty.id) === String(f.id);
@@ -7157,7 +7157,7 @@ const prefill = hit ? {
             </VStack>
           )}
           {viewMode === 'courses' && (
-            <CoursesView settingsLoadOverride={settingsLoad} />
+            <CoursesView viewOnly={registrarViewOnly} settingsLoadOverride={settingsLoad} />
           )}
           {viewMode === 'summary' && (
             <CourseSummaryView viewOnly={registrarViewOnly} settingsLoadOverride={settingsLoad} />
@@ -7322,7 +7322,7 @@ const prefill = hit ? {
                                       onRequestHistory={openHistoryForRow}
                                       isAdmin={isAdmin}
                                       viewOnly={registrarViewOnly}
-                                      hideFacultyName={registrarViewOnly}
+                                      hideFacultyName={false}
                                     />
                                   </Box>
                                 );
@@ -7550,7 +7550,7 @@ const prefill = hit ? {
                               onRequestHistory={openHistoryForRow}
                               isAdmin={isAdmin}
                               viewOnly={registrarViewOnly}
-                              hideFacultyName={registrarViewOnly}
+                              hideFacultyName={false}
                             />
                           </Box>
                         );
@@ -7636,7 +7636,7 @@ const prefill = hit ? {
                                           isAdmin={isAdmin}
                                           variant="tile"
                                           viewOnly={registrarViewOnly}
-                                          hideFacultyName={registrarViewOnly}
+                                          hideFacultyName={false}
                                         />
                                       </Box>
                                     );
@@ -7698,10 +7698,14 @@ const prefill = hit ? {
                   <Button leftIcon={<FiActivity />} size="sm" variant="outline" onClick={()=>setFacultyAuditOpen(true)} isDisabled={!selectedFaculty || facultySchedules.loading}>
                     Audit Logs
                   </Button>
-                  <Button leftIcon={<FiShuffle />} size="sm" variant="outline" colorScheme="orange" onClick={openFacultyTermBalancer} isDisabled={facultySchedules.loading || !selectedFaculty || facultySchedules.items.length === 0}>
-                    Term Balancer
-                  </Button>
-                  <Button size="sm" colorScheme="blue" variant="solid" onClick={()=>setSchedAssignOpen(true)}>Assign Schedules</Button>
+                  {!registrarViewOnly && (
+                    <>
+                      <Button leftIcon={<FiShuffle />} size="sm" variant="outline" colorScheme="orange" onClick={openFacultyTermBalancer} isDisabled={facultySchedules.loading || !selectedFaculty || facultySchedules.items.length === 0}>
+                        Term Balancer
+                      </Button>
+                      <Button size="sm" colorScheme="blue" variant="solid" onClick={()=>setSchedAssignOpen(true)}>Assign Schedules</Button>
+                    </>
+                  )}
                 </HStack>
               </HStack>
               <SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={3}>
@@ -7741,7 +7745,7 @@ const prefill = hit ? {
                 </Box>
               </SimpleGrid>
               <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
-                <HStack spacing={3} mb={2} align="center" flexWrap="wrap">
+                {!registrarViewOnly && <HStack spacing={3} mb={2} align="center" flexWrap="wrap">
                   {(() => {
                     const eligible = (facultySchedules.items || []).filter(it => canEditFacultyItem(it));
                     const eligibleCount = eligible.length;
@@ -7782,7 +7786,7 @@ const prefill = hit ? {
                   </Button>
                   <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(true)} isDisabled={!canLoad || facSelectedIds.length === 0 || allSelectedLocked}>Lock Selected</Button>
                   <Button size="sm" variant="outline" onClick={()=>requestFacultyBulkLockChange(false)} isDisabled={!isAdmin || facSelectedIds.length === 0 || allSelectedUnlocked}>Unlock Selected</Button>
-                </HStack>
+                </HStack>}
                 {facultySchedules.items.length === 0 ? (
                   <VStack py={8}><Text color={subtle}>No schedules assigned for the selected school year.</Text></VStack>
                 ) : (
@@ -7827,7 +7831,7 @@ const prefill = hit ? {
                             return (
                               <Box key={`${term}-${i}`} p={2} borderWidth="1px" rounded="md">
                                 <HStack spacing={3} align="center">
-                                  <Checkbox isChecked={facSelected.has(c.id)} onChange={(e)=>toggleFacSelect(c.id, e.target.checked)} isDisabled={!isEditable} />
+                                  {!registrarViewOnly && <Checkbox isChecked={facSelected.has(c.id)} onChange={(e)=>toggleFacSelect(c.id, e.target.checked)} isDisabled={!isEditable} />}
                                     <Badge>{c.code || c.courseName}</Badge>
                                     {String(c.id || '').startsWith('tmp:') && <Badge colorScheme="pink">Draft</Badge>}
                                     {prepMeta?.prepNumber ? <Badge colorScheme="cyan" variant="subtle">Prep {prepMeta.prepNumber}</Badge> : null}
@@ -7856,7 +7860,21 @@ const prefill = hit ? {
 
                                     <Badge colorScheme="orange">{c.blockCode || c.section || '—'}</Badge>
                                   </HStack>
-                                  <HStack mt={2} spacing={2} align="center" flexWrap="wrap">
+                                  {registrarViewOnly && (
+                                    <Box
+                                      display="grid"
+                                      gridTemplateColumns={{ base: '1fr 1fr', md: '1fr 1fr 1.5fr 1fr' }}
+                                      gap={2}
+                                      mt={2}
+                                      fontSize="sm"
+                                    >
+                                      <Text><b>Term:</b> {e.term || '—'}</Text>
+                                      <Text><b>Day:</b> {e.day || '—'}</Text>
+                                      <Text><b>Time:</b> {e.time || '—'}</Text>
+                                      <Text><b>Room:</b> {c.room || c.roomName || '—'}</Text>
+                                    </Box>
+                                  )}
+                                  <HStack display={registrarViewOnly ? 'none' : 'flex'} mt={2} spacing={2} align="center" flexWrap="wrap">
                                   <Select
                                     size="sm"
                                     value={e.term}

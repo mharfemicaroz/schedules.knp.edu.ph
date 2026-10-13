@@ -241,6 +241,9 @@ export default function Sidebar({ mobile = false, onNavigate }) {
                 Course Loading
               </NavItem>
             )}
+            {isRegistrar && (
+              <NavItem to="/admin/schedule-history" icon={FiClock} onClick={onNavigate}>Schedule Histories</NavItem>
+            )}
             {(isAdmin || isOsas) && (
               <NavItem to="/admin/evaluations" icon={FiBarChart2} onClick={onNavigate} chipLabel={evaluationsChip}>Evaluations</NavItem>
             )}

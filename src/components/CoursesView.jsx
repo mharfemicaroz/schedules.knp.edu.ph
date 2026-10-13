@@ -123,7 +123,7 @@ const hasRealFacultyAssignment = (row) => {
   return facultyId != null && String(facultyId).trim() !== '';
 };
 
-export default function CoursesView({ settingsLoadOverride = null }) {
+export default function CoursesView({ settingsLoadOverride = null, viewOnly = false }) {
   const toast = useToast();
   const dispatch = useDispatch();
   const bg = useColorModeValue('white','gray.800');
@@ -175,7 +175,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
   const [query, setQuery] = React.useState('');
   const [selectedCourse, setSelectedCourse] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
-  const canLoad = (isAdmin || role === 'registrar' || (Array.isArray(allowedDepts) && allowedDepts.length > 0));
+  const canLoad = !viewOnly && (isAdmin || (Array.isArray(allowedDepts) && allowedDepts.length > 0));
 
   // Load full Prospectus list once (independent from other views)
   React.useEffect(() => {
@@ -1128,7 +1128,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                 <Badge colorScheme="purple">{settingsLoad?.semester}</Badge>
               </HStack>
             </HStack>
-            <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
+            {!viewOnly && <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
               <HStack spacing={3} align="center" flexWrap="wrap">
                 <Checkbox isChecked={rows.length>0 && rows.every(r => r._selected)}
                           isIndeterminate={rows.some(r => r._selected) && !rows.every(r => r._selected)}
@@ -1157,7 +1157,7 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                   Unlock Selected
                 </Button>
               </HStack>
-            </Box>
+            </Box>}
             <VStack align="stretch" spacing={0} divider={<Divider borderColor={border} />}>
               {rows.map((r, i) => (
                 <AssignmentRow
@@ -1171,9 +1171,10 @@ export default function CoursesView({ settingsLoadOverride = null }) {
                   blockSession={r.session || ''}
                   currentSemester={settingsLoad?.semester || ''}
                   attendanceStats={attendanceStatsMap}
-                  disabled={false}
+                  disabled={viewOnly}
                   isAdmin={isAdmin}
                   variant="courses"
+                  viewOnly={viewOnly}
                   onChange={(patch)=>handleChange(i, patch)}
                   onToggle={(ck)=>handleChange(i, { _selected: !!ck })}
                   onRequestLockChange={(next)=>{ if (r._existingId) { setLockIndex(i); setLockNext(!!next); setLockOpen(true); } }}
