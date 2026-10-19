@@ -3735,6 +3735,27 @@ const prefill = hit ? {
     password: ''
   });
 
+  const updateOverloadOverrideAmount = React.useCallback((term, source, rawValue) => {
+    const unitsKey = `${term}Units`;
+    const hoursKey = `${term}Hours`;
+    setOverloadOverrideForm((prev) => {
+      if (rawValue === '') {
+        return { ...prev, [unitsKey]: '', [hoursKey]: '' };
+      }
+
+      const value = Number(rawValue);
+      if (!Number.isFinite(value)) {
+        return { ...prev, [source === 'units' ? unitsKey : hoursKey]: rawValue };
+      }
+
+      const linkedValue = source === 'units' ? value / 3 : value * 3;
+      const formattedLinkedValue = String(Math.round(linkedValue * 1000000) / 1000000);
+      return source === 'units'
+        ? { ...prev, [unitsKey]: rawValue, [hoursKey]: formattedLinkedValue }
+        : { ...prev, [hoursKey]: rawValue, [unitsKey]: formattedLinkedValue };
+    });
+  }, []);
+
   const selectedFacultyOverride = React.useMemo(
     () => getFacultyOverloadOverride(facultyOverloadOverrides, selectedFaculty),
     [facultyOverloadOverrides, selectedFaculty]
@@ -8668,7 +8689,7 @@ const prefill = hit ? {
             <VStack align="stretch" spacing={4}>
               <Text fontSize="sm" color={subtle}>
                 Enter the temporary values for {selectedFaculty?.name || selectedFaculty?.faculty || 'this faculty'}.
-                Units and hours are independent. These values affect the faculty summary and printouts only until reload.
+                Units and hours are linked automatically at 3 units = 1 hour. These values affect the faculty summary and printouts only until reload.
               </Text>
               <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
                 <Box borderWidth="1px" borderColor={border} rounded="lg" p={3}>
@@ -8681,7 +8702,7 @@ const prefill = hit ? {
                         min="0"
                         step="0.01"
                         value={overloadOverrideForm.firstUnits}
-                        onChange={(e) => setOverloadOverrideForm((prev) => ({ ...prev, firstUnits: e.target.value }))}
+                        onChange={(e) => updateOverloadOverrideAmount('first', 'units', e.target.value)}
                       />
                     </FormControl>
                     <FormControl isRequired>
@@ -8691,7 +8712,7 @@ const prefill = hit ? {
                         min="0"
                         step="0.01"
                         value={overloadOverrideForm.firstHours}
-                        onChange={(e) => setOverloadOverrideForm((prev) => ({ ...prev, firstHours: e.target.value }))}
+                        onChange={(e) => updateOverloadOverrideAmount('first', 'hours', e.target.value)}
                       />
                     </FormControl>
                   </VStack>
@@ -8706,7 +8727,7 @@ const prefill = hit ? {
                         min="0"
                         step="0.01"
                         value={overloadOverrideForm.secondUnits}
-                        onChange={(e) => setOverloadOverrideForm((prev) => ({ ...prev, secondUnits: e.target.value }))}
+                        onChange={(e) => updateOverloadOverrideAmount('second', 'units', e.target.value)}
                       />
                     </FormControl>
                     <FormControl isRequired>
@@ -8716,7 +8737,7 @@ const prefill = hit ? {
                         min="0"
                         step="0.01"
                         value={overloadOverrideForm.secondHours}
-                        onChange={(e) => setOverloadOverrideForm((prev) => ({ ...prev, secondHours: e.target.value }))}
+                        onChange={(e) => updateOverloadOverrideAmount('second', 'hours', e.target.value)}
                       />
                     </FormControl>
                   </VStack>
