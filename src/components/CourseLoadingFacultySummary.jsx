@@ -24,6 +24,7 @@ import {
 import { FiChevronDown, FiChevronUp, FiDownload, FiPrinter } from 'react-icons/fi';
 import { parseTimeBlockToMinutes } from '../utils/conflicts';
 import { buildTable, printContent } from '../utils/printDesign';
+import { applyFacultyOverloadOverride } from '../utils/facultyOverloadOverride';
 import api from '../services/apiService';
 
 function normalizeName(s) {
@@ -238,7 +239,13 @@ function buildEmploymentOptions(faculties = []) {
   return list.sort((a, b) => a.localeCompare(b));
 }
 
-export default function CourseLoadingFacultySummary({ faculties = [], courses = [], settingsLoad = {}, loading = false }) {
+export default function CourseLoadingFacultySummary({
+  faculties = [],
+  courses = [],
+  settingsLoad = {},
+  loading = false,
+  overloadOverrides = {}
+}) {
   const border = useColorModeValue('gray.200', 'gray.700');
   const panelBg = useColorModeValue('white', 'gray.800');
   const muted = useColorModeValue('gray.600', 'gray.300');
@@ -443,7 +450,7 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
       const nstpFirstUnits = nstpTermUnits['1st'] + nstpTermUnits['Sem'];
       const nstpSecondUnits = nstpTermUnits['2nd'] + nstpTermUnits['Sem'];
 
-      return {
+      return applyFacultyOverloadOverride({
         ...r,
         id: r.id ?? fid ?? fname ?? idx,
         termUnits,
@@ -459,9 +466,9 @@ export default function CourseLoadingFacultySummary({ faculties = [], courses = 
         overloadSecond,
         overloadFirstHours,
         overloadSecondHours
-      };
+      }, overloadOverrides);
     });
-  }, [baseRows, courseStatsByKey]);
+  }, [baseRows, courseStatsByKey, overloadOverrides]);
 
   const deptOptions = React.useMemo(() => buildDeptOptions(decoratedRows.length ? decoratedRows : faculties), [decoratedRows, faculties]);
   const employmentOptions = React.useMemo(() => buildEmploymentOptions(decoratedRows.length ? decoratedRows : faculties), [decoratedRows, faculties]);

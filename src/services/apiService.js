@@ -1091,6 +1091,26 @@ class ApiService {
       body: JSON.stringify({ identifier, password }),
     });
   }
+  async verifyAdminPassword(password) {
+    const url = `${this.baseURL}${this.authPath}/verify-admin-password`;
+    const res = await this._fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+      },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) {
+      let body = "";
+      try { body = await res.text(); } catch {}
+      const error = new Error(`HTTP ${res.status}: ${res.statusText}`);
+      error.status = res.status;
+      error.body = body;
+      throw error;
+    }
+    return await res.json();
+  }
   async refreshToken(refreshToken) {
     return this.requestAbs(`${this.authPath}/refresh`, {
       method: "POST",

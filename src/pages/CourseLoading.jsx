@@ -3,7 +3,7 @@ import React from 'react';
 import {
   Box, HStack, VStack, Stack, Heading, Text, Input, IconButton, Button, Select, Divider,
   useColorModeValue, Spinner, Badge, Tag, Wrap, WrapItem, useToast, Checkbox, Switch,
-  SimpleGrid, Tooltip, Menu, MenuButton, MenuList, MenuItem,
+  SimpleGrid, Tooltip, Menu, MenuButton, MenuList, MenuItem, FormControl, FormLabel,
   AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter,
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter
 } from '@chakra-ui/react';
@@ -37,6 +37,7 @@ import CourseSummaryView from '../components/CourseSummaryView';
 import CourseLoadingSupport from '../components/CourseLoadingSupport';
 import CourseLoadingFacultySummary from '../components/CourseLoadingFacultySummary';
 import FacultyAuditLogModal from '../components/FacultyAuditLogModal';
+import { facultyOverloadOverrideKey, getFacultyOverloadOverride } from '../utils/facultyOverloadOverride';
 
 const COURSE_LOADING_SEMESTER_OPTIONS = [
   { value: '1st', label: '1st Semester' },
@@ -585,6 +586,75 @@ function isNSTPCourse(row) {
     .toUpperCase();
   if (!text) return false;
   return text.includes('NSTP');
+}
+
+function computeFacultyOverloadForItems(faculty, items = []) {
+  const termUnits = { '1st': 0, '2nd': 0, Sem: 0 };
+  const nstpTermUnits = { '1st': 0, '2nd': 0, Sem: 0 };
+  const shortTerm = (value) => {
+    const term = String(value || '').trim().toLowerCase();
+    if (term.startsWith('1')) return '1st';
+    if (term.startsWith('2')) return '2nd';
+    if (term.startsWith('s')) return 'Sem';
+    return '';
+  };
+
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const term = shortTerm(item?.term ?? item?.semester ?? item?.sem);
+    const units = Number(item?.unit ?? item?.units ?? 0);
+    if (!term || !Number.isFinite(units)) return;
+    termUnits[term] += units;
+    if (isNSTPCourse(item)) nstpTermUnits[term] += units;
+  });
+
+  const semUnits = Math.max(0, termUnits.Sem - nstpTermUnits.Sem);
+  const firstLoad = Math.max(0, termUnits['1st'] - nstpTermUnits['1st']) + semUnits;
+  const secondLoad = Math.max(0, termUnits['2nd'] - nstpTermUnits['2nd']) + semUnits;
+  const releaseUnits = Number(faculty?.loadReleaseUnits ?? faculty?.load_release_units ?? 0) || 0;
+  const nonNstpUnits = firstLoad + secondLoad - semUnits;
+  const baselinePerTerm = Math.max(0, 12 - (releaseUnits / 2));
+  const isPartTime = /part\s*-?\s*time/i.test(String(faculty?.employment || ''));
+  const applyFullReleaseBalance = Math.abs(nonNstpUnits - 24) < 0.001 && Math.abs(releaseUnits - 24) < 0.001;
+  let firstUnits = isPartTime ? firstLoad : (applyFullReleaseBalance ? 12 : Math.max(0, firstLoad - baselinePerTerm));
+  let secondUnits = isPartTime ? secondLoad : (applyFullReleaseBalance ? 12 : Math.max(0, secondLoad - baselinePerTerm));
+  const total = firstUnits + secondUnits;
+
+  if (firstUnits > 12 && secondUnits < 12) {
+    const moved = Math.min(firstUnits - 12, 12 - secondUnits);
+    firstUnits -= moved;
+    secondUnits += moved;
+  } else if (secondUnits > 12 && firstUnits < 12) {
+    const moved = Math.min(secondUnits - 12, 12 - firstUnits);
+    secondUnits -= moved;
+    firstUnits += moved;
+  }
+
+  if (firstUnits > 12 || secondUnits > 12) {
+    const candidates = [];
+    for (let candidateFirst = 0; candidateFirst <= total; candidateFirst += 3) {
+      const candidateSecond = total - candidateFirst;
+      candidates.push({
+        first: candidateFirst,
+        second: candidateSecond,
+        bothThreeUnit: Math.abs(candidateSecond % 3) < 0.001,
+        gap: Math.abs(candidateFirst - candidateSecond)
+      });
+    }
+    candidates.sort((a, b) =>
+      Number(b.bothThreeUnit) - Number(a.bothThreeUnit) || a.gap - b.gap || b.first - a.first
+    );
+    if (candidates.length) {
+      firstUnits = candidates[0].first;
+      secondUnits = candidates[0].second;
+    }
+  }
+
+  return {
+    firstUnits,
+    secondUnits,
+    firstHours: firstUnits / 3,
+    secondHours: secondUnits / 3
+  };
 }
 
 // --- UI subcomponents (unchanged structure) ---
@@ -2578,7 +2648,6 @@ export default function CourseLoading() {
         overloadSecondUnits = candidates[0].second;
       }
     }
-    const overloadUnits = overloadFirstUnits + overloadSecondUnits;
     const fmtHours = (u, perUnit = 1 / 3) => {
       const hrs = Number(u) * perUnit;
       if (!Number.isFinite(hrs)) return '0';
@@ -2587,12 +2656,21 @@ export default function CourseLoading() {
     };
     const fmtLoadHours = (u) => fmtHours(u, 1 / 3);
     const fmtNstpHours = (u) => fmtHours(u, 1);
-    const labelFirst = overloadUnits > 0 ? 'Overload 1st Term' : 'Load 1st Term';
-    const labelSecond = overloadUnits > 0 ? 'Overload 2nd Term' : 'Load 2nd Term';
+    const overloadOverride = getFacultyOverloadOverride(facultyOverloadOverrides, f);
+    const overloadFirstHours = overloadOverride ? overloadOverride.firstHours : fmtLoadHours(overloadFirstUnits);
+    const overloadSecondHours = overloadOverride ? overloadOverride.secondHours : fmtLoadHours(overloadSecondUnits);
+    if (overloadOverride) {
+      overloadFirstUnits = Number(overloadOverride.firstUnits);
+      overloadSecondUnits = Number(overloadOverride.secondUnits);
+    }
+    const overloadUnits = overloadFirstUnits + overloadSecondUnits;
+    const hasOverloadDisplay = overloadUnits > 0 || Number(overloadFirstHours) > 0 || Number(overloadSecondHours) > 0;
+    const labelFirst = hasOverloadDisplay ? 'Overload 1st Term' : 'Load 1st Term';
+    const labelSecond = hasOverloadDisplay ? 'Overload 2nd Term' : 'Load 2nd Term';
     const overloadRows = [];
-    if (overloadFirstUnits > 0 || overloadSecondUnits > 0) {
-      overloadRows.push(`<tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(fmtLoadHours(overloadFirstUnits))} hrs)</td>
-          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(fmtLoadHours(overloadSecondUnits))} hrs)</td></tr>`);
+    if (hasOverloadDisplay) {
+      overloadRows.push(`<tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(String(overloadFirstHours))} hrs)</td>
+          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(String(overloadSecondHours))} hrs)</td></tr>`);
     }
     if (nstpUnits > 0) {
       const nstpFirstUnits = nstpTermSums['1st'] + nstpTermSums['Sem'];
@@ -3646,6 +3724,90 @@ const prefill = hit ? {
   }, [facOptions, calcUnitsForFaculty]);
 
   const [facultySchedules, setFacultySchedules] = React.useState({ items: [], loading: false });
+  const [facultyOverloadOverrides, setFacultyOverloadOverrides] = React.useState({});
+  const [overloadOverrideOpen, setOverloadOverrideOpen] = React.useState(false);
+  const [overloadOverrideBusy, setOverloadOverrideBusy] = React.useState(false);
+  const [overloadOverrideForm, setOverloadOverrideForm] = React.useState({
+    firstUnits: '',
+    firstHours: '',
+    secondUnits: '',
+    secondHours: '',
+    password: ''
+  });
+
+  const selectedFacultyOverride = React.useMemo(
+    () => getFacultyOverloadOverride(facultyOverloadOverrides, selectedFaculty),
+    [facultyOverloadOverrides, selectedFaculty]
+  );
+
+  const openFacultyOverloadOverride = React.useCallback(() => {
+    if (!isAdmin || !selectedFaculty) return;
+    const computed = computeFacultyOverloadForItems(selectedFaculty, facultySchedules.items);
+    const current = getFacultyOverloadOverride(facultyOverloadOverrides, selectedFaculty) || computed;
+    setOverloadOverrideForm({
+      firstUnits: String(current.firstUnits),
+      firstHours: String(current.firstHours),
+      secondUnits: String(current.secondUnits),
+      secondHours: String(current.secondHours),
+      password: ''
+    });
+    setOverloadOverrideOpen(true);
+  }, [isAdmin, selectedFaculty, facultySchedules.items, facultyOverloadOverrides]);
+
+  const closeFacultyOverloadOverride = React.useCallback(() => {
+    if (overloadOverrideBusy) return;
+    setOverloadOverrideOpen(false);
+    setOverloadOverrideForm((prev) => ({ ...prev, password: '' }));
+  }, [overloadOverrideBusy]);
+
+  const submitFacultyOverloadOverride = React.useCallback(async () => {
+    if (!selectedFaculty || !isAdmin || overloadOverrideBusy) return;
+    const values = {
+      firstUnits: Number(overloadOverrideForm.firstUnits),
+      firstHours: Number(overloadOverrideForm.firstHours),
+      secondUnits: Number(overloadOverrideForm.secondUnits),
+      secondHours: Number(overloadOverrideForm.secondHours)
+    };
+    if (Object.values(values).some((value) => !Number.isFinite(value) || value < 0)) {
+      toast({ title: 'Enter valid overload values', description: 'Units and hours must be zero or greater.', status: 'warning' });
+      return;
+    }
+    if (!overloadOverrideForm.password) {
+      toast({ title: 'Admin password required', status: 'warning' });
+      return;
+    }
+
+    const key = facultyOverloadOverrideKey(selectedFaculty);
+    if (!key) return;
+    setOverloadOverrideBusy(true);
+    try {
+      await api.verifyAdminPassword(overloadOverrideForm.password);
+      setFacultyOverloadOverrides((prev) => ({ ...prev, [key]: values }));
+      setOverloadOverrideOpen(false);
+      setOverloadOverrideForm((prev) => ({ ...prev, password: '' }));
+      toast({ title: 'Overload updated for this session', description: 'The summary and printout now use these values. Reload to restore the computed values.', status: 'success' });
+    } catch (error) {
+      let message = 'The password could not be verified.';
+      try {
+        const body = JSON.parse(error?.body || '{}');
+        message = body?.message || message;
+      } catch {}
+      toast({ title: 'Override not applied', description: message, status: 'error' });
+    } finally {
+      setOverloadOverrideBusy(false);
+    }
+  }, [selectedFaculty, isAdmin, overloadOverrideBusy, overloadOverrideForm, toast]);
+
+  const clearSelectedFacultyOverloadOverride = React.useCallback(() => {
+    const key = facultyOverloadOverrideKey(selectedFaculty);
+    if (!key) return;
+    setFacultyOverloadOverrides((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, [selectedFaculty]);
   const [facSelected, setFacSelected] = React.useState(new Set());
   const [facEdits, setFacEdits] = React.useState({}); // id -> { term,time,faculty,facultyId,_checking,_conflict,_details }
   const [facSavingIds, setFacSavingIds] = React.useState(new Set());
@@ -7168,6 +7330,7 @@ const prefill = hit ? {
               courses={scopedCourses || []}
               settingsLoad={settingsLoad}
               loading={facultyLoading}
+              overloadOverrides={facultyOverloadOverrides}
             />
           )}
           {viewMode === 'blocks' && !selectedBlock && !!selectedProgram && (
@@ -7694,7 +7857,29 @@ const prefill = hit ? {
                 </HStack>
                 <HStack>
                   <Button leftIcon={<FiPrinter />} size="sm" variant="outline" onClick={onPrintFaculty} isDisabled={loading || (Array.isArray(facultySchedules.items) ? facultySchedules.items.length === 0 : true)}>Print</Button>
-                  <Button leftIcon={<FiRefreshCw />} size="sm" variant="outline" onClick={()=>fetchFacultySchedules(selectedFaculty)} isDisabled={loading}>Reload</Button>
+                  {isAdmin && (
+                    <Button
+                      size="sm"
+                      variant={selectedFacultyOverride ? 'solid' : 'outline'}
+                      colorScheme={selectedFacultyOverride ? 'purple' : 'gray'}
+                      onClick={openFacultyOverloadOverride}
+                      isDisabled={facultySchedules.loading}
+                    >
+                      Override Overload
+                    </Button>
+                  )}
+                  <Button
+                    leftIcon={<FiRefreshCw />}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      clearSelectedFacultyOverloadOverride();
+                      fetchFacultySchedules(selectedFaculty);
+                    }}
+                    isDisabled={loading}
+                  >
+                    Reload
+                  </Button>
                   <Button leftIcon={<FiActivity />} size="sm" variant="outline" onClick={()=>setFacultyAuditOpen(true)} isDisabled={!selectedFaculty || facultySchedules.loading}>
                     Audit Logs
                   </Button>
@@ -8470,6 +8655,107 @@ const prefill = hit ? {
           </ModalBody>
           <ModalFooter>
             <Button variant="ghost" onClick={()=>setTermBalancerOpen(false)} isDisabled={termBalancerBusy}>Close</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={overloadOverrideOpen} onClose={closeFacultyOverloadOverride} isCentered size="lg">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Override Faculty Overload</ModalHeader>
+          <ModalCloseButton isDisabled={overloadOverrideBusy} />
+          <ModalBody>
+            <VStack align="stretch" spacing={4}>
+              <Text fontSize="sm" color={subtle}>
+                Enter the temporary values for {selectedFaculty?.name || selectedFaculty?.faculty || 'this faculty'}.
+                Units and hours are independent. These values affect the faculty summary and printouts only until reload.
+              </Text>
+              <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                <Box borderWidth="1px" borderColor={border} rounded="lg" p={3}>
+                  <Text fontWeight="700" mb={3}>1st Term</Text>
+                  <VStack align="stretch" spacing={3}>
+                    <FormControl isRequired>
+                      <FormLabel>Units</FormLabel>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={overloadOverrideForm.firstUnits}
+                        onChange={(e) => setOverloadOverrideForm((prev) => ({ ...prev, firstUnits: e.target.value }))}
+                      />
+                    </FormControl>
+                    <FormControl isRequired>
+                      <FormLabel>Hours</FormLabel>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={overloadOverrideForm.firstHours}
+                        onChange={(e) => setOverloadOverrideForm((prev) => ({ ...prev, firstHours: e.target.value }))}
+                      />
+                    </FormControl>
+                  </VStack>
+                </Box>
+                <Box borderWidth="1px" borderColor={border} rounded="lg" p={3}>
+                  <Text fontWeight="700" mb={3}>2nd Term</Text>
+                  <VStack align="stretch" spacing={3}>
+                    <FormControl isRequired>
+                      <FormLabel>Units</FormLabel>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={overloadOverrideForm.secondUnits}
+                        onChange={(e) => setOverloadOverrideForm((prev) => ({ ...prev, secondUnits: e.target.value }))}
+                      />
+                    </FormControl>
+                    <FormControl isRequired>
+                      <FormLabel>Hours</FormLabel>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={overloadOverrideForm.secondHours}
+                        onChange={(e) => setOverloadOverrideForm((prev) => ({ ...prev, secondHours: e.target.value }))}
+                      />
+                    </FormControl>
+                  </VStack>
+                </Box>
+              </SimpleGrid>
+              <FormControl isRequired>
+                <FormLabel>Admin password</FormLabel>
+                <Input
+                  type="password"
+                  autoComplete="current-password"
+                  value={overloadOverrideForm.password}
+                  onChange={(e) => setOverloadOverrideForm((prev) => ({ ...prev, password: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitFacultyOverloadOverride();
+                  }}
+                />
+              </FormControl>
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            {selectedFacultyOverride && (
+              <Button
+                mr="auto"
+                variant="ghost"
+                colorScheme="red"
+                onClick={() => {
+                  clearSelectedFacultyOverloadOverride();
+                  setOverloadOverrideOpen(false);
+                  toast({ title: 'Computed overload restored', status: 'info' });
+                }}
+                isDisabled={overloadOverrideBusy}
+              >
+                Restore Computed
+              </Button>
+            )}
+            <Button variant="ghost" onClick={closeFacultyOverloadOverride} isDisabled={overloadOverrideBusy}>Cancel</Button>
+            <Button colorScheme="purple" ml={3} onClick={submitFacultyOverloadOverride} isLoading={overloadOverrideBusy}>
+              Apply Override
+            </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
