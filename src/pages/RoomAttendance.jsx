@@ -289,7 +289,7 @@ export default function RoomAttendance() {
         const response = await apiService.getAllSchedules({
           ...(prefSy ? { schoolyear: prefSy } : {}),
           ...(prefSem ? { semester: prefSem } : {}),
-          limit: 100000
+          limit: 2000
         });
         const list = response?.data || response;
         if (!active) return;
