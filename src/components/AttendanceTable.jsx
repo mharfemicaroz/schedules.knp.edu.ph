@@ -14,7 +14,7 @@ const statusColor = (s, mode) => {
   }
 };
 
-export default function AttendanceTable({ items = [], loading, onEdit, onDelete, sortKey, sortOrder, onSortChange }) {
+export default function AttendanceTable({ items = [], loading, onEdit, onDelete, deletingId, sortKey, sortOrder, onSortChange }) {
   const mode = useColorModeValue('light', 'dark');
   const activeClr = useColorModeValue('blue.600', 'blue.300');
   const idleClr = useColorModeValue('gray.600', 'gray.400');
@@ -57,12 +57,13 @@ export default function AttendanceTable({ items = [], loading, onEdit, onDelete,
             <Td>{r.recordedBy ? (r.recordedBy.username || r.recordedBy.email) : '-'}</Td>
             <Td isNumeric>
               <HStack spacing={1} justify="flex-end">
-                <Tooltip label="Edit"><IconButton size="xs" aria-label="Edit" icon={<FiEdit />} onClick={() => onEdit && onEdit(r)} /></Tooltip>
-                <Tooltip label="Delete"><IconButton size="xs" aria-label="Delete" icon={<FiTrash2 />} colorScheme="red" variant="ghost" onClick={() => onDelete && onDelete(r)} /></Tooltip>
+                <Tooltip label="Edit"><IconButton size="xs" aria-label="Edit" isDisabled={deletingId != null} icon={<FiEdit />} onClick={() => onEdit && onEdit(r)} /></Tooltip>
+                <Tooltip label="Delete"><IconButton size="xs" aria-label="Delete" isLoading={deletingId === r.id} isDisabled={deletingId != null} icon={<FiTrash2 />} colorScheme="red" variant="ghost" onClick={() => onDelete && onDelete(r)} /></Tooltip>
               </HStack>
             </Td>
           </Tr>
         ))}
+        {!loading && !items.length && <Tr><Td colSpan={8}>No records match these filters.</Td></Tr>}
       </Tbody>
     </Table>
   );

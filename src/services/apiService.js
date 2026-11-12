@@ -482,7 +482,7 @@ class ApiService {
     });
     const qs = search.toString();
     const url = `${this.baseURL}${this.attendancePath}/stats${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
@@ -494,14 +494,14 @@ class ApiService {
     });
     const qs = search.toString();
     const url = `${this.baseURL}${this.attendancePath}/stats/by-faculty${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
 
   async getAttendanceById(id) {
     const url = `${this.baseURL}${this.attendancePath}/${encodeURIComponent(id)}`;
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
@@ -513,7 +513,7 @@ class ApiService {
     });
     const qs = search.toString();
     const url = `${this.baseURL}${this.attendancePath}/schedule/${encodeURIComponent(scheduleId)}${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
@@ -528,21 +528,21 @@ class ApiService {
   async bulkCreateAttendance(items) {
     const url = `${this.baseURL}${this.attendancePath}/bulk`;
     const body = Array.isArray(items) ? items : { items };
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
 
   async updateAttendance(id, payload) {
     const url = `${this.baseURL}${this.attendancePath}/${encodeURIComponent(id)}`;
-    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload) });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }
 
   async deleteAttendance(id) {
     const url = `${this.baseURL}${this.attendancePath}/${encodeURIComponent(id)}`;
-    const res = await fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) } });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     return await res.json();
   }

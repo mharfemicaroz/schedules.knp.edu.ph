@@ -1,10 +1,13 @@
-﻿import React from 'react';
+import React from 'react';
 import {
   Box, Heading, Text, HStack, VStack, Button, useColorModeValue, Input, Select, Tag, TagLabel, TagCloseButton,
-  SimpleGrid, IconButton, useDisclosure, useToast, Divider, Menu, MenuButton, MenuItem, MenuList, Wrap, WrapItem
+  SimpleGrid, IconButton, useDisclosure, useToast, Menu, MenuButton, MenuItem, MenuList, Wrap, WrapItem
 } from '@chakra-ui/react';
-import { FiRefreshCw, FiPlus, FiFilter, FiPrinter, FiExternalLink, FiChevronDown } from 'react-icons/fi';
+import { FiRefreshCw, FiPlus, FiFilter, FiPrinter, FiChevronDown } from 'react-icons/fi';
 import useAttendance from '../hooks/useAttendance';
+import AttendanceSummary from '../components/AttendanceSummary';
+import { summarizeAttendance } from '../utils/attendanceSummary';
+import { attendanceReportUrl } from '../utils/attendanceReport';
 import apiService from '../services/apiService';
 import AttendanceTable from '../components/AttendanceTable';
 import AttendanceFormModal from '../components/AttendanceFormModal';
@@ -12,7 +15,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import FacultySelect from '../components/FacultySelect';
 import { useSelector } from 'react-redux';
 import { selectAllCourses } from '../store/dataSlice';
-import { buildTable, printContent } from '../utils/printDesign';
+
 import useFaculties from '../hooks/useFaculties';
 import { selectSettings } from '../store/settingsSlice';
 
@@ -26,7 +29,8 @@ const STATUS_OPTIONS = [
 const SUMMARY_STATUS_OPTIONS = [
   { value: 'present', label: 'Present' },
   { value: 'absent', label: 'Absent' },
-  { value: 'excused', label: 'Excuse' },
+  { value: 'late', label: 'Late' },
+  { value: 'excused', label: 'Excused' },
 ];
 
 export default function Attendance() {
@@ -59,12 +63,16 @@ export default function Attendance() {
   });
   const schedules = useSelector(selectAllCourses);
   const { data, loading, error, refresh } = useAttendance({ page, limit, ...filters, schedules });
-  const [stats, setStats] = React.useState({ total: 0, byStatus: {} });
+
   const [editing, setEditing] = React.useState(null);
+  const [deletingId, setDeletingId] = React.useState(null);
+  const deleteBusy = React.useRef(false);
   const modal = useDisclosure();
   const toast = useToast();
   const [sortKey, setSortKey] = React.useState('date'); // 'date' | 'status' | 'course' | 'instructor' | 'schedule'
   const [sortOrder, setSortOrder] = React.useState('desc'); // 'asc' | 'desc'
+
+  React.useEffect(() => { setPage(1); }, [filters]);
 
   React.useEffect(() => {
     setFilters((prev) => ({
@@ -84,20 +92,15 @@ export default function Attendance() {
     return map;
   }, [facultyOptions]);
 
-  const loadStats = React.useCallback(async () => {
-    try {
-      const f = { ...filters };
-      // Use facultyId only for stats filtering to avoid name-based inconsistencies
-      if ('faculty' in f) delete f.faculty;
-      if (f.facultyId != null && f.facultyId !== '') f.faculty_id = f.facultyId;
-      const s = await apiService.getAttendanceStats(f);
-      setStats(s || { total: 0, byStatus: {} });
-    } catch {}
-  }, [filters]);
-
-  React.useEffect(() => { loadStats(); }, [loadStats]);
-
-  const onApply = () => { setPage(1); refresh(true); loadStats(); };
+  const stats = React.useMemo(() => summarizeAttendance(data, facultyById), [data, facultyById]);
+  const onApply = () => {
+    if (filters.startDate && filters.endDate && filters.startDate > filters.endDate) {
+      toast({ title: 'Start date must be on or before end date', status: 'warning' });
+      return;
+    }
+    setPage(1);
+    refresh(true);
+  };
   const clearStatus = () => setFilters((f) => ({ ...f, status: '' }));
   const resetFilters = React.useCallback(() => {
     setFilters({
@@ -114,142 +117,35 @@ export default function Attendance() {
   }, [defaultSy, defaultSem]);
 
   const onDelete = async (row) => {
+    if (deleteBusy.current) return;
+    if (!window.confirm('Delete this attendance record?')) return;
+    deleteBusy.current = true;
+    setDeletingId(row.id);
     try {
       await apiService.deleteAttendance(row.id);
       toast({ title: 'Deleted', status: 'success' });
       await refresh(true);
-      await loadStats();
+
     } catch (e) {
       toast({ title: 'Failed to delete', description: e.message, status: 'error' });
+    } finally {
+      deleteBusy.current = false;
+      setDeletingId(null);
     }
   };
 
-  const onSaved = async () => { await refresh(true); await loadStats(); };
+  const onSaved = async () => { await refresh(true); };
 
-  const onPrint = React.useCallback(() => {
-    const titleParts = ['Attendance Report'];
-    if (filters.faculty) titleParts.push(`Faculty: ${filters.faculty}`);
-    const title = titleParts.join(' • ');
-    const subParts = [];
-    if (filters.startDate || filters.endDate) {
-      subParts.push(`Dates: ${filters.startDate || '…'} to ${filters.endDate || '…'}`);
+  const openReport = React.useCallback((type = 'all') => {
+    if (loading || error) return;
+    if (filters.startDate && filters.endDate && filters.startDate > filters.endDate) {
+      toast({ title: 'Start date must be on or before end date', status: 'warning' });
+      return;
     }
-    if (filters.school_year) subParts.push(`SY: ${filters.school_year}`);
-    if (filters.semester) subParts.push(`Sem: ${filters.semester}`);
-    if (filters.status) subParts.push(`Status: ${filters.status}`);
-    if (filters.term) subParts.push(`Term: ${filters.term}`);
-    const subtitle = subParts.join('  |  ');
-
-    const headers = ['Date', 'Status', 'Course', 'Schedule', 'Remarks'];
-    const rows = (Array.isArray(data) ? data : []).map((r) => {
-      const sch = r.schedule || {};
-      const course = [sch.programcode, sch.courseName].filter(Boolean).join(' Â· ');
-      const schedule = [sch.day, sch.time].filter(Boolean).join(' ');
-      const remarks = String(r.remarks || '').slice(0, 80);
-      return [r.date || '', (r.status || '').toUpperCase(), course || '-', schedule || '-', remarks];
-    });
-    const q = new URLSearchParams();
-    if (filters.startDate) q.set('startDate', filters.startDate);
-    if (filters.endDate) q.set('endDate', filters.endDate);
-    if (filters.term) q.set('term', filters.term);
-    if (filters.school_year) q.set('school_year', filters.school_year);
-    if (filters.semester) q.set('semester', filters.semester);
-    if (filters.facultyId) q.set('facultyId', filters.facultyId);
-    if (filters.faculty) q.set('faculty', filters.faculty);
-    q.set('type', 'all');
-    const href = `${window.location.origin}/admin/attendance/print?${q.toString()}`;
-    window.open(href, '_blank');
-  }, [filters]);
-
-  const buildSummaryGroups = React.useCallback((targetStatus) => {
-    const list = Array.isArray(data) ? data : [];
-    const by = new Map();
-    const normTarget = String(targetStatus || '').toLowerCase();
-    list.forEach((r) => {
-      if (normTarget && String(r?.status || '').toLowerCase() !== normTarget) return;
-      const sid = r?.schedule;
-      const facId = sid?.facultyId ?? sid?.faculty_id;
-      const name = facId != null ? (facultyById.get(String(facId)) || '') : '';
-      const key = name || '(Unknown Faculty)';
-      const arr = by.get(key) || [];
-      const subj = [sid?.programcode, sid?.courseName, sid?.courseTitle].filter(Boolean).join(' - ');
-      const tm = [sid?.day, sid?.time].filter(Boolean).join(' ');
-      const term = sid?.term || '';
-      arr.push({ date: r.date || '', subject: subj || '-', time: tm || '-', term: term || '' });
-      by.set(key, arr);
-    });
-    // Sort rows within each faculty by date/time
-    by.forEach((arr, k) => {
-      arr.sort((a,b) => {
-        const da = new Date(a.date || '1970-01-01').getTime();
-        const db = new Date(b.date || '1970-01-01').getTime();
-        if (da !== db) return da - db;
-        return String(a.time).localeCompare(String(b.time));
-      });
-    });
-    return by;
-  }, [data, facultyById]);
-
-  // Build Absent-only grouped summary by faculty (based on current filters)
-  const absentGroups = React.useMemo(() => buildSummaryGroups('absent'), [buildSummaryGroups]);
-
-  const onPrintSummary = React.useCallback((status) => {
-    // Build a single printable page with sections per faculty
-    const label = (SUMMARY_STATUS_OPTIONS.find(o => o.value === status)?.label) || 'Summary';
-    const titleBits = [`${label} Summary (Per Faculty)`];
-    const sub = [];
-    if (filters.startDate || filters.endDate) sub.push(`Dates: ${filters.startDate || '-'} to ${filters.endDate || '-'}`);
-    if (filters.school_year) sub.push(`SY: ${filters.school_year}`);
-    if (filters.semester) sub.push(`Sem: ${filters.semester}`);
-    if (filters.term) sub.push(`Term: ${filters.term}`);
-    const title = titleBits.join('');
-    const subtitle = sub.join('  |  ');
-    let bodyHtml = '';
-    const groups = buildSummaryGroups(status);
-    const facNames = Array.from(groups.keys()).sort((a,b)=>a.localeCompare(b));
-    if (facNames.length === 0) {
-      bodyHtml = '<p>No records match current filters.</p>';
-    } else {
-      facNames.forEach((name) => {
-        const rows = groups.get(name) || [];
-        const table = buildTable(['Date', 'Subject', 'Time', 'Term'], rows.map(r => [r.date, r.subject, r.time, r.term]));
-        const section = `
-          <div style="margin-bottom: 12px;">
-            <h3 class="prt-fac-name">${name}</h3>
-            ${table}
-          </div>
-        `;
-        bodyHtml += section;
-      });
-    }
-    const q = new URLSearchParams();
-    if (filters.startDate) q.set('startDate', filters.startDate);
-    if (filters.endDate) q.set('endDate', filters.endDate);
-    if (filters.term) q.set('term', filters.term);
-    if (filters.school_year) q.set('school_year', filters.school_year);
-    if (filters.semester) q.set('semester', filters.semester);
-    if (filters.facultyId) q.set('facultyId', filters.facultyId);
-    if (filters.faculty) q.set('faculty', filters.faculty);
-    q.set('type', status || 'all');
-    const href = `${window.location.origin}/admin/attendance/print?${q.toString()}`;
-    window.open(href, '_blank');
-  }, [buildSummaryGroups, filters]);
-
-  const onOpenAbsentTabsPerFaculty = React.useCallback(() => {
-    const facNames = Array.from(absentGroups.keys());
-    if (facNames.length === 0) return;
-    facNames.forEach((name) => {
-      const rows = absentGroups.get(name) || [];
-      const bodyHtml = buildTable(['Date', 'Subject', 'Time', 'Term'], rows.map(r => [r.date, r.subject, r.time, r.term]));
-      const subtitle = [
-        filters.startDate || filters.endDate ? `Dates: ${filters.startDate || '-'} to ${filters.endDate || '-'}` : '',
-        filters.school_year ? `SY: ${filters.school_year}` : '',
-        filters.semester ? `Sem: ${filters.semester}` : '',
-        filters.term ? `Term: ${filters.term}` : '',
-      ].filter(Boolean).join('  |  ');
-      printContent({ title: `Faculty: ${name}`, subtitle, bodyHtml }, { pageSize: 'A4', orientation: 'portrait', compact: true, margin: '10mm' });
-    });
-  }, [absentGroups, filters]);
+    window.open(attendanceReportUrl(filters, type), '_blank', 'noopener,noreferrer');
+  }, [filters, loading, error, toast]);
+  const onPrint = () => openReport('all');
+  const onPrintSummary = openReport;
 
   const syOptions = React.useMemo(() => {
     const set = new Set();
@@ -271,7 +167,7 @@ export default function Attendance() {
       ? data.map((r) => {
           const facId = r?.schedule?.facultyId ?? r?.schedule?.faculty_id;
           const fname = facId != null ? (facultyById.get(String(facId)) || '') : '';
-          return { ...r, facultyName: fname };
+          return { ...r, facultyName: fname || r?.schedule?.instructor || '' };
         })
       : [];
     const dir = sortOrder === 'asc' ? 1 : -1;
@@ -370,8 +266,8 @@ export default function Attendance() {
               </WrapItem>
               <WrapItem>
                 <Menu>
-                  <MenuButton as={Button} leftIcon={<FiPrinter />} rightIcon={<FiChevronDown />} colorScheme="blue" variant="outline" w="full">
-                    Summary
+                  <MenuButton as={Button} leftIcon={<FiPrinter />} rightIcon={<FiChevronDown />} colorScheme="blue" variant="outline" w="full" isDisabled={loading || !!error}>
+                    Print by Status
                   </MenuButton>
                   <MenuList>
                     {SUMMARY_STATUS_OPTIONS.map(opt => (
@@ -381,10 +277,10 @@ export default function Attendance() {
                 </Menu>
               </WrapItem>
               <WrapItem>
-                <Button leftIcon={<FiPrinter />} variant="outline" onClick={onPrint} w="full">Print All</Button>
+                <Button leftIcon={<FiPrinter />} variant="outline" onClick={onPrint} isDisabled={loading || !!error || !data.length} w="full">Print Filtered Records</Button>
               </WrapItem>
               <WrapItem>
-                <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={refresh} />
+                <IconButton aria-label="Refresh" icon={<FiRefreshCw />} onClick={() => refresh(true)} isLoading={loading} />
               </WrapItem>
             </Wrap>
             <Wrap spacing={2} justify={{ base: 'flex-start', md: 'flex-end' }}>
@@ -392,7 +288,7 @@ export default function Attendance() {
                 <Button as={RouterLink} to="/admin/room-attendance" target="_blank" colorScheme="purple" variant="outline" w="full">Room Attendance</Button>
               </WrapItem>
               <WrapItem>
-                <Button leftIcon={<FiExternalLink />} variant="ghost" onClick={onOpenAbsentTabsPerFaculty} title="Open absent summary in tabs per faculty">Open Absent Tabs</Button>
+                <Button leftIcon={<FiPrinter />} variant="ghost" onClick={() => openReport('absent')} isDisabled={loading || !!error}>Absent Report</Button>
               </WrapItem>
             </Wrap>
           </VStack>
@@ -400,6 +296,7 @@ export default function Attendance() {
       </Box>
 
       <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="lg" p={4} mb={4}>
+        <Text fontSize="sm" mb={3}>Filters update automatically. Print by Status uses the chosen report status with the other filters.</Text>
         <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={3}>
           <Box>
             <Text fontSize="xs" color="gray.500" mb={1}>Start Date</Text>
@@ -453,7 +350,7 @@ export default function Attendance() {
           </Box>
         </SimpleGrid>
         <HStack spacing={3} mt={3} justify="flex-end" flexWrap="wrap">
-          <Button leftIcon={<FiFilter />} onClick={onApply} colorScheme="blue">Apply</Button>
+          <Button leftIcon={<FiFilter />} onClick={onApply} isLoading={loading} colorScheme="blue">Refresh Results</Button>
           <Button variant="ghost" onClick={resetFilters}>Reset</Button>
         </HStack>
         {(filters.status || filters.term || filters.school_year || filters.semester) && (
@@ -486,6 +383,8 @@ export default function Attendance() {
         )}
       </Box>
 
+      {error && <Text role="alert" color="red.500" mb={4}>Unable to load attendance: {error.message}. Use Refresh to retry.</Text>}
+      {!error && <AttendanceSummary summary={stats} loading={loading} />}
       <Box bg={cardBg} borderWidth="1px" borderColor={border} rounded="lg" p={0}>
         <HStack spacing={3} px={4} py={3} borderBottomWidth="1px" borderColor={border} justify="space-between" flexWrap="wrap">
           <Text fontWeight="600">Attendance Records</Text>
@@ -504,6 +403,7 @@ export default function Attendance() {
           onSortChange={handleSortChange}
           onEdit={(row) => { setEditing(row); modal.onOpen(); }}
           onDelete={onDelete}
+          deletingId={deletingId}
         />
         <HStack justify="space-between" px={4} py={3} flexWrap="wrap" spacing={3}>
           <Text fontSize="sm" color={useColorModeValue('gray.600','gray.400')}>

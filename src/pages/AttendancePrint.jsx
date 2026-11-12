@@ -29,14 +29,15 @@ export default function AttendancePrint() {
     return map;
   }, [facultyOptions]);
 
-  const isSummary = ['present', 'absent', 'excused'].includes(type);
+  const isSummary = ['present', 'absent', 'late', 'excused'].includes(type);
   const summaryLabel = isSummary
-    ? (type === 'excused' ? 'Excuse' : `${type.slice(0,1).toUpperCase()}${type.slice(1)}`)
+    ? `${type.slice(0,1).toUpperCase()}${type.slice(1)}`
     : '';
   const statusFilter = isSummary ? type : status;
 
-  const { data, loading, refresh } = useAttendance({ page: 1, limit: '', startDate, endDate, term, school_year: schoolYear, semester, facultyId, faculty, status: statusFilter, schedules });
+  const { data, loading, error, refresh } = useAttendance({ page: 1, limit: '', startDate, endDate, term, school_year: schoolYear, semester, facultyId, faculty, status: statusFilter, schedules });
   const [excusingIds, setExcusingIds] = React.useState(() => new Set());
+  const mutationBusy = React.useRef(false);
   const allowExcuse = normalizeStatus(type) === 'absent' || normalizeStatus(statusFilter) === 'absent';
 
   const recordById = React.useMemo(() => {
@@ -50,12 +51,13 @@ export default function AttendancePrint() {
 
   const handleExcuse = React.useCallback(async (id) => {
     const key = String(id || '').trim();
-    if (!key || excusingIds.has(key)) return;
+    if (!key || mutationBusy.current || excusingIds.has(key)) return;
     const record = recordById.get(key);
     if (!record) {
       toast({ title: 'Record not found', status: 'warning' });
       return;
     }
+    mutationBusy.current = true;
     setExcusingIds((prev) => {
       const next = new Set(prev);
       next.add(key);
@@ -72,6 +74,7 @@ export default function AttendancePrint() {
     } catch (e) {
       toast({ title: 'Failed to update', description: e.message, status: 'error' });
     } finally {
+      mutationBusy.current = false;
       setExcusingIds((prev) => {
         const next = new Set(prev);
         next.delete(key);
@@ -81,34 +84,38 @@ export default function AttendancePrint() {
   }, [excusingIds, recordById, refresh, toast]);
 
   const handleExcuseMany = React.useCallback(async (ids) => {
+    if (mutationBusy.current) return;
     const list = Array.isArray(ids) ? ids : [];
     const cleaned = list.map((id) => String(id || '').trim()).filter(Boolean);
     const pending = cleaned.filter((id) => !excusingIds.has(id));
     if (!pending.length) return;
+    mutationBusy.current = true;
     setExcusingIds((prev) => new Set([...prev, ...pending]));
     try {
-      const updates = pending
-        .map((id) => recordById.get(id))
-        .filter(Boolean)
-        .map((record) => apiService.updateAttendance(record.id, {
-          status: 'excused',
-          date: record.date,
-          remarks: record.remarks == null ? '' : String(record.remarks),
-        }));
-      if (!updates.length) {
-        toast({ title: 'No records found', status: 'warning' });
-        return;
+      const records = pending.map(id => recordById.get(id)).filter(Boolean);
+      let succeeded = 0;
+      let failed = 0;
+      // Bound parallel requests and report partial success accurately.
+      for (let offset = 0; offset < records.length; offset += 4) {
+        const results = await Promise.allSettled(records.slice(offset, offset + 4).map(record =>
+          apiService.updateAttendance(record.id, {
+            status: 'excused', date: record.date,
+            remarks: record.remarks == null ? '' : String(record.remarks),
+          })
+        ));
+        succeeded += results.filter(result => result.status === 'fulfilled').length;
+        failed += results.filter(result => result.status === 'rejected').length;
       }
-      await Promise.all(updates);
       toast({
-        title: 'Marked as excused',
-        description: `Excused ${updates.length} record${updates.length === 1 ? '' : 's'}.`,
-        status: 'success',
+        title: failed ? 'Some records could not be updated' : 'Marked as excused',
+        description: succeeded + ' updated; ' + failed + ' failed.',
+        status: failed ? 'warning' : 'success',
       });
       await refresh(true);
     } catch (e) {
       toast({ title: 'Failed to update', description: e.message, status: 'error' });
     } finally {
+      mutationBusy.current = false;
       setExcusingIds((prev) => {
         const next = new Set(prev);
         pending.forEach((id) => next.delete(id));
@@ -147,11 +154,14 @@ export default function AttendancePrint() {
   if (semester) subBits.push(`Sem: ${semester}`);
   if (term) subBits.push(`Term: ${term}`);
   if (faculty) subBits.push(`Faculty: ${faculty}`);
+  if (statusFilter) subBits.push(`Status: ${statusFilter}`);
   const subtitle = subBits.join('  |  ');
 
   const bodyHtml = React.useMemo(() => {
     if (loading) return '<p>Loading...</p>';
-    const arr = Array.isArray(data) ? data : [];
+    if (error) return `<p role="alert">Unable to load report: ${escapeHtml(error.message)}. Use Refresh to retry.</p>`;
+    const arr = (Array.isArray(data) ? [...data] : []).sort((a, b) => String(a.date).localeCompare(String(b.date)) || Number(a.id) - Number(b.id));
+    if (!arr.length) return '<p>No records match these filters.</p>';
     const renderExcuseButton = (row) => {
       if (!allowExcuse) return '';
       const key = row && row.id != null ? String(row.id) : '';
@@ -217,7 +227,8 @@ export default function AttendancePrint() {
         const rows = by.get(name) || [];
         const tbl = buildTableHtml(['Date','Subject','Time','Term'], rows, allowExcuse && type === 'absent');
         const action = renderExcuseAllButton(rows);
-        const head = `<div class="prt-fac-head"><h3 class="prt-fac-name">${escapeHtml(name)}</h3>${action ? `<div class="prt-fac-actions no-print">${action}</div>` : ''}</div>`;
+        const uniqueDates = new Set(rows.map(row => row.cells[0]).filter(Boolean)).size;
+        const head = `<div class="prt-fac-head"><h3 class="prt-fac-name">${escapeHtml(name)} — ${rows.length} sessions / ${uniqueDates} dates</h3>${action ? `<div class="prt-fac-actions no-print">${action}</div>` : ''}</div>`;
         html += `<div class="prt-fac-section">${head}${tbl}</div>`;
       });
       return html;
@@ -226,11 +237,13 @@ export default function AttendancePrint() {
         const sch = r.schedule || {};
         const course = [sch.programcode, sch.courseName].filter(Boolean).join(' - ');
         const sched = [sch.day, sch.time].filter(Boolean).join(' ');
-        return { id: r.id, status: r.status, cells: [r.date || '', String(r.status || '').toUpperCase(), course || '-', sched || '-', String(r.remarks || '').slice(0,80)] };
+        const fid = sch.facultyId ?? sch.faculty_id;
+        const name = facultyById.get(String(fid)) || sch.instructor || '-';
+        return { id: r.id, status: r.status, cells: [r.date || '', name, String(r.status || '').toUpperCase(), course || '-', sched || '-', String(r.remarks || '')] };
       });
-      return buildTableHtml(['Date','Status','Course','Schedule','Remarks'], rows, allowExcuse);
+      return buildTableHtml(['Date','Faculty','Status','Course','Schedule','Remarks'], rows, allowExcuse);
     }
-  }, [isSummary, type, data, loading, summaryLabel, facultyById, allowExcuse, excusingIds]);
+  }, [isSummary, type, data, loading, error, summaryLabel, facultyById, allowExcuse, excusingIds]);
 
   const styles = `
     @page { size: A4 portrait; margin: 12mm; }
@@ -280,7 +293,8 @@ export default function AttendancePrint() {
     <Box>
       <style>{styles}</style>
       <HStack className="toolbar" justify="flex-end">
-        <Button colorScheme="blue" onClick={() => window.print()}>Print</Button>
+        <Button variant="outline" isLoading={loading} isDisabled={excusingIds.size > 0} onClick={() => refresh(true)}>Refresh</Button>
+        <Button colorScheme="blue" isDisabled={loading || !!error || !data.length || excusingIds.size > 0} onClick={() => window.print()}>Print / Save PDF</Button>
       </HStack>
       <Box className="inst-hero">
         <Box className="inst-wrap">

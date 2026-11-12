@@ -18,11 +18,9 @@ export default function useAttendance(params = {}) {
   const [error, setError] = React.useState(null);
 
   const fetchList = React.useCallback(async (p) => {
-    // Extract UI paging; we'll page client-side when doing faculty filter
-    const originalPage = Number(p?.page) || 1;
-    const originalLimit = (p?.limit === '' || p?.limit === 'all') ? Infinity : (Number(p?.limit) || 100);
-    const hasFacultyFilter = Boolean(p && (p.facultyId || p.faculty || p.faculty_id || p.facultyName || p.instructor));
-
+    if (p?.startDate && p?.endDate && p.startDate > p.endDate) {
+      throw new Error('Start date must be on or before end date.');
+    }
     // Do not forward local-only params to the API
     const p2 = { ...(p || {}) };
     if ('schedules' in p2) delete p2.schedules;
@@ -47,6 +45,9 @@ export default function useAttendance(params = {}) {
       list = await apiService.listAttendance(p2);
     }
     const arr = Array.isArray(list) ? list : (list?.data || []);
+    if (arr.length >= p2.limit) {
+      throw new Error('This range reached the attendance record limit. Select a narrower date range or faculty to get a complete summary.');
+    }
     // Build schedule lookup from provided schedules (optional)
     const schedArr = Array.isArray(p?.schedules) ? p.schedules : [];
     const schedMap = new Map();
@@ -137,46 +138,52 @@ export default function useAttendance(params = {}) {
     return enriched;
   }, []);
 
+  const requestId = React.useRef(0);
+  const paramsRef = React.useRef(params);
+  paramsRef.current = params;
+  const queryKey = keyFor(params);
+
   const refresh = React.useCallback(async (force = false) => {
-    const key = keyFor(params);
-    const now = Date.now();
-    const c = cache.get(key);
-    if (!force && c && (now - c.at) < TTL_MS) {
-      setData(c.data);
-      setLoading(false);
-      return c.data;
-    }
-    try {
-      if (!c) setLoading(true);
+    const current = paramsRef.current;
+    const key = keyFor(current);
+    const id = ++requestId.current;
+    if (force) cache.clear();
+    const cached = cache.get(key);
+    if (!force && cached && Date.now() - cached.at < TTL_MS) {
+      setData(cached.data);
       setError(null);
-      const arr = await fetchList(params);
-      cache.set(key, { data: arr, at: Date.now() });
-      setData(arr);
-      return arr;
-    } catch (e) {
-      setError(e);
-      throw e;
-    } finally {
       setLoading(false);
+      return cached.data;
     }
-  }, [params, fetchList]);
+    setLoading(true);
+    setError(null);
+    // Clear previous-filter results so summaries never describe another range.
+    setData([]);
+    try {
+      const rows = await fetchList(current);
+      if (cache.size >= 12) cache.delete(cache.keys().next().value);
+      cache.set(key, { data: rows, at: Date.now() });
+      if (id === requestId.current) setData(rows);
+      return rows;
+    } catch (e) {
+      if (id === requestId.current) setError(e);
+      return [];
+    } finally {
+      if (id === requestId.current) setLoading(false);
+    }
+  }, [fetchList]);
 
   React.useEffect(() => {
-    const key = keyFor(params);
-    const c = cache.get(key);
-    if (c) {
-      setData(c.data);
-      setLoading(false);
-      // SWR: refresh in background
-      fetchList(params).then((arr) => {
-        cache.set(key, { data: arr, at: Date.now() });
-        setData(arr);
-      }).catch(() => {});
-    } else {
-      refresh(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(params)]);
+    refresh();
+    return () => { requestId.current += 1; };
+  }, [queryKey, params.schedules, refresh]);
+
+  React.useEffect(() => {
+    // Report tabs can edit attendance; reload when returning to this page.
+    const onFocus = () => refresh(true);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refresh]);
 
   return { data, loading, error, refresh };
 }

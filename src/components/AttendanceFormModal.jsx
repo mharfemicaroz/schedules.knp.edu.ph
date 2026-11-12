@@ -14,6 +14,8 @@ const STATUS_OPTIONS = [
   { value: 'excused', label: 'Excused' },
 ];
 
+const toLocalDate = (date = new Date()) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
 export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved, onDeleted, lockSchedule = false, allowDelete = false }) {
   const toast = useToast();
   const [saving, setSaving] = React.useState(false);
@@ -21,7 +23,7 @@ export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved,
   const [form, setForm] = React.useState(() => ({
     scheduleId: initial?.scheduleId || initial?.schedule_id || '',
     status: initial?.status || 'present',
-    date: initial?.date || new Date().toISOString().slice(0,10),
+    date: initial?.date || toLocalDate(),
     remarks: initial?.remarks || '',
   }));
   const raw = useSelector(s => Array.isArray(s.data.raw) ? s.data.raw : []);
@@ -36,16 +38,21 @@ export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved,
     setForm({
       scheduleId: initial?.scheduleId || initial?.schedule_id || '',
       status: initial?.status || 'present',
-      date: initial?.date || new Date().toISOString().slice(0,10),
+      date: initial?.date || toLocalDate(),
       remarks: initial?.remarks || '',
     });
-  }, [initial]);
+  }, [initial, isOpen]);
 
   const onChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
   const handleSubmit = async () => {
+    if (saving || deleting) return;
     if (!form.scheduleId) {
       toast({ title: 'Schedule ID required', status: 'warning' });
+      return;
+    }
+    if (!form.date) {
+      toast({ title: 'Date required', status: 'warning' });
       return;
     }
     setSaving(true);
@@ -66,7 +73,7 @@ export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved,
           date: form.date,
           remarks: form.remarks,
         });
-        onSaved && onSaved(res?.data || res);
+        if (onSaved) await onSaved(res?.data || res);
       } else {
         const res = await apiService.createAttendance({
           scheduleId: Number(form.scheduleId),
@@ -74,7 +81,7 @@ export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved,
           date: form.date,
           remarks: form.remarks || undefined,
         });
-        onSaved && onSaved(res?.data || res);
+        if (onSaved) await onSaved(res?.data || res);
       }
       onClose && onClose();
     } catch (e) {
@@ -104,7 +111,7 @@ export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved,
   const setDate = (d) => setForm(f => ({ ...f, date: d }));
   const today = new Date();
   const yest = new Date(today.getTime() - 24*60*60*1000);
-  const toISO = (dt) => dt.toISOString().slice(0,10);
+  const toISO = toLocalDate;
 
   const remarksLeft = 255 - String(form.remarks || '').length;
 
@@ -123,8 +130,8 @@ export default function AttendanceFormModal({ isOpen, onClose, initial, onSaved,
                   value={form.scheduleId}
                   onChangeId={(id) => setForm((f) => ({ ...f, scheduleId: id }))}
                   placeholder="Search course, block, instructor..."
-                  allowClear={!lockSchedule}
-                  disabled={lockSchedule}
+                  allowClear={!lockSchedule && !initial?.id}
+                  disabled={lockSchedule || !!initial?.id}
                 />
                 {form.scheduleId ? (
                   <Text mt={1} fontSize="xs" color="gray.500">Selected ID: {form.scheduleId}</Text>
