@@ -31,6 +31,7 @@ import {
   Tr,
   useColorModeValue,
   useDisclosure,
+  useToast,
   VStack,
   Wrap,
   WrapItem,
@@ -38,6 +39,7 @@ import {
 } from '@chakra-ui/react';
 import { FiActivity, FiClock, FiFilter, FiHash, FiRefreshCw, FiUser } from 'react-icons/fi';
 import apiService from '../services/apiService';
+import { buildScheduleHistoryReport } from '../utils/scheduleHistoryReport';
 
 const actionTone = (action) => {
   const key = String(action || '').toLowerCase();
@@ -84,6 +86,9 @@ export default function AdminScheduleHistory() {
   const panelBg = useColorModeValue('white', 'gray.800');
   const muted = useColorModeValue('gray.600', 'gray.300');
   const softBg = useColorModeValue('gray.50', 'whiteAlpha.50');
+  const trendColor = useColorModeValue('blue.400', 'blue.300');
+  const toast = useToast();
+  const [exporting, setExporting] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
   const [payload, setPayload] = React.useState({
@@ -163,6 +168,40 @@ export default function AdminScheduleHistory() {
   const summary = payload.summary || {};
   const maxDaily = Math.max(1, ...(summary.dailyCounts || []).map((d) => Number(d.count || 0)));
 
+  const printReport = async () => {
+    const reportWindow = window.open('', '_blank');
+    if (!reportWindow) {
+      toast({ status: 'error', title: 'Allow pop-ups to open the report' });
+      return;
+    }
+    reportWindow.document.body.textContent = 'Preparing all matching history records…';
+    setExporting(true);
+    const filters = { q: query.trim(), action, dateFrom, dateTo };
+    try {
+      if (dateFrom && dateTo && dateFrom > dateTo) throw new Error('The start date must be before the end date.');
+      const records = [];
+      let reportPage = 1;
+      let total = 0;
+      do {
+        const result = await apiService.getScheduleHistoryFeed({ ...filters, page: reportPage, limit: 100, sortOrder: 'DESC' });
+        const batch = result?.items || [];
+        total = Number(result?.count || 0);
+        if (!batch.length && records.length < total) throw new Error('History changed during export. Please try again.');
+        records.push(...batch);
+        reportPage += 1;
+      } while (records.length < total);
+      if (new Set(records.map(record => record.id)).size !== records.length) throw new Error('History changed during export. Please try again.');
+      if (reportWindow.closed) return;
+      reportWindow.document.open();
+      reportWindow.document.write(buildScheduleHistoryReport(records, filters));
+      reportWindow.document.close();
+      reportWindow.focus();
+    } catch (e) {
+      reportWindow.close();
+      toast({ status: 'error', title: 'Could not prepare report', description: e.message });
+    } finally { setExporting(false); }
+  };
+
   return (
     <VStack align="stretch" spacing={5}>
       <Box borderWidth="1px" borderColor={border} rounded="xl" p={5} bg={panelBg} boxShadow="sm">
@@ -176,9 +215,11 @@ export default function AdminScheduleHistory() {
               Audit feed for schedule creations, updates, swaps, and deletions. Server-paginated for large history tables.
             </Text>
           </VStack>
-          <Button size="sm" leftIcon={<FiRefreshCw />} onClick={loadFeed} isLoading={loading}>
+          <HStack><Button size="sm" colorScheme="blue" onClick={printReport} isLoading={exporting} loadingText="Preparing report">
+            Print / Save PDF
+          </Button><Button size="sm" leftIcon={<FiRefreshCw />} onClick={loadFeed} isLoading={loading}>
             Refresh
-          </Button>
+          </Button></HStack>
         </HStack>
       </Box>
 
@@ -270,7 +311,7 @@ export default function AdminScheduleHistory() {
                         <Box
                           h="100%"
                           rounded="full"
-                          bg={useColorModeValue('blue.400', 'blue.300')}
+                          bg={trendColor}
                           width={`${Math.max(8, Math.round((Number(item.count || 0) / maxDaily) * 100))}%`}
                         />
                       </Box>

@@ -4,6 +4,19 @@ import { useSelector } from 'react-redux';
 import apiService from '../services/apiService';
 import { FiUsers, FiUserPlus, FiEdit, FiTrash } from 'react-icons/fi';
 
+async function loadAllUsers() {
+  const users = [];
+  let page = 1;
+  while (true) {
+    const result = await apiService.listUsers({ page, limit: 100, sort: 'id', order: 'ASC' });
+    const batch = Array.isArray(result?.data) ? result.data : Array.isArray(result) ? result : [];
+    users.push(...batch);
+    if (!batch.length || !result?.totalPages || page >= Number(result.totalPages)) break;
+    page += 1;
+  }
+  return users;
+}
+
 export default function AdminUsers() {
   const border = useColorModeValue('gray.200','gray.700');
   const panelBg = useColorModeValue('white','gray.800');
@@ -24,9 +37,7 @@ export default function AdminUsers() {
   useEffect(() => { (async () => {
       try {
         setLoading(true); setError(null);
-        const list = await apiService.listUsers();
-        const arr = Array.isArray(list?.data) ? list.data : Array.isArray(list) ? list : [];
-        setRows(arr);
+        setRows(await loadAllUsers());
       } catch (e) { setError(e.message || 'Failed to load users'); } finally { setLoading(false); }
   })(); }, []);
 
@@ -43,6 +54,8 @@ export default function AdminUsers() {
 
   const paged = filtered.slice((page-1)*pageSize, (page-1)*pageSize + pageSize);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  useEffect(() => { setPage(p => Math.min(p, pageCount)); }, [pageCount]);
 
   if (loading) return (<VStack align="center" py={12}><Spinner/><Text>Loading users…</Text></VStack>);
   if (error) return (<VStack align="center" py={12}><Text color="red.500">{error}</Text></VStack>);
@@ -155,9 +168,7 @@ export default function AdminUsers() {
         onSaved={async () => {
           try {
             setLoading(true);
-            const list = await apiService.listUsers();
-            const arr = Array.isArray(list?.data) ? list.data : Array.isArray(list) ? list : [];
-            setRows(arr);
+            setRows(await loadAllUsers());
             toast({ status: 'success', title: 'User saved' });
           } catch (e) { toast({ status: 'error', title: 'Save failed', description: e.message }); }
           finally { setLoading(false); }
