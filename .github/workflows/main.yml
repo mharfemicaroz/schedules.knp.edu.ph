@@ -14,6 +14,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v2
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build current frontend source
+        run: npm run build -- --outDir deploy-build
+
       # Deploy files via FTP to cPanel
       - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@4.1.0
@@ -22,5 +34,5 @@ jobs:
           port: ${{ secrets.FTP_PORT }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: './dist/'
+          local-dir: './deploy-build/'
           server-dir: '/'
