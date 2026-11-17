@@ -810,6 +810,7 @@ function AssignmentRowOld({
   onRequestAddToSwap,
   onRequestHistory,
   isAdmin,
+  canDeleteSchedules = false,
 }) {
   const timeOpts = getTimeOptions();
   const dayOpts = ['MON-FRI', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'MWF', 'TTH', 'TBA'];
@@ -1157,7 +1158,7 @@ const eligibleOptions = React.useMemo(() => {
                 onClick={onRequestSuggest}
               />
             </Tooltip>
-            {!isLocked && hasDoubleBooked && (
+            {canDeleteSchedules && !isLocked && hasDoubleBooked && (
               <Tooltip label="Resolve by replacing conflicting schedule">
                 <Button
                   size="xs"
@@ -1198,7 +1199,7 @@ const eligibleOptions = React.useMemo(() => {
 
         {row._existingId && (
           <>
-            <Tooltip label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}>
+            {canDeleteSchedules && <Tooltip label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}>
               <IconButton
                 aria-label="Delete assignment"
                 icon={<FiTrash />}
@@ -1208,7 +1209,7 @@ const eligibleOptions = React.useMemo(() => {
                 onClick={onRequestDelete}
                 isDisabled={disabled || isLocked}
               />
-            </Tooltip>
+            </Tooltip>}
 
             {isAdmin && (
               <Tooltip label="View history">
@@ -1356,6 +1357,8 @@ export default function CourseLoading() {
   const authUser = useSelector(s => s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
   const isAdmin = (role === 'admin' || role === 'manager' || role === 'sa');
+  // Keep destructive actions aligned with the API's admin/manager policy.
+  const canDeleteSchedules = role === 'admin' || role === 'manager';
   const canOverrideLoadContext = (role === 'admin' || role === 'sa');
   const isRegistrar = role === 'registrar';
   const registrarViewOnly = isRegistrar && !isAdmin;
@@ -4295,6 +4298,7 @@ const prefill = hit ? {
   const [facDelIndex, setFacDelIndex] = React.useState(null);
   const facDelCancelRef = React.useRef();
   const requestFacultyDelete = (idx) => {
+    if (!canDeleteSchedules) return;
     const item = facultySchedules.items[idx];
     if (!item || !canEditFacultyItem(item)) return;
     const isDraft = !!item._draft || String(item.id || '').startsWith('tmp:');
@@ -4331,6 +4335,7 @@ const prefill = hit ? {
     } catch {}
   }, [allowedDepts, isAdmin, selectedFaculty]);
   const confirmFacultyDelete = async () => {
+    if (!canDeleteSchedules) return;
     const idx = facDelIndex;
     const item = facultySchedules.items[idx];
     if (idx == null || !item) { setFacDelOpen(false); setFacDelIndex(null); return; }
@@ -5429,11 +5434,13 @@ const prefill = hit ? {
   const delCancelRef = React.useRef();
 
   const requestDelete = (idx) => {
+    if (!canDeleteSchedules) return;
     setDelDialogIndex(idx);
     setDelDialogOpen(true);
   };
 
   const confirmDelete = async () => {
+    if (!canDeleteSchedules) return;
     const idx = delDialogIndex;
     if (idx == null) { setDelDialogOpen(false); return; }
     const row = rows[idx];
@@ -6714,6 +6721,7 @@ const prefill = hit ? {
 
   // Resolve conflict: delete conflicting old schedule and save current row
   const requestResolve = async (idx) => {
+    if (!canDeleteSchedules) return;
     const row = rows[idx]; if (!row) return;
     const isLocked = !!row?._locked || (function(v){ if (typeof v==='boolean') return v; const s=String(v||'').toLowerCase(); return s==='yes'||s==='true'||s==='1'; })(row?.lock);
     if (isLocked) { toast({ title: 'Locked schedule', description: 'Unlock the schedule before resolving.', status: 'warning' }); return; }
@@ -6766,6 +6774,7 @@ const prefill = hit ? {
   };
 
   const confirmResolve = async () => {
+    if (!canDeleteSchedules) return;
     const idx = resolveRowIndex; const confId = resolveConflictId;
     if (idx == null || !confId) { setResolveOpen(false); return; }
     setResolveBusy(true);
@@ -7504,7 +7513,7 @@ const prefill = hit ? {
                                       onRequestDelete={()=>requestDelete(idx)}
                                       onRequestResolve={()=>requestResolve(idx)}
                                       onRequestHistory={openHistoryForRow}
-                                      isAdmin={isAdmin}
+                                      isAdmin={isAdmin} canDeleteSchedules={canDeleteSchedules}
                                       viewOnly={registrarViewOnly}
                                       hideFacultyName={false}
                                     />
@@ -7732,7 +7741,7 @@ const prefill = hit ? {
                               onRequestDelete={()=>requestDelete(idx)}
                               onRequestResolve={()=>requestResolve(idx)}
                               onRequestHistory={openHistoryForRow}
-                              isAdmin={isAdmin}
+                              isAdmin={isAdmin} canDeleteSchedules={canDeleteSchedules}
                               viewOnly={registrarViewOnly}
                               hideFacultyName={false}
                             />
@@ -7817,7 +7826,7 @@ const prefill = hit ? {
                                           onRequestDelete={()=>requestDelete(idx)}
                                           onRequestResolve={()=>requestResolve(idx)}
                                           onRequestHistory={openHistoryForRow}
-                                          isAdmin={isAdmin}
+                                          isAdmin={isAdmin} canDeleteSchedules={canDeleteSchedules}
                                           variant="tile"
                                           viewOnly={registrarViewOnly}
                                           hideFacultyName={false}
@@ -8149,9 +8158,9 @@ const prefill = hit ? {
                                           <IconButton aria-label="Lock" icon={<FiLock />} size="sm" variant="ghost" onClick={()=>toggleFacultyLock(c.id, true)} isDisabled={!isEditable} />
                                         </Tooltip>
                                       )}
-                                      <Tooltip label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}>
+                                      {canDeleteSchedules && <Tooltip label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}>
                                         <IconButton aria-label="Delete" icon={<FiTrash />} size="sm" colorScheme="red" variant="ghost" onClick={()=>requestFacultyDelete(facultySchedules.items.indexOf(c))} isDisabled={!isEditable || isLocked} />
-                                      </Tooltip>
+                                      </Tooltip>}
                                     </HStack>
                                   </HStack>
                                   {e._conflict && Array.isArray(e._details) && e._details.length > 0 && (
@@ -8431,7 +8440,7 @@ const prefill = hit ? {
       </Modal>
 
       {/* Resolve conflict dialog */}
-      <AlertDialog isOpen={resolveOpen} onClose={()=>{ if (!resolveBusy) { setResolveOpen(false); setResolveRowIndex(null); setResolveConflictId(null); setResolveLabel(''); } }} leastDestructiveRef={cancelRef}>
+      <AlertDialog isOpen={canDeleteSchedules && resolveOpen} onClose={()=>{ if (!resolveBusy) { setResolveOpen(false); setResolveRowIndex(null); setResolveConflictId(null); setResolveLabel(''); } }} leastDestructiveRef={cancelRef}>
         <AlertDialogOverlay>
           <AlertDialogContent>
             <AlertDialogHeader>Resolve conflict?</AlertDialogHeader>
@@ -8798,7 +8807,7 @@ const prefill = hit ? {
       </AlertDialog>
 
       {/* Delete assignment */}
-      <AlertDialog isOpen={delDialogOpen} onClose={()=>{ if (!delDialogBusy) { setDelDialogOpen(false); setDelDialogIndex(null); } }} leastDestructiveRef={delCancelRef} isCentered>
+      <AlertDialog isOpen={canDeleteSchedules && delDialogOpen} onClose={()=>{ if (!delDialogBusy) { setDelDialogOpen(false); setDelDialogIndex(null); } }} leastDestructiveRef={delCancelRef} isCentered>
         <AlertDialogOverlay>
           <AlertDialogContent>
             <AlertDialogHeader>Delete assignment?</AlertDialogHeader>
@@ -8822,7 +8831,7 @@ const prefill = hit ? {
       </AlertDialog>
 
       {/* Faculty delete confirmation */}
-      <AlertDialog isOpen={facDelOpen} onClose={()=>{ if (!facDelBusy) { setFacDelOpen(false); setFacDelIndex(null); } }} leastDestructiveRef={facDelCancelRef} isCentered>
+      <AlertDialog isOpen={canDeleteSchedules && facDelOpen} onClose={()=>{ if (!facDelBusy) { setFacDelOpen(false); setFacDelIndex(null); } }} leastDestructiveRef={facDelCancelRef} isCentered>
         <AlertDialogOverlay>
           <AlertDialogContent>
             <AlertDialogHeader>Delete assignment?</AlertDialogHeader>
