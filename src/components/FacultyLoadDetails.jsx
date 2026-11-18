@@ -119,7 +119,7 @@ export default function FacultyLoadDetails({ faculty, items = [], override, sett
             <Text fontSize="sm">2nd Term: <b>{format(data.nstp['2nd'] + data.nstp.Sem)} units / {format(data.nstp['2nd'] + data.nstp.Sem)} hours per Saturday</b>.</Text>
             <Text fontSize="xs" color={muted} mt={1}>NSTP follows the existing 1 unit = 1 hour rule; Sem NSTP applies to both terms.</Text>
           </Box>
-          <Text fontSize="xs" color={muted}>Regular credited hours use 3 units = 1 hour. Only the computed allocation is redistributed; course records are unchanged. Displayed hours are rounded to two decimals.</Text>
+          <Text fontSize="xs" color={muted}>Regular credited hours use 3 units = 1 hour. The computed allocation stays within 4 hours per term when possible; larger totals are balanced, favoring whole hours. Course records are unchanged. Displayed hours are rounded to two decimals.</Text>
         </VStack>
       </Collapse>
     </Box>

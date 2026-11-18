@@ -23,14 +23,16 @@ function balancePartTime(firstUnits, secondUnits) {
 function allocateTeaching(first, second, releaseFirst, releaseSecond) {
   const total = clean(first + second);
   const candidates = new Set([0, total]);
-  // Relevant multiples of 3 around the initial split and the boundaries. Include
-  // credit-aware splits so fractional release is retained without needless decimals.
+  // Test only the useful breakpoints: the current split, equal split, 4-hour
+  // boundaries and their neighboring multiples of 3. Work stays constant-sized.
   const mod = (value) => ((value % 3) + 3) % 3;
   for (const residue of [0, mod(total), mod(-releaseFirst), mod(total + releaseSecond)]) {
-    const near = (first - residue) / 3;
-    for (const step of [Math.floor(near), Math.ceil(near), 0, Math.floor((total - residue) / 3)]) {
-      const value = clean(residue + step * 3);
-      if (value >= 0 && value <= total) candidates.add(value);
+    for (const target of [first, total / 2, 12 - releaseFirst, total + releaseSecond - 12, 0, total]) {
+      const near = (target - residue) / 3;
+      for (const step of [Math.floor(near), Math.ceil(near)]) {
+        const value = clean(residue + step * 3);
+        if (value >= 0 && value <= total) candidates.add(value);
+      }
     }
   }
   const splits = Array.from(candidates).map((value) => {
@@ -38,9 +40,13 @@ function allocateTeaching(first, second, releaseFirst, releaseSecond) {
     return { first: value, second: remainder,
       fractionalCredits: Number(!wholeHours(value + releaseFirst)) + Number(!wholeHours(remainder + releaseSecond)),
       fractionalTeaching: Number(!wholeHours(value)) + Number(!wholeHours(remainder)),
+      distributionPenalty: total + releaseFirst + releaseSecond <= 24
+        ? Math.max(0, value + releaseFirst - 12) + Math.max(0, remainder + releaseSecond - 12)
+        : Math.abs(value + releaseFirst - remainder - releaseSecond),
       distance: Math.abs(value - first) };
   });
   splits.sort((a, b) => a.fractionalCredits - b.fractionalCredits
+    || a.distributionPenalty - b.distributionPenalty
     || a.fractionalTeaching - b.fractionalTeaching || a.distance - b.distance || b.first - a.first);
   return splits[0];
 }
