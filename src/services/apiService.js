@@ -148,6 +148,10 @@ class ApiService {
         err.status = response.status;
         try { err.retryAfter = response.headers.get('Retry-After'); } catch {}
         err.body = raw;
+        try {
+          const data = JSON.parse(raw);
+          if (typeof data.message === 'string') err.message = data.message;
+        } catch {}
         try { err.headers = response.headers; } catch {}
         throw err;
       }
