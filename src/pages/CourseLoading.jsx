@@ -1,6 +1,7 @@
 import { computeFacultyOverload, computeTeachingOverload } from '../utils/teachingOverload';
 // full component file - drop in place of your previous CourseLoading component
 import React from 'react';
+import FacultyLoadDetails from '../components/FacultyLoadDetails';
 import {
   Box, HStack, VStack, Stack, Heading, Text, Input, IconButton, Button, Select, Divider,
   useColorModeValue, Spinner, Badge, Tag, Wrap, WrapItem, useToast, Checkbox, Switch,
@@ -2608,6 +2609,7 @@ export default function CourseLoading() {
       <tr><th>Load Release Units</th><td>${esc(String(releaseUnits))}</td><th>Total Load Units</th><td>${esc(String(totalUnits))}</td></tr>
       ${nstpMetaRow}
       <tr><th>Teaching Overload</th><td>${esc(String(accounting.teachingOverloadUnits))} units (${esc(fmtLoadHours(accounting.teachingOverloadUnits))} hrs)</td><th>Load Release Credit</th><td>${esc(String(accounting.releaseCreditUnits))} units (${esc(fmtLoadHours(accounting.releaseCreditUnits))} hrs)</td></tr>
+      ${accounting.releaseDeductedUnits > 0 ? `<tr><th>Teaching Shortfall</th><td>${esc(String(accounting.teachingShortfallUnits))} units</td><th>Release Deducted for Underload</th><td>${esc(String(accounting.releaseDeductedUnits))} units</td></tr>` : ''}
       <tr><th>Total Credited Units${overloadOverride ? ' (Manual Override)' : ''}</th><td>${esc(String(overloadUnits))}</td><th>Total Credited Hours</th><td>${esc(fmtHours(Number(overloadFirstHours) + Number(overloadSecondHours), 1))}</td></tr>
       <tr><th>Courses</th><td>${esc(String(list.length))}</td><th>Regular Baseline</th><td>24 units (12 per term)</td></tr>
       <tr><th>Schedule Type</th><td colspan="3">${esc(scheduleType)}</td></tr>
@@ -7942,6 +7944,7 @@ const prefill = hit ? {
                   </Text>
                 </Box>
               </SimpleGrid>
+              <FacultyLoadDetails faculty={selectedFaculty} items={facultySchedules.items} override={selectedFacultyOverride} settingsLoad={settingsLoad} loading={facultySchedules.loading} />
               <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
                 {!registrarViewOnly && <HStack spacing={3} mb={2} align="center" flexWrap="wrap">
                   {(() => {

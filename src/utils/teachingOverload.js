@@ -56,7 +56,10 @@ function computeTeachingOverload(termUnits = {}, nstpTermUnits = {}, releaseUnit
   const effectiveSecondUnits = clean(secondOnly + semPerTerm);
   const initialFirstUnits = partTime ? effectiveFirstUnits : Math.max(0, effectiveFirstUnits - 12);
   const initialSecondUnits = partTime ? effectiveSecondUnits : Math.max(0, effectiveSecondUnits - 12);
-  const releaseCreditUnits = partTime ? 0 : amount(releaseUnits);
+  const assignedReleaseUnits = partTime ? 0 : amount(releaseUnits);
+  const teachingShortfallUnits = partTime ? 0 : Math.max(0, clean(24 - firstOnly - secondOnly - sem));
+  const releaseDeductedUnits = Math.min(assignedReleaseUnits, teachingShortfallUnits);
+  const releaseCreditUnits = clean(assignedReleaseUnits - releaseDeductedUnits);
   const releaseFirstUnits = releaseCreditUnits / 2;
   const releaseSecondUnits = releaseCreditUnits - releaseFirstUnits;
   // Offset an underloaded term against the other term before allocating credits.
@@ -77,6 +80,7 @@ function computeTeachingOverload(termUnits = {}, nstpTermUnits = {}, releaseUnit
     teachingUnits: clean(firstOnly + secondOnly + sem),
     teachingOverloadUnits, teachingOverloadHours: teachingOverloadUnits / 3,
     teachingFirstUnits: adjusted.first, teachingSecondUnits: adjusted.second,
+    assignedReleaseUnits, teachingShortfallUnits, releaseDeductedUnits,
     releaseCreditUnits, releaseCreditHours: releaseCreditUnits / 3,
     releaseFirstUnits, releaseSecondUnits,
     underloadOffsetUnits: clean(initialFirstUnits + initialSecondUnits - teachingOverloadUnits),
