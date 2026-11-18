@@ -620,7 +620,7 @@ const rows = React.useMemo(() => {
               <Badge colorScheme="purple">{rows.length} faculty</Badge>
             </HStack>
             <Text fontSize="sm" color={muted}>
-              Full-time: Sem units are split equally; teaching overload is calculated above 12 units per term. Release is credited separately to 1st Term. NSTP and part-time rules are unchanged. Manual overrides replace credited totals only.
+              Full-time: Sem units and release credits are split equally between terms. Underload offsets the other term; teaching overload is the non-NSTP teaching total above 24 units per semester. NSTP and part-time rules are unchanged. Manual overrides replace credited totals only.
             </Text>
           </VStack>
           <HStack spacing={2}>

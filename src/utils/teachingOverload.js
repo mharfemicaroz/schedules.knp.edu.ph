@@ -20,13 +20,13 @@ function balancePartTime(firstUnits, secondUnits) {
   return { first, second };
 }
 
-function allocateTeaching(first, second, releaseFirst) {
+function allocateTeaching(first, second, releaseFirst, releaseSecond) {
   const total = clean(first + second);
   const candidates = new Set([0, total]);
   // Relevant multiples of 3 around the initial split and the boundaries. Include
   // credit-aware splits so fractional release is retained without needless decimals.
   const mod = (value) => ((value % 3) + 3) % 3;
-  for (const residue of [0, mod(total), mod(-releaseFirst)]) {
+  for (const residue of [0, mod(total), mod(-releaseFirst), mod(total + releaseSecond)]) {
     const near = (first - residue) / 3;
     for (const step of [Math.floor(near), Math.ceil(near), 0, Math.floor((total - residue) / 3)]) {
       const value = clean(residue + step * 3);
@@ -36,7 +36,7 @@ function allocateTeaching(first, second, releaseFirst) {
   const splits = Array.from(candidates).map((value) => {
     const remainder = clean(total - value);
     return { first: value, second: remainder,
-      fractionalCredits: Number(!wholeHours(value + releaseFirst)) + Number(!wholeHours(remainder)),
+      fractionalCredits: Number(!wholeHours(value + releaseFirst)) + Number(!wholeHours(remainder + releaseSecond)),
       fractionalTeaching: Number(!wholeHours(value)) + Number(!wholeHours(remainder)),
       distance: Math.abs(value - first) };
   });
@@ -56,20 +56,30 @@ function computeTeachingOverload(termUnits = {}, nstpTermUnits = {}, releaseUnit
   const effectiveSecondUnits = clean(secondOnly + semPerTerm);
   const initialFirstUnits = partTime ? effectiveFirstUnits : Math.max(0, effectiveFirstUnits - 12);
   const initialSecondUnits = partTime ? effectiveSecondUnits : Math.max(0, effectiveSecondUnits - 12);
-  const releaseFirstUnits = partTime ? 0 : amount(releaseUnits);
-  const adjusted = partTime ? balancePartTime(initialFirstUnits, initialSecondUnits)
-    : allocateTeaching(initialFirstUnits, initialSecondUnits, releaseFirstUnits);
+  const releaseCreditUnits = partTime ? 0 : amount(releaseUnits);
+  const releaseFirstUnits = releaseCreditUnits / 2;
+  const releaseSecondUnits = releaseCreditUnits - releaseFirstUnits;
+  // Offset an underloaded term against the other term before allocating credits.
+  // The semester total is authoritative, independent of the original term split.
+  const semesterOverload = partTime ? initialFirstUnits + initialSecondUnits
+    : Math.max(0, firstOnly + secondOnly + sem - 24);
+  const offset = clean(initialFirstUnits + initialSecondUnits - semesterOverload);
+  const firstTeaching = Math.max(0, clean(initialFirstUnits - (initialFirstUnits >= initialSecondUnits ? offset : 0)));
+  const secondTeaching = Math.max(0, clean(initialSecondUnits - (initialSecondUnits > initialFirstUnits ? offset : 0)));
+  const adjusted = partTime ? balancePartTime(firstTeaching, secondTeaching)
+    : allocateTeaching(firstTeaching, secondTeaching, releaseFirstUnits, releaseSecondUnits);
   const first = clean(adjusted.first + releaseFirstUnits);
-  const second = clean(adjusted.second);
-  const teachingOverloadUnits = clean(initialFirstUnits + initialSecondUnits);
+  const second = clean(adjusted.second + releaseSecondUnits);
+  const teachingOverloadUnits = clean(firstTeaching + secondTeaching);
   return {
     first, second, total: clean(first + second), firstHours: first / 3, secondHours: second / 3,
     totalCreditedHours: clean(first + second) / 3,
     teachingUnits: clean(firstOnly + secondOnly + sem),
     teachingOverloadUnits, teachingOverloadHours: teachingOverloadUnits / 3,
     teachingFirstUnits: adjusted.first, teachingSecondUnits: adjusted.second,
-    releaseCreditUnits: releaseFirstUnits, releaseCreditHours: releaseFirstUnits / 3,
-    releaseFirstUnits, releaseSecondUnits: 0,
+    releaseCreditUnits, releaseCreditHours: releaseCreditUnits / 3,
+    releaseFirstUnits, releaseSecondUnits,
+    underloadOffsetUnits: clean(initialFirstUnits + initialSecondUnits - teachingOverloadUnits),
     effectiveFirstUnits, effectiveSecondUnits, initialFirstUnits, initialSecondUnits,
   };
 }
