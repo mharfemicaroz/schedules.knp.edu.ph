@@ -45,6 +45,8 @@ function AssignmentRow({
   onRequestAddToSwap,
   onRequestHistory,
   isAdmin,
+  canDeleteSchedules = false,
+  canSwapSchedules = false,
   blockSession,
   currentSemester = '',
   variant = 'default',
@@ -546,25 +548,25 @@ function AssignmentRow({
           <HStack spacing={1} mt={2} justify="flex-end" flexWrap="wrap">
             {row._status === 'Conflict' && (
               <>
-                <Tooltip label="Explain conflict">
-                  <IconButton
-                    aria-label="Conflict details"
-                    icon={<FiInfo />}
-                    size="xs"
-                    variant="ghost"
+                <Tooltip label="See which schedules overlap and why this course cannot be saved">
+                  <Button
+                    leftIcon={<FiInfo />}
+                    size="sm"
+                    colorScheme="red"
+                    variant="outline"
                     onClick={onRequestConflictInfo}
-                  />
+                  >Explain Conflict</Button>
                 </Tooltip>
-                <Tooltip label="Suggestions">
-                  <IconButton
-                    aria-label="Suggestions"
-                    icon={<FiHelpCircle />}
-                    size="xs"
-                    variant="ghost"
+                <Tooltip label="Find alternative times and terms within this course's session">
+                  <Button
+                    leftIcon={<FiHelpCircle />}
+                    size="sm"
+                    colorScheme="blue"
+                    variant="solid"
                     onClick={onRequestSuggest}
-                  />
+                  >Find Available Times</Button>
                 </Tooltip>
-                {!isLocked && hasDoubleBooked && (
+                {canDeleteSchedules && !isLocked && hasDoubleBooked && (
                   <Tooltip label="Resolve by replacing conflicting schedule">
                     <Button
                       size="xs"
@@ -579,7 +581,7 @@ function AssignmentRow({
               </>
             )}
 
-            {!isLocked && row._existingId && (
+            {canSwapSchedules && !isLocked && row._existingId && (
               <Tooltip label="Add to Swap">
                 <IconButton
                   aria-label="Add to Swap"
@@ -593,7 +595,7 @@ function AssignmentRow({
 
             {row._existingId && (
               <>
-                <Tooltip
+                {canDeleteSchedules && <Tooltip
                   label={isLocked ? 'Locked. Unlock to delete.' : 'Delete assignment'}
                 >
                   <IconButton
@@ -605,7 +607,7 @@ function AssignmentRow({
                     onClick={onRequestDelete}
                     isDisabled={disabled || isLocked}
                   />
-                </Tooltip>
+                </Tooltip>}
                 {isAdmin && (
                   <Tooltip label="View history">
                     <IconButton

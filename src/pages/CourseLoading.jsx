@@ -811,6 +811,7 @@ function AssignmentRowOld({
   onRequestHistory,
   isAdmin,
   canDeleteSchedules = false,
+  canSwapSchedules = false,
 }) {
   const timeOpts = getTimeOptions();
   const dayOpts = ['MON-FRI', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'MWF', 'TTH', 'TBA'];
@@ -1173,7 +1174,7 @@ const eligibleOptions = React.useMemo(() => {
           </>
         )}
 
-        {!isLocked && row._existingId && (
+        {canSwapSchedules && !isLocked && row._existingId && (
           <Tooltip label="Add to Swap">
             <IconButton
               aria-label="Add to Swap"
@@ -1359,6 +1360,7 @@ export default function CourseLoading() {
   const isAdmin = (role === 'admin' || role === 'manager' || role === 'sa');
   // Keep destructive actions aligned with the API's admin/manager policy.
   const canDeleteSchedules = role === 'admin' || role === 'manager';
+  const canSwapSchedules = role === 'admin' || role === 'manager';
   const canOverrideLoadContext = (role === 'admin' || role === 'sa');
   const isRegistrar = role === 'registrar';
   const registrarViewOnly = isRegistrar && !isAdmin;
@@ -1598,6 +1600,7 @@ export default function CourseLoading() {
   // removed bulk assign state (deprecated)
   const [conflictOpen, setConflictOpen] = React.useState(false);
   const [conflictIndex, setConflictIndex] = React.useState(null);
+  const [facultyConflictRow, setFacultyConflictRow] = React.useState(null);
   const [suggOpen, setSuggOpen] = React.useState(false);
   const [suggIndex, setSuggIndex] = React.useState(null);
   const [suggBusy, setSuggBusy] = React.useState(false);
@@ -5365,7 +5368,7 @@ const prefill = hit ? {
   };
 
   const applyFacultySuggestion = (plan) => {
-    if (!plan || !plan.candidateChange || facSuggTargetId == null) return;
+    if (!plan || !plan.candidateChange || plan.requiresOtherChanges || facSuggTargetId == null) return;
     const cc = plan.candidateChange;
     updateFacEdit(facSuggTargetId, { term: cc.toTerm || (facEdits[facSuggTargetId]?.term || ''), time: cc.toTime || (facEdits[facSuggTargetId]?.time || '') });
     setFacSuggOpen(false);
@@ -5846,7 +5849,7 @@ const prefill = hit ? {
     const idx = suggIndex;
     if (!rows[idx]) return;
     const cc = sugg && sugg.candidateChange;
-    if (!cc) return; // only auto-apply simple candidate moves
+    if (!cc || sugg.requiresOtherChanges) return; // only apply independent candidate moves
     const next = rows.slice();
     next[idx] = { ...next[idx], _term: cc.toTerm || next[idx]._term, _time: cc.toTime || next[idx]._time };
     setRows(next);
@@ -6490,6 +6493,7 @@ const prefill = hit ? {
     return blockers.length === 0 && sourceConflicts.length === 0 && targetConflicts.length === 0;
   }, []);
   const openSwapModal = React.useCallback(async (entryA, entryB) => {
+    if (!canSwapSchedules) return;
     if (!entryA || !entryB) {
       toast({ title: 'Select two schedules', description: 'Choose two existing schedules first.', status: 'info' });
       return;
@@ -6520,8 +6524,9 @@ const prefill = hit ? {
     } finally {
       setSwapPreviewBusy(false);
     }
-  }, [toast]);
+  }, [canSwapSchedules, toast]);
   const swapSelected = async () => {
+    if (!canSwapSchedules) return;
     const idxs = rows.map((r,i) => (r._selected ? i : -1)).filter(i => i >= 0);
     if (idxs.length !== 2) { toast({ title: 'Select two rows', description: 'Pick exactly two schedules to compare swap options.', status: 'info' }); return; }
     const [i1, i2] = idxs;
@@ -6549,6 +6554,7 @@ const prefill = hit ? {
   };
 
   const addToSwap = (row) => {
+    if (!canSwapSchedules) return;
     if (!row || !row._existingId) { toast({ title: 'Only existing schedules', description: 'Save a schedule before adding to swap.', status: 'info' }); return; }
     if (row._locked) { toast({ title: 'Locked schedule', description: 'Unlock before swapping.', status: 'warning' }); return; }
     const label = `${row.course_name || row.courseName || row.code || 'Course'} • ${row._faculty || row.faculty || row.instructor || 'Faculty'} • ${(row._day || row.day || '').toString()} ${(row._time || row.time || '').toString()}`.trim();
@@ -6560,6 +6566,7 @@ const prefill = hit ? {
   };
 
   const addToSwapRich = (row) => {
+    if (!canSwapSchedules) return;
     if (!row || !row._existingId) { toast({ title: 'Only existing schedules', description: 'Save a schedule before adding to swap.', status: 'info' }); return; }
     if (row._locked) { toast({ title: 'Locked schedule', description: 'Unlock before swapping.', status: 'warning' }); return; }
     const entry = {
@@ -6579,6 +6586,7 @@ const prefill = hit ? {
 
   // Faculty-view: add to swap using current item state
   const addFacultyItemToSwap = (idx) => {
+    if (!canSwapSchedules) return;
     const c = facultySchedules.items[idx]; if (!c) return;
     if (!canEditFacultyItem(c)) { toast({ title: 'View only', description: 'You do not have permission to modify this schedule.', status: 'info' }); return; }
     const e = facEdits[c.id] || {};
@@ -6677,10 +6685,12 @@ const prefill = hit ? {
   const clearSwapSlot = (slot) => { if (slot === 'A') setSwapA(null); else setSwapB(null); };
 
   const swapNow = async () => {
+    if (!canSwapSchedules) return;
     if (!swapA || !swapB) { toast({ title: 'Select two schedules', status: 'info' }); return; }
     await openSwapModal(swapA, swapB);
   };
   const confirmSwapAction = React.useCallback(async () => {
+    if (!canSwapSchedules) return;
     if (!swapA || !swapB) return;
     const preview = swapPreviewMap?.[swapMode] || null;
     if (!isSwapPreviewConflictFree(preview)) {
@@ -6717,7 +6727,7 @@ const prefill = hit ? {
     } finally {
       setSwapBusy(false);
     }
-  }, [blocks, isSwapPreviewConflictFree, onSelectBlock, reloadSchedulesForLoad, retryReloadCurrentBlock, selectedBlock, swapA, swapB, swapMode, swapPreviewMap, toast]);
+  }, [canSwapSchedules, blocks, isSwapPreviewConflictFree, onSelectBlock, reloadSchedulesForLoad, retryReloadCurrentBlock, selectedBlock, swapA, swapB, swapMode, swapPreviewMap, toast]);
 
   // Resolve conflict: delete conflicting old schedule and save current row
   const requestResolve = async (idx) => {
@@ -7251,7 +7261,7 @@ const prefill = hit ? {
                   <option value="desc">Desc</option>
                 </Select>
               </HStack>
-              {!registrarViewOnly && <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
+              {canSwapSchedules && <Box borderWidth="1px" borderColor={border} rounded="md" p={2}>
                 <Stack spacing={2}>
                   {/* Line for A */}
                   <HStack spacing={2} flexWrap="wrap">
@@ -7404,7 +7414,7 @@ const prefill = hit ? {
                         );
                       })()}
                         <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
-                        <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Review Swap</Button>
+                        {canSwapSchedules && <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Review Swap</Button>}
                         <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
                           Lock Selected
                         </Button>
@@ -7506,14 +7516,14 @@ const prefill = hit ? {
                                       onChange={(patch)=>handleRowChange(idx, patch)}
                                       onToggle={(ck)=>toggleRow(idx, ck)}
                                       onRequestLockChange={(next)=>requestLockChange(idx, next)}
-                                      onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
+                                      onRequestConflictInfo={()=>{ setFacultyConflictRow(null); setConflictIndex(idx); setConflictOpen(true); }}
                                       onRequestSuggest={()=>openSuggestions(idx)}
                                       onRequestAssign={()=>openAssignForRow(idx)}
                                       onRequestAddToSwap={()=>addToSwapRich(rows[idx])}
                                       onRequestDelete={()=>requestDelete(idx)}
                                       onRequestResolve={()=>requestResolve(idx)}
                                       onRequestHistory={openHistoryForRow}
-                                      isAdmin={isAdmin} canDeleteSchedules={canDeleteSchedules}
+                                      isAdmin={isAdmin} canDeleteSchedules={canDeleteSchedules} canSwapSchedules={canSwapSchedules}
                                       viewOnly={registrarViewOnly}
                                       hideFacultyName={false}
                                     />
@@ -7589,7 +7599,7 @@ const prefill = hit ? {
                     </HStack>
                   </HStack>
                   {/* Quick swap tray kept compact within sticky */}
-                  {!registrarViewOnly && (
+                  {canSwapSchedules && (
                     <Box borderWidth="1px" borderColor={border} rounded="md" p={2} bg={panelBg}>
                       <HStack spacing={2} align="center" flexWrap="wrap">
                         <Badge colorScheme={swapA ? 'blue' : 'gray'}>A</Badge>
@@ -7632,7 +7642,7 @@ const prefill = hit ? {
                           );
                         })()}
                         <Button size="sm" colorScheme="blue" leftIcon={<FiUpload />} onClick={saveSelected} isDisabled={!canLoad || saving || rows.some(r => r._selected && (r._status === 'Conflict' || r._checking))} isLoading={saving}>Save Selected</Button>
-                        <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Review Swap</Button>
+                        {canSwapSchedules && <Button size="sm" variant="outline" leftIcon={<FiRefreshCw />} onClick={swapSelected} isDisabled={!canLoad || swapBusy} isLoading={swapBusy}>Review Swap</Button>}
                         <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
                           Lock Selected
                         </Button>
@@ -7734,14 +7744,14 @@ const prefill = hit ? {
                               onChange={(patch)=>handleRowChange(idx, patch)}
                               onToggle={(ck)=>toggleRow(idx, ck)}
                               onRequestLockChange={(next)=>requestLockChange(idx, next)}
-                              onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
+                              onRequestConflictInfo={()=>{ setFacultyConflictRow(null); setConflictIndex(idx); setConflictOpen(true); }}
                               onRequestSuggest={()=>openSuggestions(idx)}
                               onRequestAssign={()=>openAssignForRow(idx)}
                               onRequestAddToSwap={()=>addToSwapRich(rows[idx])}
                               onRequestDelete={()=>requestDelete(idx)}
                               onRequestResolve={()=>requestResolve(idx)}
                               onRequestHistory={openHistoryForRow}
-                              isAdmin={isAdmin} canDeleteSchedules={canDeleteSchedules}
+                              isAdmin={isAdmin} canDeleteSchedules={canDeleteSchedules} canSwapSchedules={canSwapSchedules}
                               viewOnly={registrarViewOnly}
                               hideFacultyName={false}
                             />
@@ -7819,14 +7829,14 @@ const prefill = hit ? {
                                           onChange={(patch)=>handleRowChange(idx, patch)}
                                           onToggle={(ck)=>toggleRow(idx, ck)}
                                           onRequestLockChange={(next)=>requestLockChange(idx, next)}
-                                          onRequestConflictInfo={()=>{ setConflictIndex(idx); setConflictOpen(true); }}
+                                          onRequestConflictInfo={()=>{ setFacultyConflictRow(null); setConflictIndex(idx); setConflictOpen(true); }}
                                           onRequestSuggest={()=>openSuggestions(idx)}
                                           onRequestAssign={()=>openAssignForRow(idx)}
                                           onRequestAddToSwap={()=>addToSwapRich(rows[idx])}
                                           onRequestDelete={()=>requestDelete(idx)}
                                           onRequestResolve={()=>requestResolve(idx)}
                                           onRequestHistory={openHistoryForRow}
-                                          isAdmin={isAdmin} canDeleteSchedules={canDeleteSchedules}
+                                          isAdmin={isAdmin} canDeleteSchedules={canDeleteSchedules} canSwapSchedules={canSwapSchedules}
                                           variant="tile"
                                           viewOnly={registrarViewOnly}
                                           hideFacultyName={false}
@@ -8138,14 +8148,15 @@ const prefill = hit ? {
                                         </Badge>
                                       )}
                                     </HStack>
-                                    <HStack ml="auto" spacing={2}>
+                                    <HStack ml="auto" spacing={2} flexWrap="wrap">
                                       {e._conflict && (
                                         <>
-                                          <Button size="sm" variant="outline" leftIcon={<FiHelpCircle />} onClick={()=>openFacultySuggestions(c.id)} isDisabled={!isEditable || isLocked}>Suggestions</Button>
-                                          <Button size="sm" variant="outline" onClick={()=>openFacultyResolve(facultySchedules.items.indexOf(c))} isDisabled={!isEditable || isLocked}>Resolve</Button>
+                                          <Button size="sm" colorScheme="red" variant="outline" leftIcon={<FiInfo />} onClick={()=>{ setFacultyConflictRow({ _faculty: c.faculty || c.instructor, _term: e.term, _time: e.time, _conflictDetails: e._details || [] }); setConflictIndex(null); setConflictOpen(true); }}>Explain Conflict</Button>
+                                          <Button size="sm" colorScheme="blue" variant="solid" leftIcon={<FiHelpCircle />} onClick={()=>openFacultySuggestions(c.id)} isDisabled={!isEditable || isLocked}>Find Available Times</Button>
+                                          {canDeleteSchedules && <Button size="sm" variant="outline" onClick={()=>openFacultyResolve(facultySchedules.items.indexOf(c))} isDisabled={!isEditable || isLocked}>Resolve</Button>}
                                         </>
                                       )}
-                                      <Button size="sm" variant="outline" onClick={()=>addFacultyItemToSwap(facultySchedules.items.indexOf(c))} isDisabled={!isEditable || isLocked || String(c.id || '').startsWith('tmp:') || !!c._draft}>Add to Swap</Button>
+                                      {canSwapSchedules && <Button size="sm" variant="outline" onClick={()=>addFacultyItemToSwap(facultySchedules.items.indexOf(c))} isDisabled={!isEditable || isLocked || String(c.id || '').startsWith('tmp:') || !!c._draft}>Add to Swap</Button>}
                                       {/* Inline Assign action removed per request */}
                                       <Button size="sm" variant="outline" onClick={()=>updateFacEdit(c.id, { term: canonicalTerm(c.term || ''), time: String(c.schedule || c.time || '').trim(), faculty: c.faculty || c.instructor || '', facultyId: c.facultyId || c.faculty_id || null, _conflict:false, _details:[] })} isDisabled={!isEditable || !dirty || isLocked}>Revert</Button>
                                       <Button size="sm" colorScheme="blue" onClick={()=>saveFacultyEdit(c.id)} isDisabled={!canSave || isLocked || saving} isLoading={saving}>Save</Button>
@@ -8475,9 +8486,10 @@ const prefill = hit ? {
       <Modal isOpen={facSuggOpen} onClose={()=>{ if (!facSuggBusy) { setFacSuggOpen(false); setFacSuggTargetId(null); } }} isCentered size="lg">
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Suggestions</ModalHeader>
+          <ModalHeader>Available Times &amp; Conflict Suggestions</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
+            <Text fontSize="sm" color={subtle} mb={3}>Suggestions stay in the same session: AM 8 AM to 12 noon, PM 1 to 5 PM, or evening 5 to 9 PM. Sem stays Sem; 1st and 2nd may switch.</Text>
             {facSuggBusy ? (
               <HStack spacing={2}><Spinner size="sm" /><Text>Analyzing suggestions...</Text></HStack>
             ) : (
@@ -8488,10 +8500,13 @@ const prefill = hit ? {
                       <VStack align="stretch" spacing={2}>
                         <HStack justify="space-between">
                           <Text fontWeight="600">{s.label}</Text>
-                          {s?.candidateChange && (
+                          {s?.candidateChange && !s.requiresOtherChanges && (
                             <Button size="xs" colorScheme="blue" onClick={() => applyFacultySuggestion(s)}>Apply</Button>
                           )}
                         </HStack>
+                        {s.requiresOtherChanges && (
+                          <Text fontSize="sm" color="orange.600">Linked plan: make the changes in the numbered order, then recheck and save this course. This plan was checked as a whole; no changes are saved automatically.</Text>
+                        )}
                         {Array.isArray(s.steps) && s.steps.length > 0 && (
                           <VStack align="stretch" spacing={1}>
                             {s.steps.map((st, j) => (
@@ -8507,7 +8522,7 @@ const prefill = hit ? {
                     </Box>
                   ))
                 ) : (
-                  <Text fontSize="sm" color={subtle}>No suggestions found that avoid conflicts in the same session. Try a different term or adjust surrounding schedules.</Text>
+                  <Text fontSize="sm" color={subtle}>No available times found within this session and term type. Adjust surrounding schedules or assign another faculty.</Text>
                 )}
               </VStack>
             )}
@@ -8878,7 +8893,7 @@ const prefill = hit ? {
           <ModalCloseButton />
           <ModalBody>
             {(() => {
-              const r = (conflictIndex != null) ? rows[conflictIndex] : null;
+              const r = facultyConflictRow || ((conflictIndex != null) ? rows[conflictIndex] : null);
               const details = r?._conflictDetails || [];
               if (!r) return <Text>No data.</Text>;
               if (!details.length) return <Text>This schedule conflicts with another entry for the same faculty at the same term and time.</Text>;
@@ -8916,9 +8931,10 @@ const prefill = hit ? {
       <Modal isOpen={suggOpen} onClose={()=>{ setSuggOpen(false); setSuggIndex(null); }} isCentered size="lg">
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Suggestions</ModalHeader>
+          <ModalHeader>Available Times &amp; Conflict Suggestions</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
+            <Text fontSize="sm" color={subtle} mb={3}>Suggestions stay in the same session: AM 8 AM to 12 noon, PM 1 to 5 PM, or evening 5 to 9 PM. Sem stays Sem; 1st and 2nd may switch.</Text>
             {suggBusy ? (
               <HStack spacing={2}><Spinner size="sm" /><Text>Analyzing suggestions...</Text></HStack>
             ) : (
@@ -8929,10 +8945,13 @@ const prefill = hit ? {
                       <VStack align="stretch" spacing={2}>
                         <HStack justify="space-between">
                           <Text fontWeight="600">{s.label}</Text>
-                          {s?.candidateChange && (
+                          {s?.candidateChange && !s.requiresOtherChanges && (
                             <Button size="xs" colorScheme="blue" onClick={() => applySuggestion(s)}>Apply</Button>
                           )}
                         </HStack>
+                        {s.requiresOtherChanges && (
+                          <Text fontSize="sm" color="orange.600">Linked plan: make the changes in the numbered order, then recheck and save this course. This plan was checked as a whole; no changes are saved automatically.</Text>
+                        )}
                         {Array.isArray(s.steps) && s.steps.length > 0 && (
                           <VStack align="stretch" spacing={1}>
                             {s.steps.map((st, j) => (
@@ -8948,14 +8967,14 @@ const prefill = hit ? {
                     </Box>
                   ))
                 ) : (
-                  <Text fontSize="sm" color={subtle}>No suggestions found that avoid conflicts in the same session. Try a different term or adjust surrounding schedules.</Text>
+                  <Text fontSize="sm" color={subtle}>No available times found within this session and term type. Adjust surrounding schedules or assign another faculty.</Text>
                 )}
               </VStack>
             )}
           </ModalBody>
         </ModalContent>
       </Modal>
-      <Modal isOpen={swapModalOpen} onClose={()=>{ if (!swapBusy && !swapPreviewBusy) setSwapModalOpen(false); }} isCentered size="3xl">
+      <Modal isOpen={canSwapSchedules && swapModalOpen} onClose={()=>{ if (!swapBusy && !swapPreviewBusy) setSwapModalOpen(false); }} isCentered size="3xl">
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>Choose Swap Strategy</ModalHeader>
