@@ -1,3 +1,4 @@
+import { computeFacultyOverload, computeTeachingOverload } from '../utils/teachingOverload';
 // full component file - drop in place of your previous CourseLoading component
 import React from 'react';
 import {
@@ -589,72 +590,8 @@ function isNSTPCourse(row) {
 }
 
 function computeFacultyOverloadForItems(faculty, items = []) {
-  const termUnits = { '1st': 0, '2nd': 0, Sem: 0 };
-  const nstpTermUnits = { '1st': 0, '2nd': 0, Sem: 0 };
-  const shortTerm = (value) => {
-    const term = String(value || '').trim().toLowerCase();
-    if (term.startsWith('1')) return '1st';
-    if (term.startsWith('2')) return '2nd';
-    if (term.startsWith('s')) return 'Sem';
-    return '';
-  };
-
-  (Array.isArray(items) ? items : []).forEach((item) => {
-    const term = shortTerm(item?.term ?? item?.semester ?? item?.sem);
-    const units = Number(item?.unit ?? item?.units ?? 0);
-    if (!term || !Number.isFinite(units)) return;
-    termUnits[term] += units;
-    if (isNSTPCourse(item)) nstpTermUnits[term] += units;
-  });
-
-  const semUnits = Math.max(0, termUnits.Sem - nstpTermUnits.Sem);
-  const firstLoad = Math.max(0, termUnits['1st'] - nstpTermUnits['1st']) + semUnits;
-  const secondLoad = Math.max(0, termUnits['2nd'] - nstpTermUnits['2nd']) + semUnits;
-  const releaseUnits = Number(faculty?.loadReleaseUnits ?? faculty?.load_release_units ?? 0) || 0;
-  const nonNstpUnits = firstLoad + secondLoad - semUnits;
-  const baselinePerTerm = Math.max(0, 12 - (releaseUnits / 2));
-  const isPartTime = /part\s*-?\s*time/i.test(String(faculty?.employment || ''));
-  const applyFullReleaseBalance = Math.abs(nonNstpUnits - 24) < 0.001 && Math.abs(releaseUnits - 24) < 0.001;
-  let firstUnits = isPartTime ? firstLoad : (applyFullReleaseBalance ? 12 : Math.max(0, firstLoad - baselinePerTerm));
-  let secondUnits = isPartTime ? secondLoad : (applyFullReleaseBalance ? 12 : Math.max(0, secondLoad - baselinePerTerm));
-  const total = firstUnits + secondUnits;
-
-  if (firstUnits > 12 && secondUnits < 12) {
-    const moved = Math.min(firstUnits - 12, 12 - secondUnits);
-    firstUnits -= moved;
-    secondUnits += moved;
-  } else if (secondUnits > 12 && firstUnits < 12) {
-    const moved = Math.min(secondUnits - 12, 12 - firstUnits);
-    secondUnits -= moved;
-    firstUnits += moved;
-  }
-
-  if (firstUnits > 12 || secondUnits > 12) {
-    const candidates = [];
-    for (let candidateFirst = 0; candidateFirst <= total; candidateFirst += 3) {
-      const candidateSecond = total - candidateFirst;
-      candidates.push({
-        first: candidateFirst,
-        second: candidateSecond,
-        bothThreeUnit: Math.abs(candidateSecond % 3) < 0.001,
-        gap: Math.abs(candidateFirst - candidateSecond)
-      });
-    }
-    candidates.sort((a, b) =>
-      Number(b.bothThreeUnit) - Number(a.bothThreeUnit) || a.gap - b.gap || b.first - a.first
-    );
-    if (candidates.length) {
-      firstUnits = candidates[0].first;
-      secondUnits = candidates[0].second;
-    }
-  }
-
-  return {
-    firstUnits,
-    secondUnits,
-    firstHours: firstUnits / 3,
-    secondHours: secondUnits / 3
-  };
+  const result = computeFacultyOverload(faculty, items);
+  return { ...result, firstUnits: result.first, secondUnits: result.second };
 }
 
 // --- UI subcomponents (unchanged structure) ---
@@ -2621,45 +2558,10 @@ export default function CourseLoading() {
       summaryRowsHtmlF.push(`<tr><th>${esc(l1)}</th><td>${esc(String(v1))}</td><th>${esc(l2)}</th><td>${v2 === '' ? '' : esc(String(v2))}</td></tr>`);
     }
     const termSummaryHtmlF = `<table class=\"prt-table\"><tbody>${summaryRowsHtmlF.join('')}</tbody></table>`;
-    // Each term has its own 12-unit baseline. Semester-long subjects apply to both terms.
     const releaseUnits = Number(f.loadReleaseUnits ?? f.load_release_units ?? 0) || 0;
-    const semNonNstpUnits = Math.max(0, termSumsF.Sem - nstpTermSums.Sem);
-    const firstTermLoad = Math.max(0, termSumsF['1st'] - nstpTermSums['1st']) + semNonNstpUnits;
-    const secondTermLoad = Math.max(0, termSumsF['2nd'] - nstpTermSums['2nd']) + semNonNstpUnits;
-    const baselinePerTerm = Math.max(0, 12 - (releaseUnits / 2));
-    const isPartTime = /part\s*-?\s*time/i.test(String(f.employment || ''));
-    const applyFullReleaseBalance = Math.abs(nonNstpUnits - 24) < 0.001 && Math.abs(releaseUnits - 24) < 0.001;
-    let overloadFirstUnits = isPartTime ? firstTermLoad : (applyFullReleaseBalance ? 12 : Math.max(0, firstTermLoad - baselinePerTerm));
-    let overloadSecondUnits = isPartTime ? secondTermLoad : (applyFullReleaseBalance ? 12 : Math.max(0, secondTermLoad - baselinePerTerm));
-    const rawOverloadTotal = overloadFirstUnits + overloadSecondUnits;
-    if (overloadFirstUnits > 12 && overloadSecondUnits < 12) {
-      const moved = Math.min(overloadFirstUnits - 12, 12 - overloadSecondUnits);
-      overloadFirstUnits -= moved;
-      overloadSecondUnits += moved;
-    } else if (overloadSecondUnits > 12 && overloadFirstUnits < 12) {
-      const moved = Math.min(overloadSecondUnits - 12, 12 - overloadFirstUnits);
-      overloadSecondUnits -= moved;
-      overloadFirstUnits += moved;
-    }
-    if (overloadFirstUnits > 12 || overloadSecondUnits > 12) {
-      const candidates = [];
-      for (let candidateFirst = 0; candidateFirst <= rawOverloadTotal; candidateFirst += 3) {
-        const candidateSecond = rawOverloadTotal - candidateFirst;
-        candidates.push({
-          first: candidateFirst,
-          second: candidateSecond,
-          bothThreeUnit: Math.abs(candidateSecond % 3) < 0.001,
-          gap: Math.abs(candidateFirst - candidateSecond)
-        });
-      }
-      candidates.sort((a, b) =>
-        Number(b.bothThreeUnit) - Number(a.bothThreeUnit) || a.gap - b.gap || b.first - a.first
-      );
-      if (candidates.length) {
-        overloadFirstUnits = candidates[0].first;
-        overloadSecondUnits = candidates[0].second;
-      }
-    }
+    const accounting = computeTeachingOverload(termSumsF, nstpTermSums, releaseUnits, f.employment);
+    let overloadFirstUnits = accounting.first;
+    let overloadSecondUnits = accounting.second;
     const fmtHours = (u, perUnit = 1 / 3) => {
       const hrs = Number(u) * perUnit;
       if (!Number.isFinite(hrs)) return '0';
@@ -2677,12 +2579,12 @@ export default function CourseLoading() {
     }
     const overloadUnits = overloadFirstUnits + overloadSecondUnits;
     const hasOverloadDisplay = overloadUnits > 0 || Number(overloadFirstHours) > 0 || Number(overloadSecondHours) > 0;
-    const labelFirst = hasOverloadDisplay ? 'Overload 1st Term' : 'Load 1st Term';
-    const labelSecond = hasOverloadDisplay ? 'Overload 2nd Term' : 'Load 2nd Term';
+    const labelFirst = hasOverloadDisplay ? 'Credited 1st Term' : 'Load 1st Term';
+    const labelSecond = hasOverloadDisplay ? 'Credited 2nd Term' : 'Load 2nd Term';
     const overloadRows = [];
     if (hasOverloadDisplay) {
-      overloadRows.push(`<tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(String(overloadFirstHours))} hrs)</td>
-          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(String(overloadSecondHours))} hrs)</td></tr>`);
+      overloadRows.push(`<tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(String(overloadFirstHours))} hrs)${overloadOverride ? '' : ` - teaching ${esc(String(accounting.teachingFirstUnits))}u + release ${esc(String(accounting.releaseFirstUnits))}u`}</td>
+          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(String(overloadSecondHours))} hrs)${overloadOverride ? '' : ` - teaching ${esc(String(accounting.teachingSecondUnits))}u + release ${esc(String(accounting.releaseSecondUnits))}u`}</td></tr>`);
     }
     if (nstpUnits > 0) {
       const nstpFirstUnits = nstpTermSums['1st'] + nstpTermSums['Sem'];
@@ -2705,7 +2607,9 @@ export default function CourseLoading() {
       <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
       <tr><th>Load Release Units</th><td>${esc(String(releaseUnits))}</td><th>Total Load Units</th><td>${esc(String(totalUnits))}</td></tr>
       ${nstpMetaRow}
-      <tr><th>Overload Units</th><td>${esc(String(overloadUnits))}</td><th>Courses</th><td>${esc(String(list.length))}</td></tr>
+      <tr><th>Teaching Overload</th><td>${esc(String(accounting.teachingOverloadUnits))} units (${esc(fmtLoadHours(accounting.teachingOverloadUnits))} hrs)</td><th>Load Release Credit</th><td>${esc(String(accounting.releaseCreditUnits))} units (${esc(fmtLoadHours(accounting.releaseCreditUnits))} hrs)</td></tr>
+      <tr><th>Total Credited Units${overloadOverride ? ' (Manual Override)' : ''}</th><td>${esc(String(overloadUnits))}</td><th>Total Credited Hours</th><td>${esc(fmtHours(Number(overloadFirstHours) + Number(overloadSecondHours), 1))}</td></tr>
+      <tr><th>Courses</th><td>${esc(String(list.length))}</td><th>Regular Baseline</th><td>24 units (12 per term)</td></tr>
       <tr><th>Schedule Type</th><td colspan="3">${esc(scheduleType)}</td></tr>
     </tbody></table>`;
     const semLabelFull = resolveSemesterLabel(settingsLoad?.semester || '', settingsLoad?.semester || '') || 'Current Semester';

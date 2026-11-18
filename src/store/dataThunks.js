@@ -1,3 +1,4 @@
+import { computeFacultyOverload } from '../utils/teachingOverload';
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import apiService from "../services/apiService";
 import { normalizeTimeBlock } from "../utils/timeNormalize";
@@ -117,7 +118,7 @@ function transformSchedulesToFacultyDataset(schedules) {
       courseName: p.courseName || schedule.courseName,
       courseTitle: p.courseTitle || schedule.courseTitle,
       courseType: p.courseType || p.coursetype || null,
-      unit: (p.unit != null ? p.unit : schedule.unit),
+      unit: schedule.unit ?? 0,
       day: schedule.day,
       time: schedule.time,
       term: schedule.term,
@@ -173,10 +174,11 @@ function transformSchedulesToFacultyDataset(schedules) {
   facultyMap.forEach((faculty) => {
     const release = faculty.loadReleaseUnits || 0;
     const baseline = Math.max(0, 24 - release);
-    faculty.stats.overloadHours = Math.max(
-      0,
-      faculty.stats.loadHours - baseline
-    );
+    const accounting = computeFacultyOverload(faculty, faculty.courses || []);
+    faculty.stats.overloadHours = /part\s*-?\s*time/i.test(faculty.employment || '')
+      ? Math.max(0, faculty.stats.loadHours - baseline) : accounting.total;
+    faculty.stats.teachingOverloadUnits = accounting.teachingOverloadUnits;
+    faculty.stats.releaseCreditUnits = accounting.releaseCreditUnits;
   });
   return {
     faculties: Array.from(facultyMap.values()),

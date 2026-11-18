@@ -1,3 +1,4 @@
+import { computeTeachingOverload } from '../utils/teachingOverload';
 import React from 'react';
 import {
   Badge,
@@ -127,67 +128,7 @@ function buildFacultyCourseStats(courses = []) {
   return out;
 }
 
-function computeTermOverload(termUnits, nstpTermUnits, releaseUnits, employment) {
-  const toNumber = (value) => Number(value || 0) || 0;
-  const semUnits = Math.max(0, toNumber(termUnits?.Sem) - toNumber(nstpTermUnits?.Sem));
-  const firstOnlyUnits = Math.max(0, toNumber(termUnits?.['1st']) - toNumber(nstpTermUnits?.['1st']));
-  const secondOnlyUnits = Math.max(0, toNumber(termUnits?.['2nd']) - toNumber(nstpTermUnits?.['2nd']));
-  const nonNstpUnits = firstOnlyUnits + secondOnlyUnits + semUnits;
-  const release = toNumber(releaseUnits);
-  const isPartTime = /part\s*-?\s*time/i.test(String(employment || ''));
-  if (isPartTime) {
-    const first = firstOnlyUnits + semUnits;
-    const second = secondOnlyUnits + semUnits;
-    return balanceTermOverload(first, second);
-  }
-  if (Math.abs(nonNstpUnits - 24) < 0.001 && Math.abs(release - 24) < 0.001) {
-    return { first: 12, second: 12, total: 24 };
-  }
-  const firstLoad = firstOnlyUnits + semUnits;
-  const secondLoad = secondOnlyUnits + semUnits;
-  const baselinePerTerm = Math.max(0, 12 - (release / 2));
-  const first = Math.max(0, firstLoad - baselinePerTerm);
-  const second = Math.max(0, secondLoad - baselinePerTerm);
-  return balanceTermOverload(first, second);
-}
-
-function balanceTermOverload(firstUnits, secondUnits) {
-  let first = Math.max(0, Number(firstUnits) || 0);
-  let second = Math.max(0, Number(secondUnits) || 0);
-  const total = first + second;
-  const normalTermMaximum = 12; // 4 overload hours
-
-  if (first > normalTermMaximum && second < normalTermMaximum) {
-    const moved = Math.min(first - normalTermMaximum, normalTermMaximum - second);
-    first -= moved;
-    second += moved;
-  } else if (second > normalTermMaximum && first < normalTermMaximum) {
-    const moved = Math.min(second - normalTermMaximum, normalTermMaximum - first);
-    second -= moved;
-    first += moved;
-  }
-
-  if (first > normalTermMaximum || second > normalTermMaximum) {
-    const candidates = [];
-    for (let candidateFirst = 0; candidateFirst <= total; candidateFirst += 3) {
-      const candidateSecond = total - candidateFirst;
-      candidates.push({
-        first: candidateFirst,
-        second: candidateSecond,
-        bothThreeUnit: Math.abs(candidateSecond % 3) < 0.001,
-        gap: Math.abs(candidateFirst - candidateSecond)
-      });
-    }
-    candidates.sort((a, b) =>
-      Number(b.bothThreeUnit) - Number(a.bothThreeUnit) ||
-      a.gap - b.gap ||
-      b.first - a.first
-    );
-    if (candidates.length) ({ first, second } = candidates[0]);
-  }
-
-  return { first, second, total };
-}
+const computeTermOverload = computeTeachingOverload;
 
 function fmtHours(hours) {
   if (!Number.isFinite(hours)) return '0';
@@ -292,7 +233,10 @@ export default function CourseLoadingFacultySummary({
       overloadFirstHours: overloadFirstHoursRaw != null ? fmtHours(num(overloadFirstHoursRaw)) : unitsToHours(overloadFirst),
       overloadSecondHours: overloadSecondHoursRaw != null ? fmtHours(num(overloadSecondHoursRaw)) : unitsToHours(overloadSecond),
       courseCount,
-      termUnits
+      termUnits,
+      source: 'server',
+      nstpUnits: num(r.nstpUnits),
+      nstpTermUnits: { '1st': num(r.nstpTermUnits?.['1st']), '2nd': num(r.nstpTermUnits?.['2nd']), Sem: num(r.nstpTermUnits?.Sem) }
     };
   }, []);
 
@@ -341,7 +285,7 @@ export default function CourseLoadingFacultySummary({
     return () => {
       alive = false;
     };
-  }, [settingsLoad?.school_year, settingsLoad?.semester, normalizeServerRow]);
+  }, [settingsLoad?.school_year, settingsLoad?.semester, normalizeServerRow, courses]);
 
   const localRows = React.useMemo(() => {
     return (faculties || []).map((f, idx) => {
@@ -367,7 +311,7 @@ export default function CourseLoadingFacultySummary({
       const nstpUnits = Number(stats?.nstpUnits ?? 0) || 0;
       const nstpTermUnits = stats?.nstpTermUnits ? { ...stats.nstpTermUnits } : emptyTermUnits();
       const courseCount = Number(stats?.courseCount ?? 0) || 0;
-      const baseline = Math.max(0, 24 - releaseUnits);
+      const baseline = /part\s*-?\s*time/i.test(empVal) ? Math.max(0, 24 - releaseUnits) : 24;
       const termOverload = computeTermOverload(termUnits, nstpTermUnits, releaseUnits, empVal);
       const overloadUnits = termOverload.total;
       const { first: overloadFirst, second: overloadSecond } = termOverload;
@@ -403,7 +347,12 @@ export default function CourseLoadingFacultySummary({
   }, [faculties, courseStatsByKey]);
 
   const baseRows = React.useMemo(
-    () => (serverRows && serverRows.length ? serverRows : localRows),
+    () => {
+      if (!serverRows?.length) return localRows;
+      const key = (r) => r.facultyId != null ? `id:${r.facultyId}` : `nm:${normalizeName(r.faculty)}`;
+      const present = new Set(serverRows.map(key));
+      return [...serverRows, ...localRows.filter((r) => !present.has(key(r)))];
+    },
     [serverRows, localRows]
   );
 
@@ -421,31 +370,18 @@ export default function CourseLoadingFacultySummary({
         return null;
       })();
 
-      const hasStats = !!stats;
-      const loadUnits = Number(r.loadUnits ?? 0) || 0;
       const releaseUnits = Number(r.releaseUnits ?? 0) || 0;
       const empVal = r.employment || '';
-
-      const termUnits = (r.termUnits && (r.termUnits['1st'] || r.termUnits['2nd'] || r.termUnits.Sem))
-        ? r.termUnits
-        : (stats?.termUnits ? { ...stats.termUnits } : (r.termUnits || emptyTermUnits()));
-      const nstpUnits = Number(stats?.nstpUnits ?? 0) || 0;
-      const nstpTermUnits = stats?.nstpTermUnits ? { ...stats.nstpTermUnits } : emptyTermUnits();
-
-      let overloadUnits = Number(r.overloadUnits ?? r.overload ?? 0) || 0;
-      let overloadFirst = Number(r.overloadFirst ?? 0) || 0;
-      let overloadSecond = Number(r.overloadSecond ?? 0) || 0;
-      let overloadFirstHours = r.overloadFirstHours ?? unitsToHours(overloadFirst);
-      let overloadSecondHours = r.overloadSecondHours ?? unitsToHours(overloadSecond);
-
-      if (hasStats) {
-        const termOverload = computeTermOverload(termUnits, nstpTermUnits, releaseUnits, empVal);
-        overloadUnits = termOverload.total;
-        overloadFirst = termOverload.first;
-        overloadSecond = termOverload.second;
-        overloadFirstHours = unitsToHours(overloadFirst);
-        overloadSecondHours = unitsToHours(overloadSecond);
-      }
+      // Keep term totals and NSTP subtotals from the same source.
+      const termUnits = r.source === 'server' ? r.termUnits : (stats?.termUnits || r.termUnits || emptyTermUnits());
+      const nstpUnits = Number(r.source === 'server' ? r.nstpUnits : stats?.nstpUnits ?? r.nstpUnits ?? 0) || 0;
+      const nstpTermUnits = r.source === 'server' ? r.nstpTermUnits : (stats?.nstpTermUnits || r.nstpTermUnits || emptyTermUnits());
+      const accounting = computeTermOverload(termUnits, nstpTermUnits, releaseUnits, empVal);
+      const overloadUnits = accounting.total;
+      const overloadFirst = accounting.first;
+      const overloadSecond = accounting.second;
+      const overloadFirstHours = unitsToHours(overloadFirst);
+      const overloadSecondHours = unitsToHours(overloadSecond);
 
       const nstpFirstUnits = nstpTermUnits['1st'] + nstpTermUnits['Sem'];
       const nstpSecondUnits = nstpTermUnits['2nd'] + nstpTermUnits['Sem'];
@@ -460,6 +396,7 @@ export default function CourseLoadingFacultySummary({
         nstpSecondUnits,
         nstpFirstHours: nstpUnitsToHours(nstpFirstUnits),
         nstpSecondHours: nstpUnitsToHours(nstpSecondUnits),
+        accounting,
         overload: overloadUnits,
         overloadUnits,
         overloadFirst,
@@ -543,14 +480,16 @@ const rows = React.useMemo(() => {
       'Employment',
       'Load Units',
       'Load Release',
-      'Overload Total',
+      'Total Credited Units',
       'NSTP Units',
       'NSTP Hours',
-      '1st Term Overload (units)',
+      '1st Term Credited Units',
       '1st Term Hours',
-      '2nd Term Overload (units)',
+      '2nd Term Credited Units',
       '2nd Term Hours',
-      'Courses'
+      'Courses',
+      'Teaching Overload Units', 'Load Release Credit Units', 'Total Credited Hours', 'Manual Override',
+      '1st Teaching Overload Units', '2nd Teaching Overload Units', '1st Release Credit Units', '2nd Release Credit Units'
     ];
     const data = rows.map(r => [
       r.faculty,
@@ -565,7 +504,9 @@ const rows = React.useMemo(() => {
       r.overloadFirstHours,
       String(r.overloadSecond),
       r.overloadSecondHours,
-      String(r.courseCount)
+      String(r.courseCount),
+      String(r.accounting.teachingOverloadUnits), String(r.accounting.releaseCreditUnits), String(r.isOverloadOverridden ? Number(r.overloadFirstHours) + Number(r.overloadSecondHours) : r.accounting.totalCreditedHours), r.isOverloadOverridden ? 'Yes' : 'No',
+      String(r.accounting.teachingFirstUnits), String(r.accounting.teachingSecondUnits), String(r.accounting.releaseFirstUnits), String(r.accounting.releaseSecondUnits)
     ]);
     const csv = [headers, ...data].map(row => row.map((v) => {
       const s = String(v ?? '');
@@ -588,7 +529,9 @@ const rows = React.useMemo(() => {
       'Faculty',
       'Department',
       'Employment',
-      'Overload',
+      'Teaching Overload (units)',
+      'Release Credit (units)',
+      'Total Credited (units/hrs)',
       '1st Term (units/hrs)',
       '2nd Term (units/hrs)'
     ];
@@ -606,10 +549,12 @@ const rows = React.useMemo(() => {
           compare(a.faculty, b.faculty)
       )
       .map(r => [
-        r.faculty,
+        `${r.faculty}${r.isOverloadOverridden ? ' (manual override)' : ''}`,
         r.department,
         r.employment,
-        String(r.overloadUnits ?? r.overload),
+        String(r.accounting.teachingOverloadUnits),
+        String(r.accounting.releaseCreditUnits),
+        `${r.overloadUnits ?? r.overload}u / ${fmtHours(r.isOverloadOverridden ? Number(r.overloadFirstHours) + Number(r.overloadSecondHours) : r.accounting.totalCreditedHours)}h`,
         formatTermPrint(r.overloadFirst, r.overloadFirstHours, r.nstpFirstUnits, r.nstpFirstHours),
         formatTermPrint(r.overloadSecond, r.overloadSecondHours, r.nstpSecondUnits, r.nstpSecondHours)
       ]);
@@ -675,7 +620,7 @@ const rows = React.useMemo(() => {
               <Badge colorScheme="purple">{rows.length} faculty</Badge>
             </HStack>
             <Text fontSize="sm" color={muted}>
-              Computed from current schedules load; overload split mirrors the faculty print notice.
+              Full-time: Sem units are split equally; teaching overload is calculated above 12 units per term. Release is credited separately to 1st Term. NSTP and part-time rules are unchanged. Manual overrides replace credited totals only.
             </Text>
           </VStack>
           <HStack spacing={2}>
@@ -693,7 +638,7 @@ const rows = React.useMemo(() => {
             <Heading size="lg">{totals.totalLoad}</Heading>
           </Box>
           <Box borderWidth="1px" borderColor={border} bg={panelBg} rounded="lg" p={3}>
-            <Text fontSize="sm" color={muted}>Total Overload</Text>
+            <Text fontSize="sm" color={muted}>Total Credited Units</Text>
             <Heading size="lg" color={useColorModeValue('red.600', 'red.300')}>{totals.totalOverload}</Heading>
           </Box>
         </SimpleGrid>
@@ -714,7 +659,7 @@ const rows = React.useMemo(() => {
             {employmentOptions.map((opt) => <option key={opt} value={opt.toLowerCase()}>{opt}</option>)}
           </Select>
           <Select value={sortKey} onChange={(e) => toggleSort(e.target.value)} maxW="200px">
-            <option value="overload">Sort: Overload</option>
+            <option value="overload">Sort: Credited Units</option>
             <option value="load">Sort: Load</option>
             <option value="faculty">Sort: Name</option>
             <option value="department">Sort: Department</option>
@@ -765,12 +710,15 @@ const rows = React.useMemo(() => {
                     <Heading size="sm">{r.loadUnits}</Heading>
                   </Box>
                   <Box>
-                    <Text fontSize="xs" color={muted}>Overload</Text>
+                    <Text fontSize="xs" color={muted}>Credited Units</Text>
                     <Heading size="sm" color={useColorModeValue('red.600', 'red.300')}>{r.overloadUnits ?? r.overload}</Heading>
+                    <Text fontSize="xs" color={muted}>{fmtHours(r.isOverloadOverridden ? Number(r.overloadFirstHours) + Number(r.overloadSecondHours) : r.accounting.totalCreditedHours)} credited hours</Text>
+                    <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingOverloadUnits}u + release {r.accounting.releaseCreditUnits}u{r.isOverloadOverridden ? ' (manual total)' : ''}</Text>
                   </Box>
                   <Box>
                     <Text fontSize="xs" color={muted}>1st Term</Text>
                     <Text fontWeight="700">{r.overloadFirst}u / {r.overloadFirstHours}h</Text>
+                    {!r.isOverloadOverridden && <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingFirstUnits}u + release {r.accounting.releaseFirstUnits}u</Text>}
                     {r.nstpFirstUnits > 0 && (
                       <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpFirstUnits}u / {r.nstpFirstHours}h Saturday</Text>
                     )}
@@ -778,6 +726,7 @@ const rows = React.useMemo(() => {
                   <Box>
                     <Text fontSize="xs" color={muted}>2nd Term</Text>
                     <Text fontWeight="700">{r.overloadSecond}u / {r.overloadSecondHours}h</Text>
+                    {!r.isOverloadOverridden && <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingSecondUnits}u + release {r.accounting.releaseSecondUnits}u</Text>}
                     {r.nstpSecondUnits > 0 && (
                       <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpSecondUnits}u / {r.nstpSecondHours}h Saturday</Text>
                     )}
@@ -817,7 +766,7 @@ const rows = React.useMemo(() => {
                 <HStack spacing={1} justify="flex-end"><Text>Release</Text>{sortKey === 'release' && (sortDir === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}</HStack>
               </Th>
               <Th isNumeric onClick={() => toggleSort('overload')} cursor="pointer" userSelect="none">
-                <HStack spacing={1} justify="flex-end"><Text>Overload</Text>{sortKey === 'overload' && (sortDir === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}</HStack>
+                <HStack spacing={1} justify="flex-end"><Text>Credited Units</Text>{sortKey === 'overload' && (sortDir === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}</HStack>
               </Th>
               <Th isNumeric onClick={() => toggleSort('first')} cursor="pointer" userSelect="none">
                 <HStack spacing={1} justify="flex-end"><Text>1st Term (u/h)</Text>{sortKey === 'first' && (sortDir === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}</HStack>
@@ -847,10 +796,15 @@ const rows = React.useMemo(() => {
                 <Td>{r.employment || '-'}</Td>
                 <Td isNumeric fontWeight="700">{r.loadUnits}</Td>
                 <Td isNumeric>{r.releaseUnits}</Td>
-                <Td isNumeric color={useColorModeValue('red.600', 'red.300')}>{r.overloadUnits ?? r.overload}</Td>
+                <Td isNumeric color={useColorModeValue('red.600', 'red.300')}>
+                  {r.overloadUnits ?? r.overload}
+                  <Text fontSize="xs" color={muted}>{fmtHours(r.isOverloadOverridden ? Number(r.overloadFirstHours) + Number(r.overloadSecondHours) : r.accounting.totalCreditedHours)} credited hours</Text>
+                  <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingOverloadUnits}u + release {r.accounting.releaseCreditUnits}u{r.isOverloadOverridden ? ' (manual total)' : ''}</Text>
+                </Td>
                 <Td isNumeric>
                   <Text fontWeight="700">{r.overloadFirst}u</Text>
                   <Text fontSize="xs" color={muted}>{r.overloadFirstHours} hrs</Text>
+                  {!r.isOverloadOverridden && <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingFirstUnits}u + release {r.accounting.releaseFirstUnits}u</Text>}
                   {r.nstpFirstUnits > 0 && (
                     <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpFirstUnits}u / {r.nstpFirstHours}h Saturday</Text>
                   )}
@@ -858,6 +812,7 @@ const rows = React.useMemo(() => {
                 <Td isNumeric>
                   <Text fontWeight="700">{r.overloadSecond}u</Text>
                   <Text fontSize="xs" color={muted}>{r.overloadSecondHours} hrs</Text>
+                  {!r.isOverloadOverridden && <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingSecondUnits}u + release {r.accounting.releaseSecondUnits}u</Text>}
                   {r.nstpSecondUnits > 0 && (
                     <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpSecondUnits}u / {r.nstpSecondHours}h Saturday</Text>
                   )}

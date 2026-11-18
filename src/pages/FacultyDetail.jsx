@@ -1,3 +1,4 @@
+import { computeFacultyOverload } from '../utils/teachingOverload';
 import React, { useState } from 'react';
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Box, Heading, HStack, Avatar, Text, Badge, VStack, Divider, Table, Thead, Tbody, Tr, Th, Td, useColorModeValue, Button, Switch, FormControl, FormLabel, IconButton, useDisclosure, AlertDialog, AlertDialogOverlay, AlertDialogContent, AlertDialogHeader, AlertDialogBody, AlertDialogFooter } from '@chakra-ui/react';
@@ -328,9 +329,11 @@ export default function FacultyDetail() {
     const baseline = Math.max(0, 24 - release);
     const list = viewMode === 'examination' ? (facultyCourses || []) : (sortedCourses || []);
     const loadUnits = list.reduce((sum, c) => sum + (Number(c.unit) || 0), 0);
-    const overloadUnits = Math.max(0, loadUnits - baseline);
+    const accounting = computeFacultyOverload(f, list);
+    const isPartTime = /part\s*-?\s*time/i.test(f?.employment || '');
+    const overloadUnits = isPartTime ? Math.max(0, loadUnits - baseline) : accounting.total;
     const courseCount = list.length;
-    return { loadUnits, overloadUnits, courseCount, release };
+    return { loadUnits, overloadUnits, courseCount, release, accounting, isPartTime };
   }, [f, sortedCourses, viewMode, facultyCourses]);
 
   // Group courses by term for display (1st, 2nd, Sem, then others)
@@ -521,7 +524,8 @@ export default function FacultyDetail() {
         <tr><th>Department</th><td>${esc(f.department || '')}</td><th>Employment</th><td>${esc(f.employment || '')}</td></tr>
         <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
         <tr><th>Load Release Units</th><td>${esc(String(f.loadReleaseUnits ?? 0))}</td><th>Total Load Units</th><td>${esc(String(mergedStats.loadUnits))}</td></tr>
-        <tr><th>Overload Units</th><td>${esc(String(mergedStats.overloadUnits))}</td><th>Courses</th><td>${esc(String(mergedStats.courseCount))}</td></tr>
+        <tr><th>Total Credited Units</th><td>${esc(String(mergedStats.overloadUnits))}</td><th>Courses</th><td>${esc(String(mergedStats.courseCount))}</td></tr>
+        ${mergedStats.isPartTime ? '' : `<tr><th>Teaching Overload Units</th><td>${esc(String(mergedStats.accounting.teachingOverloadUnits))}</td><th>Release Credit Units</th><td>${esc(String(mergedStats.accounting.releaseCreditUnits))}</td></tr>`}
         <tr><th>Schedule Type</th><td colspan="3">${esc(viewMode === 'examination' ? 'Examination Schedule' : 'Regular Schedule')}</td></tr>
       </tbody></table>`;
 
@@ -812,7 +816,8 @@ export default function FacultyDetail() {
         <HStack spacing={6}>
           <Stat label="Load Units" value={mergedStats.loadUnits} />
           <Stat label="Load Release Units" value={f.loadReleaseUnits ?? 0} />
-          <Stat label="Overload Units" value={mergedStats.overloadUnits} />
+          <Stat label={mergedStats.isPartTime ? 'Overload Units' : 'Total Credited Units'} value={mergedStats.overloadUnits} />
+          {!mergedStats.isPartTime && <Stat label="Teaching Overload Units" value={mergedStats.accounting.teachingOverloadUnits} />}
           <Stat label="Courses" value={mergedStats.courseCount} />
         </HStack>
       </Box>

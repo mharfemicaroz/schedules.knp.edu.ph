@@ -1,3 +1,4 @@
+import { computeFacultyOverload } from './teachingOverload';
 // Attempts to normalize flexible JSON structures into a canonical shape
 // Canonical Faculty shape:
 // { id, name, department, email, rank, stats: { loadHours, overloadHours, contactHours, courseCount }, courses: [ { id, code, title, section, hours, students, schedule, room, semester, year, examDay, examSession, examRoom, examNote } ] }
@@ -442,12 +443,14 @@ function mapFromFlatArray(arr) {
       return ta - tb;
     });
     f.stats.courseCount = f.courses.length;
-    // Compute overload vs baseline adjusted by load release units (regular load is 24 minus load release)
+    // Use the shared full-time term calculation; preserve the legacy part-time statistic.
     const release = Number.isFinite(f.loadReleaseUnits)
       ? f.loadReleaseUnits
       : toNumber(f.loadReleaseUnits, 0);
     const baseline = Math.max(0, 24 - (release || 0));
-    f.stats.overloadHours = Math.max(0, (f.stats.loadHours || 0) - baseline);
+    f.stats.overloadHours = /part\s*-?\s*time/i.test(f.employment || '')
+      ? Math.max(0, (f.stats.loadHours || 0) - baseline)
+      : computeFacultyOverload(f, f.courses || []).total;
   });
   return list;
 }

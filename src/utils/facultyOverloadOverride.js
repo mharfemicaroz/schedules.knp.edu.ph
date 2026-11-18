@@ -23,6 +23,7 @@ export function applyFacultyOverloadOverride(row, overrides) {
   const secondUnits = Number(override.secondUnits);
   return {
     ...row,
+    isOverloadOverridden: true,
     overload: firstUnits + secondUnits,
     overloadUnits: firstUnits + secondUnits,
     overloadFirst: firstUnits,

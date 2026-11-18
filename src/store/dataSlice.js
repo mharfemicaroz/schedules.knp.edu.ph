@@ -1,3 +1,4 @@
+import { computeFacultyOverload } from '../utils/teachingOverload';
 import { createSlice, createSelector } from '@reduxjs/toolkit';
 import { loadAllSchedules, applyApiFiltersThunk, loadAcademicCalendar, loadHolidaysThunk, updateScheduleThunk, deleteScheduleThunk } from './dataThunks';
 
@@ -125,7 +126,9 @@ export const selectStats = createSelector(selectFilteredFaculties, (filtered) =>
     totalLoad += f.stats?.loadHours || 0;
     const release = Number.isFinite(f.loadReleaseUnits) ? f.loadReleaseUnits : Number(f.loadReleaseUnits) || 0;
     const baseline = Math.max(0, 24 - release);
-    const over = f.stats?.overloadHours != null ? f.stats.overloadHours : Math.max(0, (f.stats?.loadHours || 0) - baseline);
+    const over = /part\s*-?\s*time/i.test(f.employment || '')
+      ? (f.stats?.overloadHours ?? Math.max(0, (f.stats?.loadHours || 0) - baseline))
+      : computeFacultyOverload(f, f.courses || []).total;
     totalOverload += over;
     totalCourses += f.stats?.courseCount || (f.courses?.length || 0);
   });
