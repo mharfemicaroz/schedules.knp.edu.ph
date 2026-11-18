@@ -1605,6 +1605,7 @@ export default function CourseLoading() {
   const [suggIndex, setSuggIndex] = React.useState(null);
   const [suggBusy, setSuggBusy] = React.useState(false);
   const [suggestions, setSuggestions] = React.useState([]);
+  const [applyingSuggestion, setApplyingSuggestion] = React.useState(false);
   // Attendance stats by faculty for current SY/Sem
   const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
   // Faculty-view suggestions
@@ -4249,6 +4250,17 @@ const prefill = hit ? {
     }
   };
 
+  const facultySuggestionPayload = (base, edit) => ({
+    programcode: base.programcode, courseName: base.courseName || base.code,
+    courseTitle: base.courseTitle || base.title, unit: base.unit, yearlevel: base.yearlevel,
+    term: edit.term, time: edit.time, day: edit.day || base.day || 'MON-FRI',
+    faculty: edit.faculty || base.faculty || base.instructor || '',
+    facultyId: edit.facultyId ?? base.facultyId ?? base.faculty_id ?? null,
+    blockCode: base.blockCode || base.section || '', session: base.session || '',
+    schoolyear: settingsLoad.school_year, semester: settingsLoad.semester,
+    prospectusId: base.prospectusId || base.prospectus_id,
+  });
+
   const openFacultySuggestions = (id) => {
     const base = facultySchedules.items.find(x => String(x.id) === String(id));
     const e = facEdits[id];
@@ -4259,18 +4271,9 @@ const prefill = hit ? {
     setFacSuggPlans([]);
     setTimeout(async () => {
       try {
-        const payload = {
-          term: e.term,
-          time: e.time,
-          faculty: base.faculty || base.instructor || '',
-          facultyId: base.facultyId || base.faculty_id || null,
-          schoolyear: settingsLoad.school_year || undefined,
-          semester: settingsLoad.semester || undefined,
-          blockCode: base.blockCode || base.section || '',
-          courseName: base.courseName || base.code || '',
-          session: base.session || '',
-        };
-        const plans = await api.getScheduleSuggestions(id, payload, { maxDepth: 3 });
+        const payload = facultySuggestionPayload(base, e);
+        const requestId = base._draft || String(base.id).startsWith('tmp:') ? 'new' : id;
+        const plans = await api.getScheduleSuggestions(requestId, payload, { maxDepth: 3 });
         setFacSuggPlans(Array.isArray(plans) ? plans : []);
       } catch {
         setFacSuggPlans([]);
@@ -5367,12 +5370,35 @@ const prefill = hit ? {
     }
   };
 
-  const applyFacultySuggestion = (plan) => {
-    if (!plan || !plan.candidateChange || plan.requiresOtherChanges || facSuggTargetId == null) return;
-    const cc = plan.candidateChange;
-    updateFacEdit(facSuggTargetId, { term: cc.toTerm || (facEdits[facSuggTargetId]?.term || ''), time: cc.toTime || (facEdits[facSuggTargetId]?.time || '') });
-    setFacSuggOpen(false);
-    setFacSuggTargetId(null);
+  const applyFacultySuggestion = async (plan) => {
+    if (!plan || facSuggTargetId == null || applyingSuggestion || !canLoad) return;
+    const base = facultySchedules.items.find(x => String(x.id) === String(facSuggTargetId));
+    const edit = facEdits[facSuggTargetId];
+    if (!base || !edit) return;
+    setApplyingSuggestion(true);
+    try {
+      if (base._draft || String(base.id).startsWith('tmp:')) {
+        if (!(await ensureFacultyLoadLimitForFacultyView([base]))) return;
+      }
+      const payload = facultySuggestionPayload(base, edit);
+      const isDraft = base._draft || String(base.id).startsWith('tmp:');
+      const result = await api.applyScheduleSuggestion(isDraft ? 'new' : base.id, payload, plan);
+      setFacEdits(prev => Object.fromEntries(Object.entries(prev).filter(([id]) =>
+        String(id) !== String(base.id) && !(result.changedIds || []).some(changed => String(changed) === String(id)))));
+      try {
+        await fetchFacultySchedules(selectedFaculty);
+        if (selectedBlock) await onSelectBlock(selectedBlock);
+        await reloadSchedulesForLoad();
+      } catch { toast({ title: 'Changes saved', description: 'Reload the page to see the latest timetable.', status: 'warning' }); }
+      setFacSuggOpen(false);
+      setFacSuggTargetId(null);
+      toast({ title: 'Suggestion applied', description: 'All changes were checked and saved together.', status: 'success' });
+    } catch (error) {
+      let message = error.message;
+      try { message = JSON.parse(error.body).message || message; } catch {}
+      toast({ title: 'Suggestion not applied', description: message, status: 'error', duration: 7000 });
+      if (error.status === 409) openFacultySuggestions(base.id);
+    } finally { setApplyingSuggestion(false); }
   };
 
   // Fast lookup of row index to avoid O(n) rows.indexOf during render
@@ -5822,17 +5848,9 @@ const prefill = hit ? {
       try {
         const row = rows[idx];
         if (!row) { setSuggestions([]); return; }
-        const payload = {
-          term: row._term,
-          time: row._time,
-          day: row._day || undefined,
-          faculty: row._faculty,
-          blockCode: selectedBlock?.blockCode || '',
-          courseName: row.course_name || row.courseName || row.code,
-          schoolyear: settingsLoad?.school_year,
-          semester: settingsLoad?.semester,
-          session: selectedBlock?.session || '',
-        };
+        const [prepared] = preparePayload([row]);
+        const { _existingId, ...payload } = prepared;
+        payload.session = selectedBlock?.session || payload.session || '';
         const id = row._existingId || 'new';
         const serverPlans = await api.getScheduleSuggestions(id, payload, { maxDepth: 3 });
         setSuggestions(Array.isArray(serverPlans) ? serverPlans : []);
@@ -5844,19 +5862,30 @@ const prefill = hit ? {
     }, 0);
   };
 
-  const applySuggestion = (sugg) => {
-    if (suggIndex == null) return;
+  const applySuggestion = async (sugg) => {
+    if (suggIndex == null || applyingSuggestion || !canLoad) return;
     const idx = suggIndex;
-    if (!rows[idx]) return;
-    const cc = sugg && sugg.candidateChange;
-    if (!cc || sugg.requiresOtherChanges) return; // only apply independent candidate moves
-    const next = rows.slice();
-    next[idx] = { ...next[idx], _term: cc.toTerm || next[idx]._term, _time: cc.toTime || next[idx]._time };
-    setRows(next);
-    setSuggOpen(false);
-    setSuggIndex(null);
-    // Re-run conflict check on the updated row
-    setTimeout(() => { try { checkRowConflictFresh(idx, next[idx]); } catch {} }, 0);
+    const row = rows[idx];
+    if (!row) return;
+    setApplyingSuggestion(true);
+    try {
+      if (!(await ensureFacultyLoadLimitsForRows([row]))) return;
+      const [prepared] = preparePayload([row]);
+      const { _existingId, ...payload } = prepared;
+      await api.applyScheduleSuggestion(_existingId || 'new', payload, sugg);
+      try {
+        if (selectedBlock) await onSelectBlock(selectedBlock);
+        await reloadSchedulesForLoad();
+      } catch { toast({ title: 'Changes saved', description: 'Reload the page to see the latest timetable.', status: 'warning' }); }
+      setSuggOpen(false);
+      setSuggIndex(null);
+      toast({ title: 'Suggestion applied', description: 'All changes were checked and saved together.', status: 'success' });
+    } catch (error) {
+      let message = error.message;
+      try { message = JSON.parse(error.body).message || message; } catch {}
+      toast({ title: 'Suggestion not applied', description: message, status: 'error', duration: 7000 });
+      if (error.status === 409) openSuggestions(idx);
+    } finally { setApplyingSuggestion(false); }
   };
 
   const preparePayload = (rowsToSave) => {
@@ -8483,7 +8512,7 @@ const prefill = hit ? {
       </AlertDialog>
 
       {/* Faculty suggestions modal */}
-      <Modal isOpen={facSuggOpen} onClose={()=>{ if (!facSuggBusy) { setFacSuggOpen(false); setFacSuggTargetId(null); } }} isCentered size="lg">
+      <Modal isOpen={facSuggOpen} onClose={()=>{ if (!facSuggBusy && !applyingSuggestion) { setFacSuggOpen(false); setFacSuggTargetId(null); } }} isCentered size="lg">
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>Available Times &amp; Conflict Suggestions</ModalHeader>
@@ -8500,12 +8529,12 @@ const prefill = hit ? {
                       <VStack align="stretch" spacing={2}>
                         <HStack justify="space-between">
                           <Text fontWeight="600">{s.label}</Text>
-                          {s?.candidateChange && !s.requiresOtherChanges && (
-                            <Button size="xs" colorScheme="blue" onClick={() => applyFacultySuggestion(s)}>Apply</Button>
+                          {canLoad && (
+                            <Button size="sm" colorScheme="blue" isLoading={applyingSuggestion} isDisabled={applyingSuggestion || facSuggBusy} onClick={() => applyFacultySuggestion(s)}>Apply &amp; Save</Button>
                           )}
                         </HStack>
                         {s.requiresOtherChanges && (
-                          <Text fontSize="sm" color="orange.600">Linked plan: make the changes in the numbered order, then recheck and save this course. This plan was checked as a whole; no changes are saved automatically.</Text>
+                          <Text fontSize="sm" color="orange.600">Apply & Save checks the current timetable, then saves these changes in order. If any step fails, the entire plan is rolled back and suggestions are refreshed.</Text>
                         )}
                         {Array.isArray(s.steps) && s.steps.length > 0 && (
                           <VStack align="stretch" spacing={1}>
@@ -8928,7 +8957,7 @@ const prefill = hit ? {
       </Modal>
 
       {/* Suggestions modal */}
-      <Modal isOpen={suggOpen} onClose={()=>{ setSuggOpen(false); setSuggIndex(null); }} isCentered size="lg">
+      <Modal isOpen={suggOpen} onClose={()=>{ if (!applyingSuggestion) { setSuggOpen(false); setSuggIndex(null); } }} isCentered size="lg">
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>Available Times &amp; Conflict Suggestions</ModalHeader>
@@ -8945,12 +8974,12 @@ const prefill = hit ? {
                       <VStack align="stretch" spacing={2}>
                         <HStack justify="space-between">
                           <Text fontWeight="600">{s.label}</Text>
-                          {s?.candidateChange && !s.requiresOtherChanges && (
-                            <Button size="xs" colorScheme="blue" onClick={() => applySuggestion(s)}>Apply</Button>
+                          {canLoad && (
+                            <Button size="sm" colorScheme="blue" isLoading={applyingSuggestion} isDisabled={applyingSuggestion || suggBusy} onClick={() => applySuggestion(s)}>Apply &amp; Save</Button>
                           )}
                         </HStack>
                         {s.requiresOtherChanges && (
-                          <Text fontSize="sm" color="orange.600">Linked plan: make the changes in the numbered order, then recheck and save this course. This plan was checked as a whole; no changes are saved automatically.</Text>
+                          <Text fontSize="sm" color="orange.600">Apply & Save checks the current timetable, then saves these changes in order. If any step fails, the entire plan is rolled back and suggestions are refreshed.</Text>
                         )}
                         {Array.isArray(s.steps) && s.steps.length > 0 && (
                           <VStack align="stretch" spacing={1}>

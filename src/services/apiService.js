@@ -226,6 +226,12 @@ class ApiService {
     return await res.json();
   }
 
+  async applyScheduleSuggestion(id, candidate, plan) {
+    return this.request(`/${encodeURIComponent(id)}/suggestions/apply`, {
+      method: 'POST', body: JSON.stringify({ candidate, plan }),
+    });
+  }
+
   async getFacultySummary(params = {}) {
     const search = new URLSearchParams();
     const sy = params.sy || params.schoolyear || params.school_year;
