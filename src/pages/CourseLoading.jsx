@@ -1606,6 +1606,11 @@ export default function CourseLoading() {
   const [suggBusy, setSuggBusy] = React.useState(false);
   const [suggestions, setSuggestions] = React.useState([]);
   const [applyingSuggestion, setApplyingSuggestion] = React.useState(false);
+  const [suggPage, setSuggPage] = React.useState(null);
+  const [facSuggPage, setFacSuggPage] = React.useState(null);
+  const [moreSuggestionsBusy, setMoreSuggestionsBusy] = React.useState(false);
+  const suggSearchRef = React.useRef(null);
+  const facSuggSearchRef = React.useRef(null);
   // Attendance stats by faculty for current SY/Sem
   const [attendanceStatsMap, setAttendanceStatsMap] = React.useState(new Map());
   // Faculty-view suggestions
@@ -4269,16 +4274,22 @@ const prefill = hit ? {
     setFacSuggOpen(true);
     setFacSuggBusy(true);
     setFacSuggPlans([]);
+    setFacSuggPage(null);
+    const context = { targetId: id };
+    facSuggSearchRef.current = context;
     setTimeout(async () => {
       try {
         const payload = facultySuggestionPayload(base, e);
         const requestId = base._draft || String(base.id).startsWith('tmp:') ? 'new' : id;
-        const plans = await api.getScheduleSuggestions(requestId, payload, { maxDepth: 3 });
-        setFacSuggPlans(Array.isArray(plans) ? plans : []);
+        Object.assign(context, { id: requestId, payload });
+        const page = await api.getScheduleSuggestions(requestId, payload, { maxDepth: 3, paged: true });
+        if (facSuggSearchRef.current !== context) return;
+        setFacSuggPlans(page.items || []);
+        setFacSuggPage(page);
       } catch {
-        setFacSuggPlans([]);
+        if (facSuggSearchRef.current === context) setFacSuggPlans([]);
       } finally {
-        setFacSuggBusy(false);
+        if (facSuggSearchRef.current === context) setFacSuggBusy(false);
       }
     }, 30);
   };
@@ -5844,6 +5855,9 @@ const prefill = hit ? {
     setSuggOpen(true);
     setSuggBusy(true);
     setSuggestions([]);
+    setSuggPage(null);
+    const context = { idx };
+    suggSearchRef.current = context;
     setTimeout(async () => {
       try {
         const row = rows[idx];
@@ -5852,14 +5866,40 @@ const prefill = hit ? {
         const { _existingId, ...payload } = prepared;
         payload.session = selectedBlock?.session || payload.session || '';
         const id = row._existingId || 'new';
-        const serverPlans = await api.getScheduleSuggestions(id, payload, { maxDepth: 3 });
-        setSuggestions(Array.isArray(serverPlans) ? serverPlans : []);
+        Object.assign(context, { id, payload });
+        const page = await api.getScheduleSuggestions(id, payload, { maxDepth: 3, paged: true });
+        if (suggSearchRef.current !== context) return;
+        setSuggestions(page.items || []);
+        setSuggPage(page);
       } catch (e) {
-        setSuggestions([]);
+        if (suggSearchRef.current === context) setSuggestions([]);
       } finally {
-        setSuggBusy(false);
+        if (suggSearchRef.current === context) setSuggBusy(false);
       }
     }, 0);
+  };
+
+  const loadMoreSuggestions = async (facultyView) => {
+    if (moreSuggestionsBusy || applyingSuggestion) return;
+    const ref = facultyView ? facSuggSearchRef : suggSearchRef;
+    const context = ref.current;
+    const page = facultyView ? facSuggPage : suggPage;
+    if (!context || !page?.hasMore) return;
+    setMoreSuggestionsBusy(true);
+    try {
+      const next = await api.getScheduleSuggestions(context.id, context.payload, {
+        maxDepth: 3, paged: true, offset: page.nextOffset, snapshotVersion: page.snapshotVersion,
+      });
+      if (ref.current !== context) return;
+      if (facultyView) { setFacSuggPlans(prev => [...prev, ...next.items]); setFacSuggPage(next); }
+      else { setSuggestions(prev => [...prev, ...next.items]); setSuggPage(next); }
+    } catch (error) {
+      if (ref.current !== context) return;
+      if (error.status === 409) {
+        toast({ title: 'Timetable changed', description: 'Refreshing suggestions to match the latest schedules.', status: 'info' });
+        if (facultyView) openFacultySuggestions(context.targetId); else openSuggestions(context.idx);
+      } else toast({ title: 'Could not load more suggestions', description: 'Please try again.', status: 'error' });
+    } finally { setMoreSuggestionsBusy(false); }
   };
 
   const applySuggestion = async (sugg) => {
@@ -8512,12 +8552,13 @@ const prefill = hit ? {
       </AlertDialog>
 
       {/* Faculty suggestions modal */}
-      <Modal isOpen={facSuggOpen} onClose={()=>{ if (!facSuggBusy && !applyingSuggestion) { setFacSuggOpen(false); setFacSuggTargetId(null); } }} isCentered size="lg">
+      <Modal scrollBehavior="inside" isOpen={facSuggOpen} onClose={()=>{ if (!facSuggBusy && !applyingSuggestion) { setFacSuggOpen(false); setFacSuggTargetId(null); } }} isCentered size="lg">
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>Available Times &amp; Conflict Suggestions</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
+            <Text fontSize="sm" fontWeight="600" mb={2}>Ranked by fewest changes, fewest other courses affected, then least term and time disruption.</Text>
             <Text fontSize="sm" color={subtle} mb={3}>Suggestions stay in the same session: AM 8 AM to 12 noon, PM 1 to 5 PM, or evening 5 to 9 PM. Sem stays Sem; 1st and 2nd may switch.</Text>
             {facSuggBusy ? (
               <HStack spacing={2}><Spinner size="sm" /><Text>Analyzing suggestions...</Text></HStack>
@@ -8533,6 +8574,7 @@ const prefill = hit ? {
                             <Button size="sm" colorScheme="blue" isLoading={applyingSuggestion} isDisabled={applyingSuggestion || facSuggBusy} onClick={() => applyFacultySuggestion(s)}>Apply &amp; Save</Button>
                           )}
                         </HStack>
+                        {s.ranking && <Text fontSize="xs" color={subtle}>{s.ranking.changes} change(s), {s.ranking.otherCourses} other course(s), {s.ranking.termChanges} term switch(es)</Text>}
                         {s.requiresOtherChanges && (
                           <Text fontSize="sm" color="orange.600">Apply & Save checks the current timetable, then saves these changes in order. If any step fails, the entire plan is rolled back and suggestions are refreshed.</Text>
                         )}
@@ -8556,6 +8598,13 @@ const prefill = hit ? {
               </VStack>
             )}
           </ModalBody>
+          <ModalFooter>
+            <VStack align="stretch" w="full" spacing={2}>
+              {facSuggPage && <Text fontSize="sm" color={subtle}>Showing {facSuggPlans.length} of {facSuggPage.total} verified solutions found. Up to 3 changes per plan.</Text>}
+              {facSuggPage && !facSuggPage.searchComplete && <Text fontSize="xs" color={subtle}>The search reached its limit. More combinations may exist.</Text>}
+              {facSuggPage?.hasMore && <Button onClick={()=>loadMoreSuggestions(true)} isLoading={moreSuggestionsBusy} isDisabled={applyingSuggestion || facSuggBusy}>Load More</Button>}
+            </VStack>
+          </ModalFooter>
         </ModalContent>
       </Modal>
 
@@ -8957,12 +9006,13 @@ const prefill = hit ? {
       </Modal>
 
       {/* Suggestions modal */}
-      <Modal isOpen={suggOpen} onClose={()=>{ if (!applyingSuggestion) { setSuggOpen(false); setSuggIndex(null); } }} isCentered size="lg">
+      <Modal scrollBehavior="inside" isOpen={suggOpen} onClose={()=>{ if (!applyingSuggestion) { setSuggOpen(false); setSuggIndex(null); } }} isCentered size="lg">
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>Available Times &amp; Conflict Suggestions</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
+            <Text fontSize="sm" fontWeight="600" mb={2}>Ranked by fewest changes, fewest other courses affected, then least term and time disruption.</Text>
             <Text fontSize="sm" color={subtle} mb={3}>Suggestions stay in the same session: AM 8 AM to 12 noon, PM 1 to 5 PM, or evening 5 to 9 PM. Sem stays Sem; 1st and 2nd may switch.</Text>
             {suggBusy ? (
               <HStack spacing={2}><Spinner size="sm" /><Text>Analyzing suggestions...</Text></HStack>
@@ -8978,6 +9028,7 @@ const prefill = hit ? {
                             <Button size="sm" colorScheme="blue" isLoading={applyingSuggestion} isDisabled={applyingSuggestion || suggBusy} onClick={() => applySuggestion(s)}>Apply &amp; Save</Button>
                           )}
                         </HStack>
+                        {s.ranking && <Text fontSize="xs" color={subtle}>{s.ranking.changes} change(s), {s.ranking.otherCourses} other course(s), {s.ranking.termChanges} term switch(es)</Text>}
                         {s.requiresOtherChanges && (
                           <Text fontSize="sm" color="orange.600">Apply & Save checks the current timetable, then saves these changes in order. If any step fails, the entire plan is rolled back and suggestions are refreshed.</Text>
                         )}
@@ -9001,6 +9052,13 @@ const prefill = hit ? {
               </VStack>
             )}
           </ModalBody>
+          <ModalFooter>
+            <VStack align="stretch" w="full" spacing={2}>
+              {suggPage && <Text fontSize="sm" color={subtle}>Showing {suggestions.length} of {suggPage.total} verified solutions found. Up to 3 changes per plan.</Text>}
+              {suggPage && !suggPage.searchComplete && <Text fontSize="xs" color={subtle}>The search reached its limit. More combinations may exist.</Text>}
+              {suggPage?.hasMore && <Button onClick={()=>loadMoreSuggestions(false)} isLoading={moreSuggestionsBusy} isDisabled={applyingSuggestion || suggBusy}>Load More</Button>}
+            </VStack>
+          </ModalFooter>
         </ModalContent>
       </Modal>
       <Modal isOpen={canSwapSchedules && swapModalOpen} onClose={()=>{ if (!swapBusy && !swapPreviewBusy) setSwapModalOpen(false); }} isCentered size="3xl">

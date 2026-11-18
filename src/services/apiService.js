@@ -216,13 +216,24 @@ class ApiService {
     return await res.json();
   }
 
-  async getScheduleSuggestions(id, payload, { maxDepth } = {}) {
+  async getScheduleSuggestions(id, payload, { maxDepth, paged = false, offset = 0, limit = 6, snapshotVersion } = {}) {
     const search = new URLSearchParams();
     if (maxDepth != null) search.set('maxDepth', String(maxDepth));
+    if (paged) {
+      search.set('paged', 'true');
+      search.set('offset', String(offset));
+      search.set('limit', String(limit));
+      if (snapshotVersion) search.set('snapshotVersion', snapshotVersion);
+    }
     const qs = search.toString();
     const url = `${this.baseURL}${this.schedulesPath}/${encodeURIComponent(id)}/suggestions${qs ? `?${qs}` : ''}`;
     const res = await this._fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) }, body: JSON.stringify(payload || {}) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    if (!res.ok) {
+      const error = new Error(`HTTP ${res.status}: ${res.statusText}`);
+      error.status = res.status;
+      error.body = await res.text();
+      throw error;
+    }
     return await res.json();
   }
 
