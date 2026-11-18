@@ -140,6 +140,8 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
   const authUser = useSelector(s => s.auth && s.auth.user);
   const role = String(authUser?.role || '').toLowerCase();
   const isAdmin = (role === 'admin' || role === 'manager' || role === 'sa');
+  const canDeleteSchedules = role === 'admin' || role === 'manager';
+  const canSwapSchedules = role === 'admin' || role === 'manager';
   const settingsLoad = settingsLoadOverride || settings?.schedulesLoad || { school_year: '', semester: '' };
   const reloadSchedulesForLoad = React.useCallback(async () => {
     return dispatch(loadAllSchedules({
@@ -690,39 +692,94 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
     }
   };
 
-  // Suggestions modal state
+  // Use the same ranked, paginated suggestions and atomic Apply endpoint as Blocks/Faculty.
   const [suggOpen, setSuggOpen] = React.useState(false);
   const [suggIndex, setSuggIndex] = React.useState(null);
   const [suggBusy, setSuggBusy] = React.useState(false);
   const [suggestions, setSuggestions] = React.useState([]);
+  const [suggPage, setSuggPage] = React.useState(null);
+  const [moreSuggestionsBusy, setMoreSuggestionsBusy] = React.useState(false);
+  const [applyingSuggestion, setApplyingSuggestion] = React.useState(false);
+  const suggSearchRef = React.useRef(null);
+  const suggestionPayload = (row) => ({
+    term: row._term, time: row._time, day: row._day || 'MON-FRI',
+    faculty: row._faculty || undefined, facultyId: row._facultyId ?? undefined,
+    schoolyear: settingsLoad?.school_year, semester: toFullSemester(settingsLoad?.semester),
+    blockCode: row.blockCode, block_id: row.blockId, session: row.session || '',
+    courseName: row.courseName, courseTitle: row.courseTitle, programcode: row.programcode,
+    yearlevel: row.yearlevel, unit: row.unit,
+    prospectusId: selectedCourse?.id,
+  });
+  const suggestionError = (error) => {
+    try { return JSON.parse(error.body).message || error.message; } catch { return error.message; }
+  };
+  React.useEffect(() => {
+    suggSearchRef.current = null;
+    setSuggOpen(false);
+    setSuggIndex(null);
+    setSuggestions([]);
+    setSuggPage(null);
+  }, [selectedCourse, program, year, settingsLoad?.school_year, settingsLoad?.semester]);
+
   const openSuggestions = async (i) => {
     const row = rows[i];
     if (!row) return;
+    const context = { index: i, id: row._existingId || 'new', payload: suggestionPayload(row) };
+    suggSearchRef.current = context;
     setSuggIndex(i);
     setSuggOpen(true);
     setSuggBusy(true);
+    setSuggestions([]);
+    setSuggPage(null);
     try {
-      const payload = {
-        term: row._term,
-        time: row._time,
-        day: row._day,
-        faculty: row._faculty || undefined,
-        facultyId: row._facultyId || undefined,
-        schoolyear: settingsLoad?.school_year,
-        semester: toFullSemester(settingsLoad?.semester),
-        blockCode: row.blockCode,
-        courseName: row.courseName,
-      };
-      const idFor = row._existingId || 0;
-      const res = await api.getScheduleSuggestions(idFor, payload, { maxDepth: 3 });
-      const plans = Array.isArray(res?.plans) ? res.plans : (Array.isArray(res) ? res : []);
-      setSuggestions(plans);
-    } catch (e) {
-      setSuggestions([]);
-      toast({ status: 'error', title: 'Failed to load suggestions', description: e?.message });
+      const page = await api.getScheduleSuggestions(context.id, context.payload, { maxDepth: 3, paged: true });
+      if (suggSearchRef.current !== context) return;
+      setSuggestions(page.items || []);
+      setSuggPage(page);
+    } catch (error) {
+      if (suggSearchRef.current !== context) return;
+      toast({ status: 'error', title: 'Failed to load suggestions', description: suggestionError(error) });
     } finally {
-      setSuggBusy(false);
+      if (suggSearchRef.current === context) setSuggBusy(false);
     }
+  };
+  const loadMoreSuggestions = async () => {
+    const context = suggSearchRef.current;
+    if (!context || !suggPage?.hasMore || moreSuggestionsBusy || applyingSuggestion) return;
+    setMoreSuggestionsBusy(true);
+    try {
+      const page = await api.getScheduleSuggestions(context.id, context.payload, {
+        maxDepth: 3, paged: true, offset: suggPage.nextOffset, snapshotVersion: suggPage.snapshotVersion,
+      });
+      if (suggSearchRef.current !== context) return;
+      setSuggestions(prev => [...prev, ...page.items]);
+      setSuggPage(page);
+    } catch (error) {
+      if (suggSearchRef.current !== context) return;
+      if (error.status === 409) {
+        toast({ status: 'info', title: 'Timetable changed', description: 'Refreshing suggestions to match the latest schedules.' });
+        await openSuggestions(context.index);
+      } else toast({ status: 'error', title: 'Could not load more suggestions', description: suggestionError(error) });
+    } finally { setMoreSuggestionsBusy(false); }
+  };
+  const applySuggestion = async (plan) => {
+    const context = suggSearchRef.current;
+    const row = suggIndex != null ? rows[suggIndex] : null;
+    if (!context || !row || !canLoad || row._locked || applyingSuggestion || suggBusy) return;
+    setApplyingSuggestion(true);
+    try {
+      if (!(await ensureFacultyLoadLimitsForRows([row]))) return;
+      await api.applyScheduleSuggestion(context.id, context.payload, plan);
+      suggSearchRef.current = null;
+      setSuggOpen(false);
+      setSuggIndex(null);
+      try { await reloadMapping(); }
+      catch { toast({ status: 'warning', title: 'Changes saved', description: 'Reload the page to see the latest timetable.' }); }
+      toast({ status: 'success', title: 'Suggestion applied', description: 'All changes were checked and saved together.' });
+    } catch (error) {
+      toast({ status: 'error', title: 'Suggestion not applied', description: suggestionError(error), duration: 7000 });
+      if (error.status === 409 && suggSearchRef.current === context) await openSuggestions(context.index);
+    } finally { setApplyingSuggestion(false); }
   };
 
   // Conflict details modal state
@@ -787,6 +844,7 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
   };
   const clearSwapSlot = (slot) => { if (slot === 'A') setSwapA(null); else setSwapB(null); };
   const addToSwap = (i) => {
+    if (!canSwapSchedules) return;
     const r = rows[i];
     if (!r || !r._existingId) { toast({ status: 'info', title: 'Only existing schedules', description: 'Save a schedule before adding to swap.' }); return; }
     if (r._locked) { toast({ status: 'warning', title: 'Locked', description: 'Unlock the schedule before adding to swap.' }); return; }
@@ -796,6 +854,7 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
     toast({ status: 'success', title: 'Added to swap', description: item.label });
   };
   const swapNow = async () => {
+    if (!canSwapSchedules) return;
     if (!swapA || !swapB || swapBusy) return;
     setSwapBusy(true);
     try {
@@ -850,6 +909,7 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
   }, [reloadMapping]);
 
   const openResolve = (i) => {
+    if (!canDeleteSchedules) return;
     const r = rows[i];
     if (!r || !Array.isArray(r._conflictDetails)) return;
     const withId = r._conflictDetails.find(d => d?.item && d.item.id);
@@ -861,6 +921,7 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
     setResolveOpen(true);
   };
   const handleResolve = async () => {
+    if (!canDeleteSchedules) return;
     if (resolveIndex == null) return;
     const r = rows[resolveIndex];
     if (!r) return;
@@ -1140,6 +1201,7 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
                   Save Selected
                 </Button>
                 <Button size="sm" leftIcon={<FiPrinter />} variant="outline" onClick={onPrintCourse} isDisabled={loading || rows.length === 0}>Print</Button>
+                {canSwapSchedules && <>
                 <Divider orientation="vertical" />
                 <Badge colorScheme={swapA ? 'blue' : 'gray'}>A</Badge>
                 <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapA ? swapA.label : 'Add a schedule to slot A'}</Text>
@@ -1149,6 +1211,7 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
                 <Text noOfLines={1} flex="1 1 220px" color={subtle}>{swapB ? swapB.label : 'Add a schedule to slot B'}</Text>
                 {swapB && <Button size="xs" variant="ghost" onClick={()=>clearSwapSlot('B')}>Clear</Button>}
                 <Button size="sm" leftIcon={<FiRefreshCw />} colorScheme="blue" onClick={swapNow} isDisabled={!swapA || !swapB || swapBusy} isLoading={swapBusy}>Swap Now</Button>
+                </>}
                 <Divider orientation="vertical" />
                 <Button size="sm" variant="outline" onClick={()=>requestBulkLockChange(true)} isDisabled={!canLoad || rows.every(r => !r._selected || !r._existingId || r._locked)}>
                   Lock Selected
@@ -1173,6 +1236,8 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
                   attendanceStats={attendanceStatsMap}
                   disabled={viewOnly}
                   isAdmin={isAdmin}
+                  canDeleteSchedules={canDeleteSchedules}
+                  canSwapSchedules={canSwapSchedules}
                   variant="courses"
                   viewOnly={viewOnly}
                   onChange={(patch)=>handleChange(i, patch)}
@@ -1180,7 +1245,7 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
                   onRequestLockChange={(next)=>{ if (r._existingId) { setLockIndex(i); setLockNext(!!next); setLockOpen(true); } }}
                   onRequestAssign={() => { setAssignIndex(i); setAssignOpen(true); }}
                   onRequestDelete={async () => {
-                    if (!r._existingId) return;
+                    if (!canDeleteSchedules || !r._existingId) return;
                     setDelIndex(i);
                     setDelOpen(true);
                   }}
@@ -1222,7 +1287,7 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
         )}
       </Box>
       {/* Resolve conflict dialog */}
-      <AlertDialog isOpen={resolveOpen} onClose={()=>{ if (!resolveBusy) { setResolveOpen(false); setResolveIndex(null); setResolveConflictId(null); setResolveLabel(''); } }} leastDestructiveRef={cancelRef}>
+      <AlertDialog isOpen={canDeleteSchedules && resolveOpen} onClose={()=>{ if (!resolveBusy) { setResolveOpen(false); setResolveIndex(null); setResolveConflictId(null); setResolveLabel(''); } }} leastDestructiveRef={cancelRef}>
         <AlertDialogOverlay>
           <AlertDialogContent>
             <AlertDialogHeader>Resolve conflict?</AlertDialogHeader>
@@ -1281,7 +1346,7 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
       </AlertDialog>
 
       {/* Delete confirmation dialog */}
-      <AlertDialog isOpen={delOpen} onClose={()=>{ if (!delBusy) { setDelOpen(false); setDelIndex(null); } }} leastDestructiveRef={cancelRef}>
+      <AlertDialog isOpen={canDeleteSchedules && delOpen} onClose={()=>{ if (!delBusy) { setDelOpen(false); setDelIndex(null); } }} leastDestructiveRef={cancelRef}>
         <AlertDialogOverlay>
           <AlertDialogContent>
             <AlertDialogHeader>Delete schedule?</AlertDialogHeader>
@@ -1315,7 +1380,7 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
       <Modal isOpen={conflictOpen} onClose={()=>{ setConflictOpen(false); setConflictIndex(null); }} size="lg">
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Conflict details</ModalHeader>
+          <ModalHeader>Why this conflicts</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
             {conflictIndex != null && Array.isArray(rows[conflictIndex]?._conflictDetails) && rows[conflictIndex]._conflictDetails.length > 0 ? (
@@ -1324,9 +1389,11 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
                   <Box key={`cd-${idx}`} borderWidth="1px" rounded="md" p={2}>
                     <Text fontWeight="600">{d.reason || 'Conflict'}</Text>
                     {d.item && (
-                      <Text fontSize="sm" color={subtle}>
-                        {d.item.code || ''} • {d.item.section || ''} • {d.item.time || ''}
-                      </Text>
+                      <VStack align="stretch" spacing={1} fontSize="sm" color={subtle}>
+                        <Text>{d.item.code || ''} / {d.item.section || 'N/A'}</Text>
+                        <Text>Term: <b>{d.item.term || 'N/A'}</b> / Time: <b>{d.item.time || 'N/A'}</b></Text>
+                        {d.item.room && <Text>Room: <b>{d.item.room}</b></Text>}
+                      </VStack>
                     )}
                   </Box>
                 ))}
@@ -1339,12 +1406,19 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
       </Modal>
 
       {/* Suggestions modal */}
-      <Modal isOpen={suggOpen} onClose={()=>{ if (!suggBusy) { setSuggOpen(false); setSuggIndex(null); setSuggestions([]); } }} size="lg">
+      <Modal isOpen={suggOpen} scrollBehavior="inside" onClose={()=>{
+        if (!suggBusy && !applyingSuggestion) {
+          suggSearchRef.current = null;
+          setSuggOpen(false); setSuggIndex(null); setSuggestions([]); setSuggPage(null);
+        }
+      }} size="lg">
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Suggestions</ModalHeader>
-          <ModalCloseButton />
+          <ModalHeader>Available Times &amp; Conflict Suggestions</ModalHeader>
+          <ModalCloseButton isDisabled={applyingSuggestion || suggBusy} />
           <ModalBody>
+            <Text fontSize="sm" fontWeight="600" mb={2}>Ranked by fewest changes, fewest other courses affected, then least term and time disruption.</Text>
+            <Text fontSize="sm" color={subtle} mb={3}>Suggestions stay in the same session: AM 8 AM to 12 noon, PM 1 to 5 PM, or evening 5 to 9 PM. Sem stays Sem; 1st and 2nd may switch.</Text>
             {suggBusy ? (
               <VStack align="stretch" spacing={2}>
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -1355,23 +1429,45 @@ export default function CoursesView({ settingsLoadOverride = null, viewOnly = fa
                 ))}
               </VStack>
             ) : (
-              <VStack align="stretch" spacing={2}>
-                {(suggestions || []).map((p, idx) => (
-                  <Box key={`sg-${idx}`} borderWidth="1px" rounded="md" p={2}>
-                    <Text fontWeight="600">{p.label || 'Plan'}</Text>
-                    {Array.isArray(p.steps) && p.steps.length > 0 && (
-                      <VStack align="start" spacing={1} mt={1}>
-                        {p.steps.map((s, i2) => (
-                          <Text key={`st-${idx}-${i2}`} fontSize="sm" color={subtle}>• {s.course} {s.section ? `(${s.section})` : ''}: {s.from} → {s.to}</Text>
-                        ))}
-                      </VStack>
-                    )}
+              <VStack align="stretch" spacing={3}>
+                {suggestions.map((plan, idx) => (
+                  <Box key={`sg-${idx}`} borderWidth="1px" rounded="md" p={3}>
+                    <VStack align="stretch" spacing={2}>
+                      <HStack justify="space-between" align="start" flexWrap="wrap">
+                        <Text fontWeight="600">{plan.label || 'Plan'}</Text>
+                        {canLoad && <Button size="sm" colorScheme="blue" isLoading={applyingSuggestion}
+                          isDisabled={applyingSuggestion || suggBusy || !!rows[suggIndex]?._locked}
+                          onClick={()=>applySuggestion(plan)}>Apply &amp; Save</Button>}
+                      </HStack>
+                      {plan.ranking && <Text fontSize="xs" color={subtle}>{plan.ranking.changes} change(s), {plan.ranking.otherCourses} other course(s), {plan.ranking.termChanges} term switch(es)</Text>}
+                      {plan.requiresOtherChanges && <Text fontSize="sm" color="orange.600">Apply &amp; Save checks the current timetable, then saves these changes in order. If any step fails, the entire plan is rolled back and suggestions are refreshed.</Text>}
+                      {Array.isArray(plan.steps) && plan.steps.length > 0 && (
+                        <VStack align="stretch" spacing={2}>
+                          {plan.steps.map((step, stepIndex) => (
+                            <HStack key={`st-${idx}-${stepIndex}`} spacing={3} align="start" flexWrap="wrap">
+                              <Badge>{step.node ?? stepIndex + 1}</Badge>
+                              <Box>
+                                <Text fontSize="sm"><b>{step.course}</b> {step.section ? `/ ${step.section}` : ''}</Text>
+                                <Text fontSize="sm" color={subtle}>from <b>{step.from}</b> to <b>{step.to}</b></Text>
+                              </Box>
+                            </HStack>
+                          ))}
+                        </VStack>
+                      )}
+                    </VStack>
                   </Box>
                 ))}
-                {(!suggestions || suggestions.length === 0) && <Text fontSize="sm" color={subtle}>No suggestions available.</Text>}
+                {!suggestions.length && <Text fontSize="sm" color={subtle}>No available times found within this session and term type. Adjust surrounding schedules or assign another faculty.</Text>}
               </VStack>
             )}
           </ModalBody>
+          <ModalFooter>
+            <VStack align="stretch" w="full" spacing={2}>
+              {suggPage && <Text fontSize="sm" color={subtle}>Showing {suggestions.length} of {suggPage.total} verified solutions found. Up to 3 changes per plan.</Text>}
+              {suggPage && !suggPage.searchComplete && <Text fontSize="xs" color={subtle}>The search reached its limit. More combinations may exist.</Text>}
+              {suggPage?.hasMore && <Button onClick={loadMoreSuggestions} isLoading={moreSuggestionsBusy} isDisabled={applyingSuggestion || suggBusy}>Load More</Button>}
+            </VStack>
+          </ModalFooter>
         </ModalContent>
       </Modal>
 
