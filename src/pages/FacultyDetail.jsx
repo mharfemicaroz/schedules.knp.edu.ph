@@ -525,7 +525,6 @@ export default function FacultyDetail() {
         <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
         <tr><th>Load Release Units</th><td>${esc(String(f.loadReleaseUnits ?? 0))}</td><th>Total Load Units</th><td>${esc(String(mergedStats.loadUnits))}</td></tr>
         <tr><th>Total Credited Units</th><td>${esc(String(mergedStats.overloadUnits))}</td><th>Courses</th><td>${esc(String(mergedStats.courseCount))}</td></tr>
-        ${mergedStats.isPartTime ? '' : `<tr><th>Teaching Overload Units</th><td>${esc(String(mergedStats.accounting.teachingOverloadUnits))}</td><th>Release Credit Units</th><td>${esc(String(mergedStats.accounting.releaseCreditUnits))}</td></tr>`}
         <tr><th>Schedule Type</th><td colspan="3">${esc(viewMode === 'examination' ? 'Examination Schedule' : 'Regular Schedule')}</td></tr>
       </tbody></table>`;
 
@@ -817,7 +816,6 @@ export default function FacultyDetail() {
           <Stat label="Load Units" value={mergedStats.loadUnits} />
           <Stat label="Load Release Units" value={f.loadReleaseUnits ?? 0} />
           <Stat label={mergedStats.isPartTime ? 'Overload Units' : 'Total Credited Units'} value={mergedStats.overloadUnits} />
-          {!mergedStats.isPartTime && <Stat label="Teaching Overload Units" value={mergedStats.accounting.teachingOverloadUnits} />}
           <Stat label="Courses" value={mergedStats.courseCount} />
         </HStack>
       </Box>

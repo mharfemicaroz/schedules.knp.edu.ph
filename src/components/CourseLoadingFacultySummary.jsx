@@ -488,9 +488,7 @@ const rows = React.useMemo(() => {
       '2nd Term Credited Units',
       '2nd Term Hours',
       'Courses',
-      'Teaching Overload Units', 'Load Release Credit Units', 'Total Credited Hours', 'Manual Override',
-      '1st Teaching Overload Units', '2nd Teaching Overload Units', '1st Release Credit Units', '2nd Release Credit Units',
-      'Teaching Shortfall Units', 'Release Deducted Units'
+      'Total Credited Hours', 'Manual Override'
     ];
     const data = rows.map(r => [
       r.faculty,
@@ -506,9 +504,7 @@ const rows = React.useMemo(() => {
       String(r.overloadSecond),
       r.overloadSecondHours,
       String(r.courseCount),
-      String(r.accounting.teachingOverloadUnits), String(r.accounting.releaseCreditUnits), String(r.isOverloadOverridden ? Number(r.overloadFirstHours) + Number(r.overloadSecondHours) : r.accounting.totalCreditedHours), r.isOverloadOverridden ? 'Yes' : 'No',
-      String(r.accounting.teachingFirstUnits), String(r.accounting.teachingSecondUnits), String(r.accounting.releaseFirstUnits), String(r.accounting.releaseSecondUnits),
-      String(r.accounting.teachingShortfallUnits), String(r.accounting.releaseDeductedUnits)
+      String(r.isOverloadOverridden ? Number(r.overloadFirstHours) + Number(r.overloadSecondHours) : r.accounting.totalCreditedHours), r.isOverloadOverridden ? 'Yes' : 'No'
     ]);
     const csv = [headers, ...data].map(row => row.map((v) => {
       const s = String(v ?? '');
@@ -531,8 +527,6 @@ const rows = React.useMemo(() => {
       'Faculty',
       'Department',
       'Employment',
-      'Teaching Overload (units)',
-      'Release Credit (units)',
       'Total Credited (units/hrs)',
       '1st Term (units/hrs)',
       '2nd Term (units/hrs)'
@@ -554,8 +548,6 @@ const rows = React.useMemo(() => {
         `${r.faculty}${r.isOverloadOverridden ? ' (manual override)' : ''}`,
         r.department,
         r.employment,
-        String(r.accounting.teachingOverloadUnits),
-        r.accounting.releaseDeductedUnits > 0 ? `${r.accounting.releaseCreditUnits} (${r.releaseUnits} - ${r.accounting.releaseDeductedUnits} underload)` : String(r.accounting.releaseCreditUnits),
         `${r.overloadUnits ?? r.overload}u / ${fmtHours(r.isOverloadOverridden ? Number(r.overloadFirstHours) + Number(r.overloadSecondHours) : r.accounting.totalCreditedHours)}h`,
         formatTermPrint(r.overloadFirst, r.overloadFirstHours, r.nstpFirstUnits, r.nstpFirstHours),
         formatTermPrint(r.overloadSecond, r.overloadSecondHours, r.nstpSecondUnits, r.nstpSecondHours)
@@ -622,7 +614,7 @@ const rows = React.useMemo(() => {
               <Badge colorScheme="purple">{rows.length} faculty</Badge>
             </HStack>
             <Text fontSize="sm" color={muted}>
-              Full-time: Sem units and release credits are split equally between terms. Teaching overload is the non-NSTP teaching total above 24 units per semester. Any shortfall below 24 reduces release credit, with a minimum credit of zero; the remaining release credit is split equally. NSTP and part-time rules are unchanged. Manual overrides replace credited totals only.
+              Teaching load and credited hours for the selected school year and semester.
             </Text>
           </VStack>
           <HStack spacing={2}>
@@ -715,12 +707,10 @@ const rows = React.useMemo(() => {
                     <Text fontSize="xs" color={muted}>Credited Units</Text>
                     <Heading size="sm" color={useColorModeValue('red.600', 'red.300')}>{r.overloadUnits ?? r.overload}</Heading>
                     <Text fontSize="xs" color={muted}>{fmtHours(r.isOverloadOverridden ? Number(r.overloadFirstHours) + Number(r.overloadSecondHours) : r.accounting.totalCreditedHours)} credited hours</Text>
-                    <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingOverloadUnits}u + release {r.accounting.releaseCreditUnits}u{r.isOverloadOverridden ? ' (manual total)' : ''}</Text>
                   </Box>
                   <Box>
                     <Text fontSize="xs" color={muted}>1st Term</Text>
                     <Text fontWeight="700">{r.overloadFirst}u / {r.overloadFirstHours}h</Text>
-                    {!r.isOverloadOverridden && <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingFirstUnits}u + release {r.accounting.releaseFirstUnits}u</Text>}
                     {r.nstpFirstUnits > 0 && (
                       <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpFirstUnits}u / {r.nstpFirstHours}h Saturday</Text>
                     )}
@@ -728,7 +718,6 @@ const rows = React.useMemo(() => {
                   <Box>
                     <Text fontSize="xs" color={muted}>2nd Term</Text>
                     <Text fontWeight="700">{r.overloadSecond}u / {r.overloadSecondHours}h</Text>
-                    {!r.isOverloadOverridden && <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingSecondUnits}u + release {r.accounting.releaseSecondUnits}u</Text>}
                     {r.nstpSecondUnits > 0 && (
                       <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpSecondUnits}u / {r.nstpSecondHours}h Saturday</Text>
                     )}
@@ -797,16 +786,14 @@ const rows = React.useMemo(() => {
                 <Td>{r.department || '-'}</Td>
                 <Td>{r.employment || '-'}</Td>
                 <Td isNumeric fontWeight="700">{r.loadUnits}</Td>
-                <Td isNumeric>{r.releaseUnits}{r.accounting.releaseDeductedUnits > 0 && <Text fontSize="xs" color={muted}>Less {r.accounting.releaseDeductedUnits}u underload</Text>}</Td>
+                <Td isNumeric>{r.releaseUnits}</Td>
                 <Td isNumeric color={useColorModeValue('red.600', 'red.300')}>
                   {r.overloadUnits ?? r.overload}
                   <Text fontSize="xs" color={muted}>{fmtHours(r.isOverloadOverridden ? Number(r.overloadFirstHours) + Number(r.overloadSecondHours) : r.accounting.totalCreditedHours)} credited hours</Text>
-                  <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingOverloadUnits}u + release {r.accounting.releaseCreditUnits}u{r.isOverloadOverridden ? ' (manual total)' : ''}</Text>
                 </Td>
                 <Td isNumeric>
                   <Text fontWeight="700">{r.overloadFirst}u</Text>
                   <Text fontSize="xs" color={muted}>{r.overloadFirstHours} hrs</Text>
-                  {!r.isOverloadOverridden && <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingFirstUnits}u + release {r.accounting.releaseFirstUnits}u</Text>}
                   {r.nstpFirstUnits > 0 && (
                     <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpFirstUnits}u / {r.nstpFirstHours}h Saturday</Text>
                   )}
@@ -814,7 +801,6 @@ const rows = React.useMemo(() => {
                 <Td isNumeric>
                   <Text fontWeight="700">{r.overloadSecond}u</Text>
                   <Text fontSize="xs" color={muted}>{r.overloadSecondHours} hrs</Text>
-                  {!r.isOverloadOverridden && <Text fontSize="xs" color={muted}>Teaching {r.accounting.teachingSecondUnits}u + release {r.accounting.releaseSecondUnits}u</Text>}
                   {r.nstpSecondUnits > 0 && (
                     <Text fontSize="xs" color={nstpTone}>NSTP {r.nstpSecondUnits}u / {r.nstpSecondHours}h Saturday</Text>
                   )}

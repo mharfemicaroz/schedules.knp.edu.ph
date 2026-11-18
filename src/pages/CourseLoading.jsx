@@ -2584,8 +2584,8 @@ export default function CourseLoading() {
     const labelSecond = hasOverloadDisplay ? 'Credited 2nd Term' : 'Load 2nd Term';
     const overloadRows = [];
     if (hasOverloadDisplay) {
-      overloadRows.push(`<tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(String(overloadFirstHours))} hrs)${overloadOverride ? '' : ` - teaching ${esc(String(accounting.teachingFirstUnits))}u + release ${esc(String(accounting.releaseFirstUnits))}u`}</td>
-          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(String(overloadSecondHours))} hrs)${overloadOverride ? '' : ` - teaching ${esc(String(accounting.teachingSecondUnits))}u + release ${esc(String(accounting.releaseSecondUnits))}u`}</td></tr>`);
+      overloadRows.push(`<tr><th>${esc(labelFirst)}</th><td>${esc(String(overloadFirstUnits))} units (${esc(String(overloadFirstHours))} hrs)</td>
+          <th>${esc(labelSecond)}</th><td>${esc(String(overloadSecondUnits))} units (${esc(String(overloadSecondHours))} hrs)</td></tr>`);
     }
     if (nstpUnits > 0) {
       const nstpFirstUnits = nstpTermSums['1st'] + nstpTermSums['Sem'];
@@ -2597,7 +2597,6 @@ export default function CourseLoading() {
       ? `<table class="prt-table"><tbody>${overloadRows.join('')}</tbody></table>`
       : '';
 
-    const scheduleType = 'Regular Schedule';
     const headingHtml = `
       <p class='prt-fac-name'>${esc(f.name || f.faculty || '')}</p>`;
     const nstpMetaRow = nstpUnits > 0
@@ -2608,11 +2607,8 @@ export default function CourseLoading() {
       <tr><th>Designation</th><td colspan="3">${esc(f.designation || f.rank || '')}</td></tr>
       <tr><th>Load Release Units</th><td>${esc(String(releaseUnits))}</td><th>Total Load Units</th><td>${esc(String(totalUnits))}</td></tr>
       ${nstpMetaRow}
-      <tr><th>Teaching Overload</th><td>${esc(String(accounting.teachingOverloadUnits))} units (${esc(fmtLoadHours(accounting.teachingOverloadUnits))} hrs)</td><th>Load Release Credit</th><td>${esc(String(accounting.releaseCreditUnits))} units (${esc(fmtLoadHours(accounting.releaseCreditUnits))} hrs)</td></tr>
-      ${accounting.releaseDeductedUnits > 0 ? `<tr><th>Teaching Shortfall</th><td>${esc(String(accounting.teachingShortfallUnits))} units</td><th>Release Deducted for Underload</th><td>${esc(String(accounting.releaseDeductedUnits))} units</td></tr>` : ''}
       <tr><th>Total Credited Units${overloadOverride ? ' (Manual Override)' : ''}</th><td>${esc(String(overloadUnits))}</td><th>Total Credited Hours</th><td>${esc(fmtHours(Number(overloadFirstHours) + Number(overloadSecondHours), 1))}</td></tr>
-      <tr><th>Courses</th><td>${esc(String(list.length))}</td><th>Regular Baseline</th><td>24 units (12 per term)</td></tr>
-      <tr><th>Schedule Type</th><td colspan="3">${esc(scheduleType)}</td></tr>
+      <tr><th>Courses</th><td colspan="3">${esc(String(list.length))}</td></tr>
     </tbody></table>`;
     const semLabelFull = resolveSemesterLabel(settingsLoad?.semester || '', settingsLoad?.semester || '') || 'Current Semester';
     const semShort = semLabelFull.replace(/semester/i, 'sem').replace(/\s+/g, ' ').trim();
